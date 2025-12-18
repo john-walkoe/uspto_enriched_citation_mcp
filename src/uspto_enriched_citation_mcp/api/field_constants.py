@@ -3,10 +3,6 @@ Field constants and definitions for USPTO Enriched Citation API.
 """
 
 # Import field lists from configuration module (single source of truth)
-from ..config.field_manager import (
-    DEFAULT_MINIMAL_FIELDS as MINIMAL_FIELDS,
-    DEFAULT_BALANCED_FIELDS as BALANCED_FIELDS,
-)
 
 
 # Field name constants

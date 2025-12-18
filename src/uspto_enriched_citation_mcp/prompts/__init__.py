@@ -40,11 +40,11 @@ def register_prompts(mcp_server):
 
     # Import all prompt modules to register them with the MCP server
     # These imports must happen AFTER mcp is set
-    from . import enhanced_examiner_behavior_intelligence_PFW_PTAB_FPD
-    from . import technology_citation_landscape_PFW
-    from . import patent_citation_analysis
-    from . import art_unit_citation_assessment
-    from . import litigation_citation_research_PFW_PTAB
+    from . import enhanced_examiner_behavior_intelligence_PFW_PTAB_FPD  # noqa: F401
+    from . import technology_citation_landscape_PFW  # noqa: F401
+    from . import patent_citation_analysis  # noqa: F401
+    from . import art_unit_citation_assessment  # noqa: F401
+    from . import litigation_citation_research_PFW_PTAB  # noqa: F401
 
 
 __all__ = [

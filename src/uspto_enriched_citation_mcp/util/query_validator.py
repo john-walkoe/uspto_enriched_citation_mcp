@@ -133,10 +133,26 @@ def validate_lucene_syntax(query: str) -> Tuple[bool, str]:
     if quote_count % 2 != 0:
         return False, "Unbalanced quotes"
 
-    # Validate field names (security-critical)
+    # Validate field names and values (security-critical)
     # Extract field:value patterns
     field_pattern = r"(\w+):"
     fields_used = re.findall(field_pattern, query)
+
+    # Check for empty field values (field: with no value)
+    if re.search(r"(\w+):\s*(?:\s|$|AND|OR|NOT)", query):
+        return False, "Field queries must have non-empty values"
+
+    # Check for leading boolean operators
+    if re.search(r"^\s*(AND|OR|NOT)\s+", query):
+        return False, "Query cannot start with a boolean operator"
+
+    # Check for incomplete boolean expressions
+    if re.search(r"(AND|OR)\s*$", query):
+        return False, "Incomplete boolean expression"
+
+    # Check for incomplete range expressions
+    if re.search(r"\[.*TO\s*$", query):
+        return False, "Incomplete range expression"
 
     for field in fields_used:
         # Check against whitelist
@@ -178,8 +194,10 @@ def validate_lucene_syntax(query: str) -> Tuple[bool, str]:
         )
         return False, f"Too many wildcards (max {MAX_WILDCARDS_PER_QUERY})"
 
-    # Prevent leading wildcards (performance issue)
-    if re.search(r"^\*|\s\*", query):
+    # Prevent leading wildcards (performance issue) - but allow in range queries
+    # First remove range query content to avoid false positives
+    query_without_ranges = re.sub(r"\[[^\]]+\]", "", query)
+    if re.search(r"^\*|\s\*", query_without_ranges):
         return False, "Leading wildcards are not allowed (performance issue)"
 
     return True, "Query validation passed"

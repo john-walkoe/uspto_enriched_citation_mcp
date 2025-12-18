@@ -10,8 +10,6 @@ Run with: uv run pytest tests/test_resilience.py -v
 import pytest
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Dict, Any
 
 from uspto_enriched_citation_mcp.util.rate_limiter import (
     TokenBucket,

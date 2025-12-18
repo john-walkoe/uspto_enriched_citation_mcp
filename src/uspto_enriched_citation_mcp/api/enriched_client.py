@@ -11,13 +11,9 @@ from ..util.cache import get_fields_cache, get_search_cache, generate_cache_key
 from ..shared.circuit_breaker import uspto_api_breaker, CircuitBreakerError
 from ..shared.enums import ContextLevel
 from ..shared.exceptions import (
-    AuthenticationError,
-    AuthorizationError,
-    NotFoundError,
     RateLimitError,
     APIConnectionError,
     APITimeoutError,
-    APIUnavailableError,
     APIResponseError,
     ValidationError,
 )
@@ -536,7 +532,7 @@ class EnrichedCitationClient:
                 # LRUCache doesn't have expiration, so just try to get the value
                 cached_result = self.search_cache.get(cache_key)
                 if cached_result:
-                    logger.info(f"Returning cached search results (circuit breaker open)")
+                    logger.info("Returning cached search results (circuit breaker open)")
                     # Add degraded status indicator
                     cached_result["_cache_status"] = {
                         "source": "cache",

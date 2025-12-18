@@ -8,9 +8,6 @@ Run with: uv run pytest tests/test_statistics.py -v
 """
 
 import pytest
-import asyncio
-from typing import Dict, Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 # Skip all tests if no API key
 from tests.test_integration import has_api_key

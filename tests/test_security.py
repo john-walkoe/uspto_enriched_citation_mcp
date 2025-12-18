@@ -9,8 +9,7 @@ Run with: uv run pytest tests/test_security.py -v
 
 import pytest
 import logging
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch
 
 from uspto_enriched_citation_mcp.util.security_logger import (
     SecurityLogger,

@@ -198,18 +198,18 @@ in invisible characters appended to innocent text like "Hello!".
     # Summary
     if not args.quiet or total_issues > 0:
         print(f"\n{'='*70}")
-        print(f"USPTO Citation MCP Security Scan Results:")
+        print("USPTO Citation MCP Security Scan Results:")
         print(f"Files checked: {total_files_checked}")
         print(f"Files with issues: {len(files_with_issues)}")
         print(f"Total issues found: {total_issues}")
         
         if unicode_steganography_detected:
-            print(f"\n[CRITICAL] Unicode steganography detected!")
+            print("\n[CRITICAL] Unicode steganography detected!")
             print("This indicates potential emoji-based prompt injection attacks")
             print("as described in the Repello.ai article. IMMEDIATE REVIEW REQUIRED.")
         
         if total_issues > 0:
-            print(f"\n[WARNING] Prompt injection patterns detected!")
+            print("\n[WARNING] Prompt injection patterns detected!")
             print("These patterns may indicate attempts to:")
             print("- Override system instructions")  
             print("- Extract sensitive prompts")

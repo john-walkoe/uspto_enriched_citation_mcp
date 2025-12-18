@@ -3,6 +3,7 @@ Basic tests for USPTO Enriched Citation MCP.
 """
 
 import pytest
+import pytest_asyncio
 from unittest.mock import patch, AsyncMock
 from uspto_enriched_citation_mcp.config.settings import Settings
 from uspto_enriched_citation_mcp.api.enriched_client import EnrichedCitationClient
@@ -22,7 +23,7 @@ class TestBasic:
         monkeypatch.setenv("ECITATION_RATE_LIMIT", "50")
         return Settings()
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def mock_client(self, mock_settings):
         """Mock client for testing."""
         return EnrichedCitationClient(
@@ -49,7 +50,7 @@ class TestBasic:
     @pytest.mark.asyncio
     async def test_client_initialization(self, mock_client):
         """Test client initialization."""
-        client = await mock_client
+        client = mock_client
         assert client.api_key == "test_key_32_characters_long_example"  # pragma: allowlist secret
         assert client.base_url == "https://developer.uspto.gov/ds-api"
         assert client.enable_cache is False
@@ -76,7 +77,7 @@ class TestBasic:
     @pytest.mark.asyncio
     async def test_get_fields(self, mock_client):
         """Test getting available fields from API."""
-        client = await mock_client
+        client = mock_client
 
         # Mock the API response
         mock_response = {
@@ -87,10 +88,12 @@ class TestBasic:
         }
 
         with patch.object(client.client, "get", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value.status_code = 200
-            mock_get.return_value.json.return_value = mock_response
-            mock_get.return_value.headers = {"content-type": "application/json"}
-            mock_get.return_value.content = b"{}"
+            mock_response_obj = AsyncMock()
+            mock_response_obj.status_code = 200
+            mock_response_obj.json = lambda: mock_response  # Use lambda instead of return_value
+            mock_response_obj.headers = {"content-type": "application/json"}
+            mock_response_obj.content = b"{}"
+            mock_get.return_value = mock_response_obj
 
             result = await client.get_fields()
             assert result is not None
@@ -99,7 +102,7 @@ class TestBasic:
     @pytest.mark.asyncio
     async def test_search_records(self, mock_client):
         """Test basic search records."""
-        client = await mock_client
+        client = mock_client
         criteria = "patentApplicationNumber:17654321"
 
         # Mock the API response
@@ -112,10 +115,12 @@ class TestBasic:
         }
 
         with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
-            mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = mock_response
-            mock_post.return_value.headers = {"content-type": "application/json"}
-            mock_post.return_value.content = b"{}"
+            mock_response_obj = AsyncMock()
+            mock_response_obj.status_code = 200
+            mock_response_obj.json = lambda: mock_response  # Use lambda instead of return_value
+            mock_response_obj.headers = {"content-type": "application/json"}
+            mock_response_obj.content = b"{}"
+            mock_post.return_value = mock_response_obj
 
             result = await client.search_records(criteria=criteria, rows=5)
             assert result is not None
@@ -125,7 +130,7 @@ class TestBasic:
     @pytest.mark.asyncio
     async def test_get_citation_details(self, mock_client):
         """Test getting citation details."""
-        client = await mock_client
+        client = mock_client
         citation_id = "12345"
 
         # Mock the API response
@@ -138,10 +143,12 @@ class TestBasic:
         }
 
         with patch.object(client.client, "post", new_callable=AsyncMock) as mock_post:
-            mock_post.return_value.status_code = 200
-            mock_post.return_value.json.return_value = mock_response
-            mock_post.return_value.headers = {"content-type": "application/json"}
-            mock_post.return_value.content = b"{}"
+            mock_response_obj = AsyncMock()
+            mock_response_obj.status_code = 200
+            mock_response_obj.json = lambda: mock_response  # Use lambda instead of return_value
+            mock_response_obj.headers = {"content-type": "application/json"}
+            mock_response_obj.content = b"{}"
+            mock_post.return_value = mock_response_obj
 
             result = await client.get_citation_details(citation_id)
             assert result is not None

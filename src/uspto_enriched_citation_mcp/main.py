@@ -1,6 +1,5 @@
 """USPTO Enriched Citation MCP Server"""
 
-import logging
 import sys
 from typing import Dict, List, Optional, Any, NamedTuple
 from dataclasses import dataclass
@@ -9,8 +8,8 @@ import structlog
 
 # Local imports
 from .api.enriched_client import EnrichedCitationClient
-from .api.field_constants import QueryFieldNames, MINIMAL_FIELDS, BALANCED_FIELDS
-from .config.field_manager import FieldManager
+from .api.field_constants import QueryFieldNames
+from .config.field_manager import FieldManager, DEFAULT_MINIMAL_FIELDS as MINIMAL_FIELDS, DEFAULT_BALANCED_FIELDS as BALANCED_FIELDS
 from .config.settings import get_settings
 from .config.feature_flags import get_feature_flags
 from .config.constants import (
@@ -56,7 +55,7 @@ mcp = FastMCP("uspto-enriched-citation-mcp")
 
 # Register all prompt templates with the MCP server
 # This must be done AFTER mcp is created to avoid circular imports
-from .prompts import register_prompts
+from .prompts import register_prompts  # noqa: E402
 register_prompts(mcp)
 
 # Global variables for lazy initialization

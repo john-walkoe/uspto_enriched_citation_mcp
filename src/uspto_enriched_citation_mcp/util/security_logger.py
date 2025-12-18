@@ -115,7 +115,7 @@ class SecurityLogger:
                 os.chmod(security_log_file, 0o600)
 
                 self.logger.info(f"Security logging enabled: {security_log_file}")
-                self.logger.info(f"Security log retention: 90 backup files (approx 90 days)")
+                self.logger.info("Security log retention: 90 backup files (approx 90 days)")
 
             except Exception as e:
                 self.logger.warning(f"Failed to setup security file logging: {e}")

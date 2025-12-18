@@ -8,10 +8,6 @@ Run with: uv run pytest tests/test_integration.py -v
 """
 
 import pytest
-import os
-import sys
-from datetime import datetime, timedelta
-from typing import Dict, Any
 
 # Import MCP server components
 from uspto_enriched_citation_mcp.config.settings import Settings

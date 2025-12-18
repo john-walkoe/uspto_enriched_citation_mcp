@@ -22,7 +22,7 @@ Based on research from:
 """
 
 import re
-from typing import Generator, Iterable
+from typing import Generator
 
 from detect_secrets.plugins.base import BasePlugin
 from detect_secrets.core.potential_secret import PotentialSecret
