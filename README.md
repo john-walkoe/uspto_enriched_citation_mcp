@@ -713,6 +713,14 @@ The author makes no representations or warranties, express or implied, including
 - [Claude](https://claude.ai)
 - [uv Package Manager](https://github.com/astral-sh/uv)
 
+## 💝 Support This Project
+
+If you find this USPTO Enriched Citation MCP Server useful, please consider supporting the development! This project was developed during my personal time over many hours to provide a comprehensive, production-ready tool for the patent community.
+
+[![Donate with PayPal](https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif)](https://paypal.me/walkoe)
+
+Your support helps maintain and improve this open-source tool for everyone in the patent community. Thank you!
+
 ## Acknowledgments
 
 - [USPTO](https://www.uspto.gov/) for providing the Enriched Citation API v3 with AI-powered data extraction capabilities
