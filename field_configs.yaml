@@ -1,0 +1,121 @@
+# USPTO Enriched Citation MCP Field Configuration
+# Progressive Workflow: Minimal → User Selection → Balanced → Deep Analysis
+# Customizable field sets for context optimization (90-95% reduction)
+
+version: "1.0"
+description: "USPTO Enriched Citation API v3 - Progressive workflow for citation analysis"
+
+predefined_sets:
+  citations_minimal:
+    description: "Essential citation fields (90-95% context reduction) - Cross-MCP integration focused"
+    fields:
+      # === CROSS-MCP INTEGRATION FIELDS ===
+      - patentApplicationNumber               # → Patent File Wrapper MCP
+      - publicationNumber                     # → PTAB MCP (if granted)
+      - groupArtUnitNumber                   # → All USPTO MCPs
+      
+      # === CITATION CORE FIELDS ===
+      - citedDocumentIdentifier              # Citation reference
+      - citationCategoryCode                 # X=US patent, Y=foreign, NPL=non-patent literature
+      - techCenter                          # Technology classification
+      - officeActionDate                    # Temporal analysis
+      - examinerCitedReferenceIndicator      # Examiner vs Applicant
+
+      # === OPTIONAL ADDITIONAL FIELDS (UNCOMMENT TO ADD) ===
+      # - workGroupNumber                   # Work group context
+      # - inventorNameText                  # Inventor information
+
+      # NOTE: Examiner name NOT available in API - use PFW MCP to find applications by examiner,
+      # then search citations by patentApplicationNumber. Decision codes also not available.
+
+  citations_balanced:
+    description: "Comprehensive citation fields (80-85% context reduction) - Analysis ready"
+    fields:
+      # === ALL MINIMAL FIELDS (ALWAYS INCLUDED) ===
+      - patentApplicationNumber
+      - publicationNumber  
+      - groupArtUnitNumber
+      - citedDocumentIdentifier
+      - citationCategoryCode
+      - techCenter
+      - officeActionDate
+      - examinerCitedReferenceIndicator
+      
+      # === ADDITIONAL ANALYSIS FIELDS ===
+      - passageLocationText                 # Detailed citation passages (may be large)
+      - officeActionCategory                # CTNF, CTFR, etc.
+      - relatedClaimNumberText             # Specific claim mapping
+      - nplIndicator                      # Non-patent literature
+      - workGroupNumber                   # Work group context
+      - kindCode                          # Publication kind
+      - countryCode                       # Country context
+      - qualitySummaryText                # Processing quality
+      - inventorNameText                  # Inventor information
+      - applicantCitedExaminerReferenceIndicator  # Applicant-cited indicator
+      - createDateTime                    # Citation creation timestamp
+
+      # === OPTIONAL CONTEXT FIELDS (UNCOMMENT FOR DEEP ANALYSIS) ===
+      # - createUserIdentifier            # User who created record
+      # - obsoleteDocumentIdentifier      # Obsolete document tracking
+      # - id                              # Unique citation record ID
+
+      # NOTE: Fields NOT available in API v3 (as of 2024-07-11):
+      # - examinerNameText, firstApplicantName, decisionTypeCode, decisionTypeCodeDescriptionText
+      # - assigneeNameText, classificationCdText, abstractText, claimText, ptoOrForeignPriorityDate
+      # For examiner analysis: Use PFW MCP to find applications, then search by patentApplicationNumber
+
+# Context management settings
+context_settings:
+  max_minimal_results: 100
+  max_balanced_results: 20
+  max_document_results: 50
+  compression_handling: true  # API returns compressed responses
+  api_timeout: 30  # Default timeout in seconds
+
+# Usage Instructions:
+# 1. CITATION SEARCHES:
+#    - Edit 'citations_minimal' for search_citations_minimal
+#    - Edit 'citations_balanced' for search_citations_balanced
+# 2. Uncomment fields you want by removing # symbol
+# 3. After editing, restart Claude Desktop to reload configuration
+# 4 passageLocationText can be very long → use balanced tier cautiously
+# 5. For research workflows: Start minimal → Filter → Balanced → Deep analysis
+
+# Field Optimization Notes:
+# - Minimal searches: Optimized for high-volume discovery (50-100 results, 90-95% reduction)
+# - Balanced searches: Optimized for detailed analysis (10-20 results, 80-85% reduction)
+# - passageLocationText dominates token usage → enable selectively for deep analysis only
+
+# IMPORTANT CROSS-REFERENCE FIELDS:
+# - patentApplicationNumber: Links to Patent File Wrapper MCP for prosecution history
+# - publicationNumber: Links to PTAB MCP for post-grant challenges (if granted)
+# - groupArtUnitNumber: Links to all USPTO MCPs for art unit analysis
+# - inventorNameText: Inventor names from cited documents
+#
+# EXAMINER ANALYSIS WORKFLOW (examinerNameText NOT in API):
+# 1. Use PFW MCP: pfw_search_applications(examiner_name='Smith, John', limit=50)
+# 2. Extract patentApplicationNumber from PFW results
+# 3. Use Citation MCP: search_citations_minimal(criteria='patentApplicationNumber:12345678')
+# 4. Aggregate citation patterns across examiner's applications
+#
+# CITATION CATEGORY CODES:
+# - X: US Patent citations
+# - Y: Foreign patent citations
+# - NPL: Non-patent literature
+#
+# CITATION INDICATORS (Boolean fields):
+# - examinerCitedReferenceIndicator: true = examiner cited, false = applicant cited
+# - applicantCitedExaminerReferenceIndicator: applicant cited this examiner reference
+#
+# OFFICE ACTION CATEGORIES:
+# - CTNF: Final Office Action (Non-Final Rejection)
+# - CTFR: Final Office Action (Final Rejection)
+# - Allowance: Office Action allowing patent
+# - Notice of Allowance: Patent grant notification
+#
+# PROGRESSIVE DISCLOSURE WORKFLOW:
+# 1. Discovery: search_citations_minimal (identify patterns, cross-MCP links)
+# 2. Selection: User filters strategically important citations
+# 3. Analysis: search_citations_balanced (detailed citation study)
+# 4. Deep Dive: get_citation_details (full context with passages)
+# 5. Integration: Cross-reference with PFW/PTAB MCPs using extracted IDs

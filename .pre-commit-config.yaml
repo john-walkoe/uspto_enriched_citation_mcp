@@ -1,0 +1,53 @@
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: package.lock.json
+        additional_dependencies:
+          - detect-secrets
+
+  - repo: local
+    hooks:
+      - id: uv-lock-check
+        name: Check uv.lock consistency
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: python-tests
+        name: Run tests
+        entry: uv run python -m pytest tests/ -v
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: type-check
+        name: Type checking
+        entry: uv run python -m mypy src/
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: formatting-check
+        name: Check code formatting
+        entry: uv run python -m black --check src/ tests/
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: lint-quality
+        name: Code quality check
+        entry: uv run python -m ruff check src/ tests/
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: prompt-injection-check
+        name: Check for prompt injection patterns
+        entry: uv run python .security/check_prompt_injections.py
+        language: system
+        files: \.(py|txt|md|yml|yaml|json|js|ts|html|xml|csv)$
+        exclude: ^(\.security/.*\.py|SECURITY_SCANNING\.md|\.github/workflows/security-scan\.yml)$

@@ -1,0 +1,225 @@
+name: Secret Scanning and Security Checks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  secret-scan:
+    name: Detect Secrets Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository  
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full git history for comprehensive scanning
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      
+    - name: Install detect-secrets
+      run: |
+        uv add --dev detect-secrets
+        
+    - name: Run secret scanning
+      run: |
+        uv run detect-secrets scan --exclude-files '.venv*' --exclude-files 'uv.lock' --exclude-files '.pytest_cache*' --all-files --baseline .secrets.baseline
+
+    - name: Scan git history for secrets
+      run: |
+        echo "Scanning last 100 commits for accidentally committed secrets..."
+        git log --all --pretty=format: -p -100 | uv run detect-secrets scan --stdin || true
+
+    - name: Check for new secrets
+      run: |
+        # Check if any new secrets were added
+        SCAN_OUTPUT=$(uv run detect-secrets scan --exclude-files '.venv*' --exclude-files 'uv.lock' --exclude-files '.pytest_cache*' --all-files --baseline .secrets.baseline 2>&1 || true)
+        if [ -z "$SCAN_OUTPUT" ]; then
+          echo "✅ No new secrets detected"
+        else
+          echo "❌ New secrets detected! Please review and update baseline."
+          echo "$SCAN_OUTPUT"
+          exit 1
+        fi
+
+  security-audit:
+    name: Code Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      
+    - name: Install dependencies
+      run: |
+        uv sync
+        
+    - name: Run security audit with bandit
+      run: |
+        uv add --dev bandit
+        uv run bandit -r src/ -f json -o bandit-report.json || true
+        
+    - name: Check for security issues
+      run: |
+        if [ -f bandit-report.json ]; then
+          HIGH=$(uv run python -c "import json; data=json.load(open('bandit-report.json')); print(len([r for r in data['results'] if r['issue_severity']=='HIGH']))")
+          MEDIUM=$(uv run python -c "import json; data=json.load(open('bandit-report.json')); print(len([r for r in data['results'] if r['issue_severity']=='MEDIUM']))")
+
+          if [ "$HIGH" -gt 0 ]; then
+            echo "❌ High severity security issues found:"
+            uv run python -c "import json; data=json.load(open('bandit-report.json')); [print(f\"  {r['test_name']}: {r['code'].split()[0]}:{r['line_number']} - {r['issue_text']}\") for r in data['results'] if r['issue_severity']=='HIGH']"
+            exit 1
+          fi
+
+          if [ "$MEDIUM" -gt 0 ]; then
+            echo "⚠️  Medium severity security issues found:"
+            uv run python -c "import json; data=json.load(open('bandit-report.json')); [print(f\"  {r['test_name']}: {r['code'].split()[0]}:{r['line_number']} - {r['issue_text']}\") for r in data['results'] if r['issue_severity']=='MEDIUM']"
+          fi
+
+          echo "✅ No high severity issues found"
+        else
+          echo "✅ No security issues detected"
+        fi
+
+  dependency-check:
+    name: Dependency Security Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      
+    - name: Install dependencies
+      run: |
+        uv sync
+        
+    - name: Run dependency audit
+      run: |
+        # Check for known vulnerable dependencies
+        uv add --dev safety
+        uv run safety check --json --output safety-report.json || true
+        
+    - name: Check dependency vulnerabilities
+      run: |
+        if [ -f safety-report.json ]; then
+          VULNS=$(uv run python -c "import json; data=json.load(open('safety-report.json')); print(len(data.get('vulnerabilities', [])))")
+          if [ "$VULNS" -gt 0 ]; then
+            echo "❌ Found $VULNS vulnerable dependencies:"
+            uv run python -c "import json; data=json.load(open('safety-report.json')); [print(f\"  {v['package_name']}@{v['analyzed_version']}: {v['vulnerability_id']} - {v['advisory']}\") for v in data['vulnerabilities']]" 2>/dev/null || echo "  Run 'safety check' locally for details"
+            exit 1
+          else
+            echo "✅ No vulnerable dependencies found"
+          fi
+        else
+          echo "✅ No dependency vulnerabilities detected"
+        fi
+
+  code-quality-check:
+    name: Code Quality and Security
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      
+    - name: Install dependencies
+      run: |
+        uv sync
+        
+    - name: Run pre-commit hooks
+      run: |
+        uv add --dev pre-commit
+        uv run pre-commit run --all-files || true
+        
+    - name: Check hardcoded secrets in code
+      run: |
+        echo "Checking for potential hardcoded secrets..."
+        
+        # Check for common secret patterns in source code
+        if grep -r -i -E "(api[_-]?key|secret|password|token)\s*=\s*[\"'][a-zA-Z0-9+/]{20,}\"" src/; then
+          echo "❌ Potential hardcoded secrets found in source code"
+          exit 1
+        fi
+        
+        if grep -r -i -E "bear[a-zA-Z0-9]{20,}" src/; then
+          echo "❌ Potential Bearer token found in source code"
+          exit 1  
+        fi
+        
+        echo "✅ No hardcoded secrets detected in source code"
+
+  prompt-injection-check:
+    name: Prompt Injection Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      
+    - name: Install dependencies
+      run: |
+        uv sync
+        
+    - name: Run prompt injection detection
+      run: |
+        echo "Scanning for prompt injection patterns..."
+        
+        # Run our custom prompt injection scanner
+        if uv run python .security/check_prompt_injections.py src/ tests/ *.md *.yml *.yaml *.json; then
+          echo "✅ No prompt injection patterns detected"
+        else
+          echo "❌ Prompt injection patterns found!"
+          echo ""
+          echo "These patterns may indicate attempts to:"
+          echo "- Override system instructions (ignore previous instructions)"
+          echo "- Extract sensitive prompts (show me your instructions)"  
+          echo "- Change AI behavior (you are now a different AI)"
+          echo "- Bypass security controls (admin mode on)"
+          echo "- Social engineering (we became friends)"
+          echo ""
+          echo "Please review the flagged content to ensure it is not malicious."
+          echo "If these are legitimate test cases or documentation examples,"
+          echo "consider moving them to a dedicated test file or adding"
+          echo "appropriate context markers."
+          exit 1
+        fi
