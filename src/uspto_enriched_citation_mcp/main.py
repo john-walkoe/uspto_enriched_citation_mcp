@@ -51,7 +51,38 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-mcp = FastMCP("uspto-enriched-citation-mcp")
+# =============================================================================
+# SERVER INSTRUCTIONS FOR TOOL SEARCH OPTIMIZATION
+# =============================================================================
+# These instructions guide Claude on tool usage patterns when tool search is enabled.
+# With tool search, most tools are deferred (loaded on-demand) to save context tokens.
+# The instructions help Claude discover and use the right tools efficiently.
+
+SERVER_INSTRUCTIONS = """
+Citations MCP provides USPTO citation data through 7 tools.
+
+ALWAYS-AVAILABLE TOOLS (non-deferred, immediate access):
+1. search_citations_minimal - Primary citation discovery (90-95% context reduction)
+2. citations_get_guidance - Workflow guidance and documentation (use section parameter)
+
+PROGRESSIVE WORKFLOW:
+1. Discovery: Use search_citations_minimal for initial citation discovery
+2. Analysis: Search for search_citations_balanced for detailed citation analysis
+3. Deep Dive: Search for get_citation_details for individual citation deep analysis
+4. Statistics: Search for get_citation_statistics for aggregations and insights
+
+TOOL CATEGORIES TO SEARCH:
+- Search tools: "search_citations" (minimal/balanced tiers for progressive disclosure)
+- Details tools: "get_citation_details" (deep analysis of specific citations)
+- Statistics tools: "get_citation_statistics" (aggregations, counts, trends)
+- Utility tools: "get_available_fields", "validate_query"
+
+For workflow guidance, call: citations_get_guidance(section="tools")
+For cross-MCP integration: citations_get_guidance(section="workflows_pfw")
+"""
+
+# Initialize FastMCP with server instructions for tool search optimization
+mcp = FastMCP("uspto-enriched-citation-mcp", instructions=SERVER_INSTRUCTIONS)
 
 # Register all prompt templates with the MCP server
 # This must be done AFTER mcp is created to avoid circular imports
@@ -663,7 +694,7 @@ async def citations_get_guidance(section: str = "overview") -> str:
     📄 "Understand citation categories (X/Y/NPL)" → citation_codes
     🔖 "Citation data coverage (2017+)" → data_coverage
     🤝 "PFW workflow for office action documents" → workflows_pfw
-    🚩 "PTAB citation correlation" → workflows_ptab
+    🚩 "PTAB citation correlation" → workflows_ptab (updated for 2026 PTAB API)
     📊 "FPD petition citation patterns" → workflows_fpd
     🏢 "Complete lifecycle analysis" → workflows_complete
     ⚙️ "Tool guidance and parameters" → tools
@@ -673,9 +704,14 @@ async def citations_get_guidance(section: str = "overview") -> str:
     Available sections:
     - overview: Available sections and tool summary
     - workflows_pfw: Citation + PFW integration workflows
-    - workflows_ptab: Citation + PTAB integration workflows
+    - workflows_ptab: Citation + PTAB integration workflows (updated 2026-01-17)
     - workflows_fpd: Citation + FPD integration workflows
     - workflows_complete: Four-MCP complete lifecycle analysis
+
+    PTAB Integration (updated 2026-01-17):
+    - Trials: search_trials_minimal/balanced/complete
+    - Documents: ptab_get_documents, ptab_get_document_download, ptab_get_document_content
+    - See: citations_get_guidance(section='workflows_ptab') for integration patterns
     - citation_codes: X/Y/A/NPL category decoder and strategic guidance
     - data_coverage: 2017+ eligibility and date handling
     - fields: Field selection strategies and Solr/Lucene syntax

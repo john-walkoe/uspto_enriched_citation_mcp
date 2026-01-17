@@ -173,7 +173,12 @@ class CitationService:
                 },
                 "integration_ready": len(application_numbers) > 0
                 or len(patent_numbers) > 0,
-                "guidance": "Use these identifiers to query Patent File Wrapper (PFW) or PTAB MCPs",
+                "guidance": "Use these identifiers to query PFW (pfw_search_applications_*) or PTAB (search_trials_*) MCPs",
+                "ptab_tools": {
+                    "trials": "search_trials_minimal/balanced/complete",
+                    "documents": "ptab_get_documents",
+                    "example": "search_trials_minimal(patent_number='10701173')"
+                }
             }
         except Exception as e:
             from ..shared.error_utils import get_safe_error_message

@@ -193,15 +193,31 @@ if noa_docs['documentBag']:
 
 ## Phase 3: PTAB Proceedings (if enabled)
 
+**PTAB MCP Tool Updates (as of 2026-01-17):**
+- Use search_trials_minimal() for discovery with fields parameter (99% reduction)
+- Use search_trials_balanced() only for detailed analysis of selected trials
+- Use ptab_get_documents() to list documents (supports filtering by category/party)
+- Use ptab_get_document_content() to extract decision text for LLM analysis
+- Decisions accessed via document API with document_category='DECISION' filter
+
+**Token Optimization Examples:**
+- Discovery: fields=['trialNumber', 'trialMetaData.trialStatusCategory'] (~5KB for 20 trials)
+- Documents: document_category='DECISION', limit=5 (~25KB vs ~500KB unfiltered)
+- Combined: 95-99% reduction vs old API
+
 ```python
 if "{include_ptab}".lower() == 'true' and "{patent_number}":
     print(f"\\nPTAB PROCEEDINGS ANALYSIS")
 
-    # Search for PTAB proceedings involving this patent
-    ptab_proceedings = ptab_search_proceedings_balanced(
+    # Search for PTAB proceedings involving this patent (ultra-minimal mode first)
+    # Use ultra-minimal mode first for discovery, then escalate to balanced if needed
+    ptab_proceedings = search_trials_minimal(
         patent_number="{patent_number}",
+        fields=['trialNumber', 'trialMetaData.trialStatusCategory', 'petitionerData.petitionerName'],
         limit=20
     )
+    # If user needs more details on specific trials, follow up with:
+    # search_trials_balanced(trial_number=selected_trial, limit=1)
 
     print(f"Found {{ptab_proceedings.get('response', {{}}).get('numFound', 0)}} PTAB proceedings")
 
@@ -216,17 +232,21 @@ if "{include_ptab}".lower() == 'true' and "{patent_number}":
         for proc_type, count in proceeding_types.items():
             print(f"  - {{proc_type}}: {{count}}")
 
-        # Get decisions for key proceedings
+        # Get documents for key proceedings (decisions are now retrieved via documents API)
         key_proceeding = ptab_proceedings['response']['docs'][0]
-        proceeding_number = key_proceeding.get('proceedingNumber')
+        trial_number = key_proceeding.get('trialNumber') or key_proceeding.get('proceedingNumber')
 
-        if proceeding_number:
-            decisions = ptab_search_decisions_balanced(
-                proceeding_number=proceeding_number,
-                limit=10
+        if trial_number:
+            # Use ptab_get_documents() to list documents (supports filtering by category/party)
+            # Use filtering to get only decision documents (95% token reduction)
+            decisions = ptab_get_documents(
+                identifier=trial_number,
+                identifier_type='trial',
+                document_category='DECISION',  # Filter for decisions only
+                limit=5
             )
 
-            print(f"\\nFound {{decisions.get('response', {{}}).get('numFound', 0)}} decisions for proceeding {{proceeding_number}}")
+            print(f"\\nFound {{len(decisions.get('documents', []))}} decision documents for trial {{trial_number}}")
 ```
 
 ## Phase 4: Comprehensive Litigation Package

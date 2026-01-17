@@ -90,6 +90,34 @@ This is a **Model Context Protocol (MCP) server** that provides structured acces
    MCP Tools (main.py) → Service Layer (citation_service.py) → API Client (enriched_client.py) → USPTO API
    ```
 
+### Tool Search Optimization
+
+**Status**: Enabled in Claude Code v2.1.7+ (built-in, automatic)
+
+Citations MCP supports tool search for context efficiency:
+- **Token Savings**: 50-60% reduction in tool definition overhead (~3-5K tokens saved)
+- **Auto-detection**: When MCP tools exceed 10% of context, tool search activates automatically
+- **Entry Points**: `search_citations_minimal` and `citations_get_guidance` always available
+- **Progressive Discovery**: Other tools loaded on-demand via MCPSearch
+
+To verify tool search is working:
+```bash
+# Run in Claude Code CLI
+/context
+# Should show: "MCP tools: loaded on-demand (N servers)"
+```
+
+To enable manually (if needed):
+```bash
+# Windows PowerShell
+$env:ENABLE_TOOL_SEARCH = "true"
+claude
+
+# Linux/Mac
+export ENABLE_TOOL_SEARCH=true
+claude
+```
+
 ### Key Components
 
 #### `/src/uspto_enriched_citation_mcp/`

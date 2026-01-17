@@ -1045,6 +1045,17 @@ else:
 
 ### 6.1 PTAB Proceedings Analysis for Patent Quality Assessment
 
+**PTAB MCP Tool Changes (as of 2026-01-17):**
+- OLD: ptab_search_proceedings_minimal/balanced
+- NEW: search_trials_minimal/balanced (for IPR/PGR/CBM)
+- NEW: search_appeals_minimal/balanced (for Ex Parte Appeals)
+- NEW: search_interferences_minimal/balanced (for Derivations)
+
+**Token Optimization:** Use fields parameter for ultra-minimal queries (99% reduction)
+For cross-MCP correlation, request only needed fields:
+  fields=['trialNumber', 'trialMetaData.trialStatusCategory', 'petitionerData.petitionerName']
+This reduces context from ~40KB (preset minimal) to ~5KB (ultra-minimal)
+
 ```python
 print("---")
 print()
@@ -1077,8 +1088,10 @@ if ptab_sample:
 
 for patent_num in ptab_sample:
     try:
-        proceedings = ptab_search_proceedings_minimal(
+        # Use ultra-minimal mode with fields parameter for 99% reduction
+        proceedings = search_trials_minimal(
             patent_number=patent_num,
+            fields=['trialNumber', 'trialMetaData.trialStatusCategory', 'petitionerData.petitionerName'],
             limit=10
         )
 

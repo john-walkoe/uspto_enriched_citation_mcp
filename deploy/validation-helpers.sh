@@ -167,12 +167,125 @@ read_api_key_secure() {
     eval "$var_name='$api_key'"
 }
 
-# Prompt for USPTO API key with validation loop and secure input
+# ============================================
+# Existing Key Detection Functions
+# ============================================
+
+# Check if USPTO API key exists in secure storage
+check_existing_uspto_key() {
+    if [[ -f "$HOME/.uspto_api_key" ]]; then
+        return 0  # Exists
+    else
+        return 1  # Does not exist
+    fi
+}
+
+# Check if Mistral API key exists in secure storage
+check_existing_mistral_key() {
+    if [[ -f "$HOME/.mistral_api_key" ]]; then
+        return 0  # Exists
+    else
+        return 1  # Does not exist
+    fi
+}
+
+# Load existing USPTO key from secure storage (uses Python)
+load_existing_uspto_key() {
+    python3 << 'EOF'
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / 'src'))
+
+try:
+    from uspto_enriched_citation_mcp.shared.shared_secure_storage import get_uspto_api_key
+    key = get_uspto_api_key()
+    if key:
+        print(key)
+        sys.exit(0)
+    else:
+        sys.exit(1)
+except Exception as e:
+    sys.exit(1)
+EOF
+}
+
+# Load existing Mistral key from secure storage (uses Python)
+load_existing_mistral_key() {
+    python3 << 'EOF'
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd() / 'src'))
+
+try:
+    from uspto_enriched_citation_mcp.shared.shared_secure_storage import get_mistral_api_key
+    key = get_mistral_api_key()
+    if key:
+        print(key)
+        sys.exit(0)
+    else:
+        sys.exit(1)
+except Exception as e:
+    sys.exit(1)
+EOF
+}
+
+# Prompt user if they want to use existing key
+prompt_use_existing_key() {
+    local key_type="$1"  # "USPTO" or "Mistral"
+    local masked_key="$2"
+
+    echo ""
+    echo "SUCCESS: Detected existing $key_type API key from another USPTO MCP installation"
+    echo "INFO: Key (masked): $masked_key"
+    echo ""
+    read -p "Would you like to use this existing key? (Y/n): " USE_EXISTING
+    USE_EXISTING=${USE_EXISTING:-Y}
+
+    if [[ "$USE_EXISTING" =~ ^[Yy]$ ]]; then
+        return 0  # Use existing
+    else
+        return 1  # Don't use existing
+    fi
+}
+
+# Prompt for USPTO API key with validation loop and secure input (with existing key detection)
 prompt_and_validate_uspto_key() {
     local key=""
     local max_attempts=3
     local attempt=0
 
+    # STEP 1: Check if key already exists in secure storage
+    if check_existing_uspto_key; then
+        echo "INFO: Checking existing USPTO API key from another USPTO MCP installation..."
+
+        # Try to load the existing key
+        local existing_key=$(load_existing_uspto_key)
+        if [[ $? -eq 0 && -n "$existing_key" ]]; then
+            # Mask the key for display
+            local masked_key=$(mask_api_key "$existing_key")
+
+            # Ask user if they want to use it
+            if prompt_use_existing_key "USPTO" "$masked_key"; then
+                echo "SUCCESS: Using existing USPTO API key from secure storage"
+                echo "$existing_key"
+                return 0
+            else
+                echo "INFO: You chose to enter a new USPTO API key"
+                echo "WARN: This will OVERWRITE the existing key for ALL USPTO MCPs"
+                read -p "Are you sure you want to continue? (y/N): " CONFIRM_OVERWRITE
+                if [[ ! "$CONFIRM_OVERWRITE" =~ ^[Yy]$ ]]; then
+                    echo "INFO: Keeping existing key"
+                    echo "$existing_key"
+                    return 0
+                fi
+            fi
+        else
+            echo "WARN: Existing key file found but could not load (may be corrupted)"
+            echo "INFO: You will need to enter a new key"
+        fi
+    fi
+
+    # STEP 2: Prompt for new key (either no existing key, or user wants to override)
     while [[ $attempt -lt $max_attempts ]]; do
         ((attempt++))
 
@@ -205,6 +318,79 @@ prompt_and_validate_uspto_key() {
     return 1
 }
 
+# Prompt for Mistral API key with validation loop (optional, with existing key detection)
+prompt_and_validate_mistral_key() {
+    local key=""
+    local max_attempts=3
+    local attempt=0
+
+    # STEP 1: Check if key already exists in secure storage
+    if check_existing_mistral_key; then
+        echo "INFO: Checking existing Mistral API key from another USPTO MCP installation..."
+
+        # Try to load the existing key
+        local existing_key=$(load_existing_mistral_key)
+        if [[ $? -eq 0 && -n "$existing_key" ]]; then
+            # Mask the key for display
+            local masked_key=$(mask_api_key "$existing_key")
+
+            # Ask user if they want to use it
+            if prompt_use_existing_key "Mistral" "$masked_key"; then
+                echo "SUCCESS: Using existing Mistral API key from secure storage"
+                echo "$existing_key"
+                return 0
+            else
+                echo "INFO: You chose to enter a new Mistral API key"
+                echo "WARN: This will OVERWRITE the existing key for ALL USPTO MCPs"
+                read -p "Are you sure you want to continue? (y/N): " CONFIRM_OVERWRITE
+                if [[ ! "$CONFIRM_OVERWRITE" =~ ^[Yy]$ ]]; then
+                    echo "INFO: Keeping existing key"
+                    echo "$existing_key"
+                    return 0
+                fi
+            fi
+        else
+            echo "WARN: Existing key file found but could not load (may be corrupted)"
+            echo "INFO: You will need to enter a new key"
+        fi
+    fi
+
+    # STEP 2: Prompt for new key (either no existing key, or user wants to override)
+    echo "INFO: Mistral API key is OPTIONAL (for OCR on scanned documents)"
+    echo "INFO: Press Enter to skip, or enter your 32-character Mistral API key"
+    echo
+
+    while [[ $attempt -lt $max_attempts ]]; do
+        ((attempt++))
+
+        read_api_key_secure "Enter your Mistral API key (or press Enter to skip)" key
+
+        # Empty is OK (optional)
+        if [[ -z "$key" ]]; then
+            echo "INFO: Skipping Mistral API key"
+            echo ""  # Return empty string
+            return 0
+        fi
+
+        # Validate the key
+        VALIDATION_RESULT=$(validate_mistral_api_key "$key" 2>&1)
+        if [ $? -eq 0 ]; then
+            # Success - return key
+            echo "$key"
+            return 0
+        else
+            echo "$VALIDATION_RESULT"
+            if [[ $attempt -lt $max_attempts ]]; then
+                echo "WARN: Attempt $attempt of $max_attempts - please try again"
+                echo "INFO: Mistral API key format: 32 alphanumeric characters (a-z, A-Z, 0-9)"
+            fi
+        fi
+    done
+
+    echo "ERROR: Failed to provide valid Mistral API key after $max_attempts attempts"
+    return 1
+}
+
 # Export functions (for bash scripts that source this file)
 export -f validate_uspto_api_key
 export -f validate_mistral_api_key
@@ -212,4 +398,10 @@ export -f set_secure_file_permissions
 export -f set_secure_directory_permissions
 export -f mask_api_key
 export -f read_api_key_secure
+export -f check_existing_uspto_key
+export -f check_existing_mistral_key
+export -f load_existing_uspto_key
+export -f load_existing_mistral_key
+export -f prompt_use_existing_key
 export -f prompt_and_validate_uspto_key
+export -f prompt_and_validate_mistral_key

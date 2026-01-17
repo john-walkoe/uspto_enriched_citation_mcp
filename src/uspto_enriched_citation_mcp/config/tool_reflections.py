@@ -248,9 +248,21 @@ def _get_workflows_ptab_section() -> str:
 
 **Workflow:**
 ```python
-# STEP 1: PTAB - Get IPR proceedings for patent
-ptab_proceedings = ptab_search_proceedings_balanced(
+# STEP 1: PTAB - Get IPR proceedings for patent (ultra-minimal mode for 99% reduction)
+# Note: PTAB API now has separate search tools for trials, appeals, and interferences
+# - Trials: search_trials_minimal/balanced/complete (IPR/PGR/CBM proceedings)
+# - Appeals: search_appeals_minimal/balanced/complete (Ex Parte/Interference Appeals)
+# - Interferences: search_interferences_minimal/balanced/complete (Derivations/Interferences)
+# - Documents: ptab_get_documents(identifier, identifier_type) for all proceeding types
+#
+# Token Optimization: All search tools support `fields` parameter for ultra-minimal queries:
+# - Ultra-minimal (2-3 fields): 99% reduction - Use for identifier correlation
+# - Preset minimal (10-15 fields): 68% reduction - Use for discovery/presentation
+# - Preset balanced (30-50 fields): 13.5% reduction - Use for detailed analysis
+
+ptab_proceedings = search_trials_minimal(
     patent_number='9049188',
+    fields=['trialNumber', 'trialMetaData.trialStatusCategory', 'patentOwnerData.patentNumber'],
     limit=20
 )
 
@@ -427,9 +439,10 @@ petitions = fpd_search_petitions_minimal(
     limit=10
 )
 
-# PHASE 4: PTAB Challenges
-ptab_proceedings = ptab_search_proceedings_balanced(
+# PHASE 4: PTAB Challenges (ultra-minimal mode for 99% reduction)
+ptab_proceedings = search_trials_minimal(
     patent_number='9049188',
+    fields=['trialNumber', 'patentOwnerData.patentNumber'],
     limit=10
 )
 
