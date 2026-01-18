@@ -112,7 +112,7 @@ except Exception as e:
             $usptoKey = ""
             $mistralKey = ""
             $error = ""
-            
+
             foreach ($line in $lines) {
                 if ($line.StartsWith("USPTO:")) {
                     $usptoKey = $line.Substring(6)
@@ -122,12 +122,12 @@ except Exception as e:
                     $error = $line.Substring(6)
                 }
             }
-            
+
             if ($error) {
                 Write-Host "[ERROR] Failed to check API keys: $error" -ForegroundColor Red
                 return $null
             }
-            
+
             return @{
                 "USPTO" = $usptoKey
                 "Mistral" = $mistralKey
@@ -611,22 +611,22 @@ except Exception as e:
 # Function to show MCP-specific key requirements
 function Show-KeyRequirements {
     $mcpType = Get-McpType
-    
+
     Write-Host ""
     Write-Host "API Key Requirements for $mcpType" -ForegroundColor Cyan
     Write-Host ("=" * (25 + $mcpType.Length)) -ForegroundColor Cyan
-    
+
     switch -Wildcard ($mcpType) {
         "*FPD*" {
             Write-Host "USPTO API Key:   [REQUIRED] For accessing Final Petition Decisions API" -ForegroundColor Green
             Write-Host "Mistral API Key: [OPTIONAL] For OCR on scanned documents" -ForegroundColor Yellow
         }
         "*PFW*" {
-            Write-Host "USPTO API Key:   [REQUIRED] For accessing Patent File Wrapper API" -ForegroundColor Green  
+            Write-Host "USPTO API Key:   [REQUIRED] For accessing Patent File Wrapper API" -ForegroundColor Green
             Write-Host "Mistral API Key: [OPTIONAL] For OCR on scanned documents" -ForegroundColor Yellow
         }
         "*PTAB*" {
-            Write-Host "USPTO API Key:   [OPTIONAL] Not used by PTAB MCP" -ForegroundColor Yellow
+            Write-Host "USPTO API Key:   [REQUIRED] For accessing Open Data Portal PTAB API" -ForegroundColor Green
             Write-Host "Mistral API Key: [OPTIONAL] For OCR on scanned documents" -ForegroundColor Yellow
         }
         "*Citations*" {
@@ -645,9 +645,9 @@ function Main {
     if (-not (Test-Requirements)) {
         exit 1
     }
-    
+
     $mcpType = Get-McpType
-    
+
     while ($true) {
         # Clear screen and show header
         Clear-Host
@@ -655,10 +655,10 @@ function Main {
         Write-Host "============================" -ForegroundColor Cyan
         Write-Host "MCP Type: $mcpType" -ForegroundColor Yellow
         Write-Host ""
-        
+
         # Get current API key status
         $keys = Get-ApiKeyStatus
-        
+
         if ($keys) {
             Write-Host "Current API Keys:" -ForegroundColor White
             $usptoDisplay = if ($keys.USPTO) { Hide-ApiKey -ApiKey $keys.USPTO } else { "[Not set]" }
@@ -668,7 +668,7 @@ function Main {
         } else {
             Write-Host "Unable to check current API key status" -ForegroundColor Red
         }
-        
+
         Write-Host ""
         Write-Host "Actions:" -ForegroundColor White
         Write-Host "  [1] Update USPTO API key"
@@ -681,7 +681,7 @@ function Main {
         Write-Host ""
 
         $choice = Read-Host "Enter choice (1-7)"
-        
+
         switch ($choice) {
             "1" {
                 Write-Host ""
@@ -722,7 +722,7 @@ function Main {
                 Write-Host ""
                 Read-Host "Press Enter to continue"
             }
-            
+
             "3" {
                 Write-Host ""
                 Write-Host "Remove API Key(s)" -ForegroundColor Cyan
@@ -732,9 +732,9 @@ function Main {
                 Write-Host "  [3] Remove ALL API keys"
                 Write-Host "  [4] Cancel"
                 Write-Host ""
-                
+
                 $removeChoice = Read-Host "Enter choice (1-4)"
-                
+
                 switch ($removeChoice) {
                     "1" { Remove-ApiKeys -USPTO }
                     "2" { Remove-ApiKeys -Mistral }
@@ -749,11 +749,11 @@ function Main {
                     "4" { Write-Host "[INFO] Operation cancelled" -ForegroundColor Yellow }
                     default { Write-Host "[ERROR] Invalid choice" -ForegroundColor Red }
                 }
-                
+
                 Write-Host ""
                 Read-Host "Press Enter to continue"
             }
-            
+
             "4" {
                 Test-ApiKeys
                 Write-Host ""
