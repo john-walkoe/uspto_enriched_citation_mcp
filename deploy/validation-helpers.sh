@@ -268,7 +268,7 @@ prompt_and_validate_uspto_key() {
 
     # STEP 1: Check if key already exists in secure storage
     if check_existing_uspto_key; then
-        echo "INFO: Checking existing USPTO API key from another USPTO MCP installation..."
+        echo "INFO: Checking existing USPTO API key from another USPTO MCP installation..." >&2
 
         # Try to load the existing key
         local existing_key=$(load_existing_uspto_key)
@@ -278,22 +278,22 @@ prompt_and_validate_uspto_key() {
 
             # Ask user if they want to use it
             if prompt_use_existing_key "USPTO" "$masked_key"; then
-                echo "SUCCESS: Using existing USPTO API key from secure storage"
+                echo "SUCCESS: Using existing USPTO API key from secure storage" >&2
                 echo "$existing_key"
                 return 0
             else
-                echo "INFO: You chose to enter a new USPTO API key"
-                echo "WARN: This will OVERWRITE the existing key for ALL USPTO MCPs"
+                echo "INFO: You chose to enter a new USPTO API key" >&2
+                echo "WARN: This will OVERWRITE the existing key for ALL USPTO MCPs" >&2
                 read -p "Are you sure you want to continue? (y/N): " CONFIRM_OVERWRITE
                 if [[ ! "$CONFIRM_OVERWRITE" =~ ^[Yy]$ ]]; then
-                    echo "INFO: Keeping existing key"
+                    echo "INFO: Keeping existing key" >&2
                     echo "$existing_key"
                     return 0
                 fi
             fi
         else
-            echo "WARN: Existing key file found but could not load (may be corrupted)"
-            echo "INFO: You will need to enter a new key"
+            echo "WARN: Existing key file found but could not load (may be corrupted)" >&2
+            echo "INFO: You will need to enter a new key" >&2
         fi
     fi
 
@@ -304,9 +304,9 @@ prompt_and_validate_uspto_key() {
         read_api_key_secure "Enter your USPTO API key" key
 
         if [[ -z "$key" ]]; then
-            echo "ERROR: USPTO API key cannot be empty"
+            echo "ERROR: USPTO API key cannot be empty" >&2
             if [[ $attempt -lt $max_attempts ]]; then
-                echo "INFO: Attempt $attempt of $max_attempts"
+                echo "INFO: Attempt $attempt of $max_attempts" >&2
             fi
             continue
         fi
@@ -318,15 +318,15 @@ prompt_and_validate_uspto_key() {
             echo "$key"
             return 0
         else
-            echo "$VALIDATION_RESULT"
+            echo "$VALIDATION_RESULT" >&2
             if [[ $attempt -lt $max_attempts ]]; then
-                echo "WARN: Attempt $attempt of $max_attempts - please try again"
-                echo "INFO: USPTO API key format: 30 lowercase letters (a-z)"
+                echo "WARN: Attempt $attempt of $max_attempts - please try again" >&2
+                echo "INFO: USPTO API key format: 30 lowercase letters (a-z)" >&2
             fi
         fi
     done
 
-    echo "ERROR: Failed to provide valid USPTO API key after $max_attempts attempts"
+    echo "ERROR: Failed to provide valid USPTO API key after $max_attempts attempts" >&2
     return 1
 }
 
@@ -338,7 +338,7 @@ prompt_and_validate_mistral_key() {
 
     # STEP 1: Check if key already exists in secure storage
     if check_existing_mistral_key; then
-        echo "INFO: Checking existing Mistral API key from another USPTO MCP installation..."
+        echo "INFO: Checking existing Mistral API key from another USPTO MCP installation..." >&2
 
         # Try to load the existing key
         local existing_key=$(load_existing_mistral_key)
@@ -348,22 +348,22 @@ prompt_and_validate_mistral_key() {
 
             # Ask user if they want to use it
             if prompt_use_existing_key "Mistral" "$masked_key"; then
-                echo "SUCCESS: Using existing Mistral API key from secure storage"
+                echo "SUCCESS: Using existing Mistral API key from secure storage" >&2
                 echo "$existing_key"
                 return 0
             else
-                echo "INFO: You chose to enter a new Mistral API key"
-                echo "WARN: This will OVERWRITE the existing key for ALL USPTO MCPs"
+                echo "INFO: You chose to enter a new Mistral API key" >&2
+                echo "WARN: This will OVERWRITE the existing key for ALL USPTO MCPs" >&2
                 read -p "Are you sure you want to continue? (y/N): " CONFIRM_OVERWRITE
                 if [[ ! "$CONFIRM_OVERWRITE" =~ ^[Yy]$ ]]; then
-                    echo "INFO: Keeping existing key"
+                    echo "INFO: Keeping existing key" >&2
                     echo "$existing_key"
                     return 0
                 fi
             fi
         else
-            echo "WARN: Existing key file found but could not load (may be corrupted)"
-            echo "INFO: You will need to enter a new key"
+            echo "WARN: Existing key file found but could not load (may be corrupted)" >&2
+            echo "INFO: You will need to enter a new key" >&2
         fi
     fi
 
@@ -379,7 +379,7 @@ prompt_and_validate_mistral_key() {
 
         # Empty is OK (optional)
         if [[ -z "$key" ]]; then
-            echo "INFO: Skipping Mistral API key"
+            echo "INFO: Skipping Mistral API key" >&2
             echo ""  # Return empty string
             return 0
         fi
@@ -391,15 +391,15 @@ prompt_and_validate_mistral_key() {
             echo "$key"
             return 0
         else
-            echo "$VALIDATION_RESULT"
+            echo "$VALIDATION_RESULT" >&2
             if [[ $attempt -lt $max_attempts ]]; then
-                echo "WARN: Attempt $attempt of $max_attempts - please try again"
-                echo "INFO: Mistral API key format: 32 alphanumeric characters (a-z, A-Z, 0-9)"
+                echo "WARN: Attempt $attempt of $max_attempts - please try again" >&2
+                echo "INFO: Mistral API key format: 32 alphanumeric characters (a-z, A-Z, 0-9)" >&2
             fi
         fi
     done
 
-    echo "ERROR: Failed to provide valid Mistral API key after $max_attempts attempts"
+    echo "ERROR: Failed to provide valid Mistral API key after $max_attempts attempts" >&2
     return 1
 }
 
