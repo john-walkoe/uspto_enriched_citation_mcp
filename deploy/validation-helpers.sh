@@ -368,9 +368,9 @@ prompt_and_validate_mistral_key() {
     fi
 
     # STEP 2: Prompt for new key (either no existing key, or user wants to override)
-    echo "INFO: Mistral API key is OPTIONAL (for OCR on scanned documents)"
-    echo "INFO: Press Enter to skip, or enter your 32-character Mistral API key"
-    echo
+    echo "INFO: Mistral API key is OPTIONAL (for OCR on scanned documents)" >&2
+    echo "INFO: Press Enter to skip, or enter your 32-character Mistral API key" >&2
+    echo >&2
 
     while [[ $attempt -lt $max_attempts ]]; do
         ((attempt++))
