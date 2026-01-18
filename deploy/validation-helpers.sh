@@ -246,10 +246,10 @@ prompt_use_existing_key() {
     local key_type="$1"  # "USPTO" or "Mistral"
     local masked_key="$2"
 
-    echo ""
-    echo "SUCCESS: Detected existing $key_type API key from another USPTO MCP installation"
-    echo "INFO: Key (masked): $masked_key"
-    echo ""
+    echo "" >&2
+    echo "SUCCESS: Detected existing $key_type API key from another USPTO MCP installation" >&2
+    echo "INFO: Key (masked): $masked_key" >&2
+    echo "" >&2
     read -p "Would you like to use this existing key? (Y/n): " USE_EXISTING
     USE_EXISTING=${USE_EXISTING:-Y}
 
