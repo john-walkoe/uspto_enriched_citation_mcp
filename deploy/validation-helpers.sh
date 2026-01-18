@@ -189,44 +189,56 @@ check_existing_mistral_key() {
     fi
 }
 
-# Load existing USPTO key from secure storage (uses Python)
+# Load existing USPTO key from secure storage
+# SIMPLIFIED: Read directly from file (works across all USPTO MCPs)
 load_existing_uspto_key() {
-    python3 << 'EOF'
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path.cwd() / 'src'))
+    local key_file="$HOME/.uspto_api_key"
 
-try:
-    from uspto_enriched_citation_mcp.shared.shared_secure_storage import get_uspto_api_key
-    key = get_uspto_api_key()
-    if key:
-        print(key)
-        sys.exit(0)
-    else:
-        sys.exit(1)
-except Exception as e:
-    sys.exit(1)
-EOF
+    if [ ! -f "$key_file" ]; then
+        return 1
+    fi
+
+    # Read the key file (plain text on Linux/macOS)
+    local key=$(cat "$key_file" 2>/dev/null | tr -d '\n' | tr -d '\r')
+
+    if [ -z "$key" ]; then
+        return 1
+    fi
+
+    # Validate the key format (30 lowercase letters)
+    if echo "$key" | grep -qE '^[a-z]{30}$'; then
+        echo "$key"
+        return 0
+    else
+        # Key file exists but format is invalid (may be corrupted)
+        return 1
+    fi
 }
 
-# Load existing Mistral key from secure storage (uses Python)
+# Load existing Mistral key from secure storage
+# SIMPLIFIED: Read directly from file (works across all USPTO MCPs)
 load_existing_mistral_key() {
-    python3 << 'EOF'
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path.cwd() / 'src'))
+    local key_file="$HOME/.mistral_api_key"
 
-try:
-    from uspto_enriched_citation_mcp.shared.shared_secure_storage import get_mistral_api_key
-    key = get_mistral_api_key()
-    if key:
-        print(key)
-        sys.exit(0)
-    else:
-        sys.exit(1)
-except Exception as e:
-    sys.exit(1)
-EOF
+    if [ ! -f "$key_file" ]; then
+        return 1
+    fi
+
+    # Read the key file (plain text on Linux/macOS)
+    local key=$(cat "$key_file" 2>/dev/null | tr -d '\n' | tr -d '\r')
+
+    if [ -z "$key" ]; then
+        return 1
+    fi
+
+    # Validate the key format (32 alphanumeric characters)
+    if echo "$key" | grep -qE '^[a-zA-Z0-9]{32}$'; then
+        echo "$key"
+        return 0
+    else
+        # Key file exists but format is invalid (may be corrupted)
+        return 1
+    fi
 }
 
 # Prompt user if they want to use existing key
