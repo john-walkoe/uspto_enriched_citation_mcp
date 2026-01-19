@@ -550,28 +550,67 @@ See [tests/README.md](tests/README.md) for comprehensive testing guide.
 uspto_enriched_citation_mcp/
 ├── field_configs.yaml             # Root-level field customization
 ├── .gitignore                     # Git ignore patterns
+├── .pre-commit-config.yaml        # Pre-commit hooks configuration
+├── .secrets.baseline              # Secret scanning baseline
+├── .security/                     # Security scanning tools
+│   ├── check_prompt_injections.py # Prompt injection scanner with baseline system
+│   └── prompt_injection_detector.py # Detector patterns
 ├── src/
 │   └── uspto_enriched_citation_mcp/
 │       ├── __init__.py            # Package initialization
 │       ├── __main__.py           # Entry point for -m execution
 │       ├── main.py                 # MCP server with 7 tools
-│       ├── config/
+│       ├── shared_secure_storage.py # Cross-MCP API key storage (Windows DPAPI)
+│       ├── config/                # Configuration modules
 │       │   ├── settings.py        # Environment configuration
+│       │   ├── field_manager.py   # YAML-based field configuration
+│       │   ├── secure_storage.py  # Windows DPAPI encryption
+│       │   ├── feature_flags.py   # Runtime feature toggles
 │       │   └── tool_reflections.py # LLM guidance and metadata
-│       └── api/
-│           ├── __init__.py         # API package init
-│           └── client.py          # USPTO API client
-├── deploy/
-│   ├── linux_setup.sh            # Linux deployment script
-│   └── windows_setup.ps1         # PowerShell deployment script
+│       ├── api/                   # API client modules
+│       │   ├── enriched_client.py # Modern httpx-based client with circuit breaker
+│       │   ├── client.py          # Deprecated aiohttp client (v2.0)
+│       │   └── field_constants.py # Field definitions
+│       ├── services/              # Business logic layer
+│       │   └── citation_service.py # Citation operations
+│       ├── prompts/               # Multi-step analysis workflows
+│       │   ├── patent_citation_analysis.py
+│       │   ├── enhanced_examiner_behavior_intelligence_PFW_PTAB_FPD.py
+│       │   ├── litigation_citation_research_PFW_PTAB.py
+│       │   ├── technology_citation_landscape_PFW.py
+│       │   └── art_unit_citation_assessment.py
+│       ├── shared/                # Shared utilities
+│       │   ├── circuit_breaker.py # Circuit breaker pattern
+│       │   ├── structured_logging.py # Enhanced logging with request tracking
+│       │   ├── error_utils.py     # Standardized error handling
+│       │   ├── exceptions.py      # Custom exception classes
+│       │   └── enums.py           # Enum definitions
+│       └── util/                  # Utility modules
+│           ├── rate_limiter.py    # Token bucket rate limiting
+│           ├── retry.py           # Exponential backoff retry logic
+│           ├── cache.py           # LRU caching for API responses
+│           ├── security_logger.py # Security event logging
+│           ├── query_validator.py # Lucene query validation
+│           └── request_context.py # Request context management
+├── deploy/                        # Deployment scripts
+│   ├── linux_setup.sh            # Linux deployment script (uv + API key setup)
+│   └── windows_setup.ps1         # PowerShell deployment script (DPAPI + Claude Desktop)
 ├── tests/                         # Test files
-│   ├── __init__.py             # Test package init
-│   └── test_basic.py           # Core functionality tests
+│   ├── README.md                 # Test suite documentation
+│   ├── test_basic.py             # Core functionality tests
+│   ├── test_integration.py       # Integration tests (API key required)
+│   ├── test_security.py          # Security tests (injection detection)
+│   ├── test_resilience.py        # Circuit breaker and rate limiting tests
+│   ├── test_field_configuration.py # Field management tests
+│   └── test_statistics.py        # Citation statistics tests
 ├── pyproject.toml                 # Package configuration
 ├── uv.lock                        # uv lockfile (if using uv)
 ├── README.md                      # This file
 ├── INSTALL.md                     # Installation guide
 ├── USAGE_EXAMPLES.md              # Function examples and workflows
+├── PROMPTS.md                     # Detailed prompt template documentation
+├── API_KEY_GUIDE.md              # API key setup guide with screenshots
+├── ENVIRONMENTS.md               # Environment configuration
 ├── SECURITY_GUIDELINES.md         # Security best practices
 └── SECURITY_SCANNING.md          # Secret detection and prevention guide
 ```
@@ -634,6 +673,9 @@ uspto_enriched_citation_mcp/
   - No plain-text API keys in configuration files
   - Automatic fallback to environment variables on non-Windows systems
   - Zero external dependencies (uses Python ctypes)
+- **Prompt Injection Detection with Baseline System** - Tracks known findings and only flags NEW patterns
+  - Baseline file: `.prompt_injections.baseline` with SHA256 fingerprinting
+  - Exit codes: 0 (no NEW findings), 1 (NEW findings detected), 2 (error)
 - **Claude Desktop environment variables** - No .env files, credentials passed securely through Claude Desktop
 - **Follows USPTO MCP patterns** - Consistent with uspto_fpd, uspto_pfw, and uspto_ptab MCPs
 - **Comprehensive .gitignore** - Prevents accidental credential commits

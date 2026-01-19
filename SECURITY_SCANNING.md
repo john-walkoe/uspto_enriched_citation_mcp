@@ -25,9 +25,10 @@ The project uses **detect-secrets** and comprehensive security scanning to preve
 - Excludes virtual environment and dependency files
 - Location: `.secrets.baseline`
 
-### 4. **Prompt Injection Detection** (NEW)
+### 4. **Prompt Injection Detection with Baseline System** (NEW)
 - Scans for malicious prompt injection patterns
 - Detects attempts to override instructions, extract prompts, or manipulate AI behavior
+- **Baseline system**: Tracks known findings and only flags NEW patterns (eliminates false positives)
 - Location: `.security/prompt_injection_detector.py` and `.security/check_prompt_injections.py`
 
 ### 5. **Circuit Breaker Protection**
@@ -68,6 +69,22 @@ uv run detect-secrets audit .secrets.baseline
 
 ### Manual Prompt Injection Scanning
 
+**With Baseline System (Recommended for CI/CD):**
+```bash
+# First time: Create baseline (will NOT fail if findings exist)
+uv run python .security/check_prompt_injections.py --update-baseline src/ tests/ *.md *.yml *.yaml *.json *.py
+
+# Normal CI/CD: Check against baseline (only NEW findings fail)
+uv run python .security/check_prompt_injections.py --baseline src/ tests/ *.yml *.yaml *.json *.py
+
+# Update baseline to add new legitimate findings
+uv run python .security/check_prompt_injections.py --update-baseline src/ tests/ *.md *.yml *.yaml *.json *.py
+
+# Force new baseline (overwrite existing)
+uv run python .security/check_prompt_injections.py --force-baseline src/ tests/ *.md *.yml *.yaml *.json *.py
+```
+
+**Without Baseline (For initial analysis):**
 ```bash
 # Scan entire codebase for prompt injection patterns
 uv run python .security/check_prompt_injections.py src/ tests/ *.md *.yml
@@ -80,10 +97,12 @@ uv run python .security/check_prompt_injections.py src/ --verbose
 
 # Quiet mode (only show summary)
 uv run python .security/check_prompt_injections.py src/ --quiet
-
-# Run via pre-commit hook
-uv run pre-commit run prompt-injection-check --all-files
 ```
+
+**Baseline Exit Codes:**
+- `0` - No NEW findings (all findings in baseline)
+- `1` - NEW findings detected (not in baseline)
+- `2` - Error occurred
 
 ### Manual Git History Scanning
 
@@ -160,12 +179,15 @@ async def api_call():
     return await client.get("/endpoint")
 ```
 
-### 3. Prompt Injection Detection
+### 3. Prompt Injection Detection with Baseline System
 **Features**:
 - Detects 12 categories of prompt injection attacks
+- **Baseline system**: Tracks known findings, only flags NEW patterns (eliminates false positives)
+- SHA256 fingerprinting for unique findings
 - Scans text files for malicious patterns
 - Integrates with pre-commit hooks and CI/CD
 - Configurable pattern matching
+- **Exit codes**: 0 (no NEW findings), 1 (NEW findings detected), 2 (error)
 
 **Attack Categories Detected**:
 - **Instruction Override**: "ignore previous instructions", "disregard the above"
@@ -192,24 +214,34 @@ If prompt injection patterns are detected:
 
 1. **Review the content** to determine if it's malicious or legitimate
 2. **Legitimate cases** might include:
+   - Variable names with "prompt" or "system"
    - Documentation examples of what NOT to do
-   - Test cases for security validation  
+   - Test cases for security validation
    - Academic research or training materials
    - Security guidelines (like this document)
+   - Legitimate Unicode characters (emojis, variation selectors)
 
-3. **For legitimate content**:
-   - Add context markers: `# Example of malicious input - DO NOT USE`
-   - Move to dedicated test files outside main codebase
-   - Use the `--exclude` option in `.pre-commit-config.yaml`:
-   ```yaml
-   exclude: tests/security_examples\.py$|docs/security_patterns\.md$
-   ```
+3. **For legitimate content (Baseline System)**:
+   - Use the baseline system to track legitimate findings:
+     ```bash
+     # First time: Create baseline
+     uv run python .security/check_prompt_injections.py --update-baseline src/ tests/ *.md *.yml *.yaml *.json *.py
+
+     # After legitimate changes: Update baseline
+     uv run python .security/check_prompt_injections.py --update-baseline src/ tests/ *.md *.yml *.yaml *.json *.py
+     ```
+   - Commit the updated baseline:
+     ```bash
+     git add .prompt_injections.baseline
+     git commit -m "Update prompt injection baseline - legitimate finding"
+     ```
 
 4. **For malicious content**:
    - **Remove immediately** from codebase
    - Review git history for similar patterns
    - Check if content was copied from external sources
    - Audit who had access to modify those files
+   - **Do NOT add to baseline** - remove malicious code instead
 
 ### False Positives (Test/Example Secrets)
 

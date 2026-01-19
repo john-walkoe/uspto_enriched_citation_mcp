@@ -218,7 +218,7 @@ During the Windows setup, you'll be presented with two configuration methods:
 - ⚡ **Direct Python execution with built-in secure storage**
 - ✅ **No PowerShell execution policy requirements**
 
-**Example Configuration Generated:**
+**Example Quick Start Windows DPAPI Configuration Generated:**
 
 ```json
 {
@@ -228,7 +228,7 @@ During the Windows setup, you'll be presented with two configuration methods:
       "args": ["-m", "uspto_enriched_citation_mcp.main"],
       "cwd": "C:/Users/YOUR_USERNAME/uspto_enriched_citation_mcp",
       "env": {
-         "INTERNAL_AUTH_SECRET": "your_selfgenerated_uspto_Cross_MCP_Shared_Secret"
+        "INTERNAL_AUTH_SECRET": "[RANDOM GENERATED SHARED SECRET ACROSS ALL AUTHOR'S USPTO MCPS]"
       }
     }
   }
@@ -242,7 +242,7 @@ During the Windows setup, you'll be presented with two configuration methods:
 - ⚡ **Direct Python execution**
 - ✅ **Simpler setup**
 
-**Example Configuration Generated:**
+**Example Quick Start Windows Traditional Configuration Generated:**
 
 ```json
 {
@@ -262,7 +262,7 @@ During the Windows setup, you'll be presented with two configuration methods:
 
 If you want to manage your Secure Storage API keys manually:
 
-```
+```powershell
 # Navigate to your user profile
 cd $env:USERPROFILE
 
@@ -437,7 +437,13 @@ USER@debian:~/uspto_enriched_citation_mcp#
 
 *The warnings are just uv being verbose about filesystem optimization. This is similar to seeing compiler warnings that don't affect the final program - informational but not problematic.
 
-** When typing in the API keys no output is displayed as a security feature.
+** When typing in the API key, no output is displayed as a security feature.
+
+**Note on API Key Storage:**
+- API key is stored in `~/.uspto_api_key` with file permissions 600 (owner read/write only)
+- This secure storage is shared across all USPTO MCPs (PFW/PTAB/FPD/Citations)
+- The Citations MCP does not require a Mistral API key (metadata-only service)
+- API keys are NOT stored in the Claude Code config file
 
 **Test Claude Code's MCP**
 
@@ -448,7 +454,7 @@ Checking MCP server health...
 uspto_enriched_citation: uv --directory /root/mcp/uspto_enriched_citation_mcp run uspto-enriched-citation-mcp - ✓ Connected
 ```
 
-**Example Configuration Generated:**
+**Example Quick Start Linux Configuration Generated:**
 
 ```json
 {
@@ -515,11 +521,13 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
 
 3. **Configure Credentials:**
 
-   n8n MCP Configuration Example #1 (Where the install script (uspto_enriched_citation_mcp/deploy/linux_setup.sh) was used and API keys were stored in secure storage files)
+   n8n Enriched Citations MCP Configuration Examples
+
+   **Environment Variables Configuration (Installed using Linux Quick Start Script):**
 
    ![n8n Enriched Citation Interface](documentation_photos/n8n_Citations_1.jpg)
 
-   n8n MCP Configuration Example #2 (More traditional where API keys were not stored in secure storage files)
+   **Complete Configuration with API Keys (When installed using traditional PIP Install):**
 
    ![n8n Final Petition Decisions Interface](documentation_photos/n8n_Citations_2.jpg)
 

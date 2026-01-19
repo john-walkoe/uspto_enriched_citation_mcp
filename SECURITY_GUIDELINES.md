@@ -420,12 +420,14 @@ class RateLimitedClient:
    - Verify no hardcoded secrets
    - Test with environment variables
    - Check error messages don't expose internals
+   - **Run prompt injection baseline check**: `uv run python .security/check_prompt_injections.py --baseline src/ tests/`
 
 4. **Before Publishing:**
    - Full security audit of codebase
    - Clean git history if needed
    - Verify all configuration templates
    - Test circuit breaker scenarios
+   - **Update prompt injection baseline if needed**
 
 ### 🧪 **Testing Security**
 
@@ -666,6 +668,7 @@ Before each commit:
 - [ ] Test files use secure patterns
 - [ ] Circuit breaker applied to external calls
 - [ ] Request IDs used for logging
+- [ ] **Prompt injection baseline check passed** (no NEW findings)
 
 Before each release:
 - [ ] Full security scan completed (detect-secrets, bandit)
@@ -673,6 +676,7 @@ Before each release:
 - [ ] Documentation updated with security practices
 - [ ] Circuit breaker scenarios tested
 - [ ] Team trained on changes
+- [ ] **Prompt injection baseline updated if needed**
 
 ## Conclusion
 
