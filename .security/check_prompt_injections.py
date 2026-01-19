@@ -423,7 +423,7 @@ Exit codes:
         print(f"Files checked: {total_files_checked}")
         print(f"Total findings: {total_findings}")
         print(f"Baseline findings: {total_baseline_findings}")
-        print(f"NEW findings: {total_new_findings}  ← Only NEW findings cause failure")
+        print(f"NEW findings: {total_new_findings}  <- Only NEW findings cause failure")
         print(f"Files with findings: {len(files_with_issues)}")
         print(f"Files with NEW findings: {len(files_with_new_issues)}")
 

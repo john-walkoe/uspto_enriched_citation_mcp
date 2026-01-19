@@ -1,0 +1,186 @@
+{
+  "USAGE_EXAMPLES.md": {
+    "1690780d45a1e966d52771f12ff70c4df883db02e88d12bca63b38a3d1357d1c": {
+      "line": 813,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "46e91ccc5a28d7b41ef15149167b3875e1268c4ab4fb6589ae7abc82c72e52e7": {
+      "line": 693,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "5d401b877320475532d8b2f828ccb02c7aef8d005b31d6e332912b5ae043be7e": {
+      "line": 731,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "76ae3948590b63f3c3e085051229eb66a3dc7628d547c1a63912f3a7b08e8b30": {
+      "line": 829,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "846eed2846690d08ce87827785d8296ef1e48937524cda7f105f3812762eebc4": {
+      "line": 690,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\api\\__init__.py": {
+    "6cff7e565811fae959e0365ad05e46037b9b32069efd28a844b2a7d3d73f5947": {
+      "line": 406,
+      "match": "System"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\api\\client.py": {
+    "0415f9388054a48b54f00b5d5bafecd04b89a90f6cd5e80b2f7aca5b6a1efb6c": {
+      "line": 486,
+      "match": "System"
+    },
+    "1ccd2082429fe989f6fe98ef249c3277c6ea8d8a1f1a1df748c887cff76685f0": {
+      "line": 410,
+      "match": "System"
+    },
+    "b35774a5ad83b2d18b07cc3074e3659033343fe0b8a8e834d23e669f5c7dfc0b": {
+      "line": 4,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\config\\feature_flags.py": {
+    "93e2313279f6e8c740cbd19a866f6f80ccf925c3a0903cc27e08f041c58977d9": {
+      "line": 3,
+      "match": "system"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\config\\field_manager.py": {
+    "907a9f3be22a47e8e133a88bb5b1034f5095383dea4e3552e98c0fd1ce4307d6": {
+      "line": 128,
+      "match": "system"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\config\\secure_storage.py": {
+    "d4264b5374662787f57e14bb61ccf13ff836b3c514898b769e1fa17bba89e940": {
+      "line": 333,
+      "match": "instructions"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\config\\tool_reflections.py": {
+    "28bfa8883e6294cf6c0ac5d45443560830bf8042570b9aeac1b28193ef6c6e77": {
+      "line": 308,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "36516ac586ccad358678d84c09a3f0dc63ea782ab6a1a671479b03ac2b849cd6": {
+      "line": 381,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\prompts\\__init__.py": {
+    "094369466c654cda01dc7c9769c7c36dbab1ae09d1648f5539931348e8669708": {
+      "line": 8,
+      "match": "prompts"
+    },
+    "5913b34ea71b129816235000a46de9ec49421c5e666fd631d5f1f23bc9f351ee": {
+      "line": 16,
+      "match": "Prompts"
+    },
+    "9446320f4a6a9344427462daddd79bb2f60d36e4daaaba690a66404f0db51638": {
+      "line": 33,
+      "match": "prompts"
+    },
+    "b19b5430fd3923ae84db3760f1643afd43404654508b7dfba99822ab5766baee": {
+      "line": 5,
+      "match": "prompt"
+    },
+    "bfd6fdd3fca65fa53a668ecf2d8bbea6cea375e1b84ee684eb6803a9a8dd8cd3": {
+      "line": 32,
+      "match": "prompt"
+    },
+    "c37125452f04a204565f554e7aae9a3b6aac58f2f85ec4a04113118f7d28c7d4": {
+      "line": 2,
+      "match": "Prompt"
+    },
+    "d647df7016b6c58028f25e7eae9a7efdb1e11aefd18788ef38989079e9ba6652": {
+      "line": 33,
+      "match": "prompt"
+    },
+    "f17dbd02ce7643a00fea25a7538e6777e7f44d032cfa7aaf8d0d654b57e26ef1": {
+      "line": 4,
+      "match": "prompt"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\prompts\\art_unit_citation_assessment.py": {
+    "adbca83a6fee26330aa6b3a0847caaa48c3f8e43f2d38cd5d47be30287b2e9d6": {
+      "line": 10,
+      "match": "prompt"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\prompts\\enhanced_examiner_behavior_intelligence_PFW_PTAB_FPD.py": {
+    "0702a51c0fffaf41284bbe25c692a36df5143bacbe899547affbe666281a2fe1": {
+      "line": 20,
+      "match": "prompt"
+    },
+    "2a00b161a788b534c1fd0ca928929799194ffebe8bc113c9432f53754ada1fe0": {
+      "line": 1553,
+      "match": "prompt"
+    },
+    "7ac352eb9bd3d01db3f50f41fa5e012cb86f969db43c3441d8c140eee09cafcb": {
+      "line": 353,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\prompts\\litigation_citation_research_PFW_PTAB.py": {
+    "285ce76cccb539e5f824015aaf2c3fced53ce38f6bfc73f14cfa3dde9e833592": {
+      "line": 10,
+      "match": "prompt"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\prompts\\patent_citation_analysis.py": {
+    "825f275a28fe6bd6a139bcdf9ac68bc218101a3d79d2253eb7e1bae7f569c09d": {
+      "line": 9,
+      "match": "prompt"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\prompts\\technology_citation_landscape_PFW.py": {
+    "0c0f64d02aa68bc56f5dfc848af50a46bd2332eb4233bc1102023e8706a6e8d4": {
+      "line": 10,
+      "match": "prompt"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\shared\\error_utils.py": {
+    "278c6d5c3c64b863d13a79e2d807ba52b95966e1aeadf900b8a91a0472508a73": {
+      "line": 52,
+      "match": "System"
+    },
+    "8c1ff00ac3788f0b3d38096c25d727b91d3d0444d495d79d15402d8e46d6538c": {
+      "line": 205,
+      "match": "system"
+    },
+    "e3180550b51305aad14b7d3e26eeed8aa36ba50a6fa8973f2fb6c3aeff900ac2": {
+      "line": 45,
+      "match": "System"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\util\\metrics.py": {
+    "66c43e34ae678004a5e4755d6d9497948800b45f5462e3e2867cbe81193f4c19": {
+      "line": 204,
+      "match": "system"
+    }
+  },
+  "tests\\test_field_configuration.py": {
+    "a78eff2f18e147b5a3c72d268c11d5df6b6185d0cf23918ad6111c0952c97bfa": {
+      "line": 4,
+      "match": "system"
+    },
+    "ece1a40b49888dc2bb3c70d1d3b96fb332f1595e08491873575b938a04c07e79": {
+      "line": 2,
+      "match": "system"
+    }
+  },
+  "tests\\test_resilience.py": {
+    "00c47054829daefb0a318d19a3601adc45fe7f4f88bd8a6c33f594d8ab367df1": {
+      "line": 5,
+      "match": "system"
+    }
+  },
+  "tests\\test_unified_key_management.py": {
+    "5921ffae2852892a3299799fd083a6aa68ac6d16ec534a26e387c0b698e18f05": {
+      "line": 6,
+      "match": "system"
+    }
+  }
+}
