@@ -5,20 +5,18 @@ This directory contains official USPTO reference documentation used by the Enric
 ## Files
 
 ### `USPTO Enriched Citation API v3.md`
-**Source:** [USPTO Developer Portal - Enriched Citation API v3](https://developer.uspto.gov/api-catalog/uspto-enriched-citation-api-v3)
-**Updated:** July 11, 2024
-**Size:** ~27 KB
+**Source:** [USPTO Open Data Portal — Enriched Citations](https://data.uspto.gov/apis/enriched-citations/search)
+**Updated:** March 2026
 
-Official USPTO documentation for the Enriched Citation API v3, including API syntax and Lucene Query Parser reference.
+Official USPTO documentation for the Enriched Citation API v3, including field definitions, endpoint, Lucene Query Parser reference, and a sample JSON response.
 
 **Contents:**
 - **API Overview**: AI-powered citation extraction from office actions (Oct 2017+)
 - **Machine Learning Details**: NLP and entity extraction algorithms for citation analysis
-- **API Endpoints**:
-  - `/enriched_cited_reference_metadata/v3/fields` - Discover searchable field names
-  - `/enriched_cited_reference_metadata/v3/records` - Search citation records
+- **API Endpoint**: `POST https://api.uspto.gov/api/v1/patent/oa/enriched_cited_reference_metadata/v3/records`
+- **Field Reference Table**: All response fields with descriptions and types
 - **Lucene Query Syntax**: Complete Apache Lucene Query Parser Syntax reference
-- **API Capabilities**: Solr/Lucene based search with full boolean operators, wildcards, ranges
+- **Sample JSON Response**: Live example from the API
 
 **Key API Information:**
 - **Date Coverage**: Office actions mailed from October 1, 2017 to 30 days prior to current date
@@ -28,6 +26,7 @@ Official USPTO documentation for the Enriched Citation API v3, including API syn
   - Claims rejected based on prior art
   - Prior art references cited (with passage locations)
   - Specific relevant sections in cited references
+- **Swagger**: Available via the [API page](https://data.uspto.gov/apis/enriched-citations/search)
 
 **Usage:**
 - API syntax reference for enriched_client.py
@@ -35,8 +34,45 @@ Official USPTO documentation for the Enriched Citation API v3, including API syn
 - Lucene query construction and optimization
 - Date coverage constraints for query building
 
-**⚠️ Important Note:**
-Unlike PFW, FPD, and PTAB the Citations API **does NOT have a Swagger/OpenAPI specification file**. This markdown document is the primary API reference available from USPTO. The API uses a generic DSAPI (Data Set API) framework rather than custom endpoints.
+---
+
+### `oa-citations.yaml` / `oa-enriched-citations.yaml`
+**Source:** [USPTO Open Data Portal — Office Action Citations](https://data.uspto.gov/apis/office-action-citations/search)
+**Updated:** March 2026
+
+OpenAPI (Swagger) specification files for the OA Citations v2 and Enriched Citations v3 APIs.
+
+**OA Citations v2 API** (`oa-citations.yaml`):
+- **Endpoint**: `POST https://api.uspto.gov/api/v1/patent/oa/oa_citations/v2/records`
+- **Description**: Raw Form 892/1449 citation data from office actions (Oct 2017+)
+- **Fields**: 16 fields including `referenceIdentifier`, `legalSectionCode`, `actionTypeCategory`, `paragraphNumber`
+- **Note**: The `fl` (field list) parameter is silently ignored by this API; field filtering is applied client-side
+
+**Key OA Citations Fields:**
+
+| Field | Description | Type |
+|-------|-------------|------|
+| `patentApplicationNumber` | Application number | String |
+| `referenceIdentifier` | Patent/publication number of cited document | String |
+| `parsedReferenceIdentifier` | Numeric portion of referenceIdentifier | String |
+| `groupArtUnitNumber` | Four-digit examiner team code | String |
+| `techCenter` | Technology center code | String |
+| `workGroup` | Work group subdivision | String |
+| `examinerCitedReferenceIndicator` | Cited from Form PTO-892 (examiner) | Boolean |
+| `applicantCitedExaminerReferenceIndicator` | Cited from Form PTO-1449 (applicant) | Boolean |
+| `officeActionCitationReferenceIndicator` | Referenced in office action text | Boolean |
+| `actionTypeCategory` | Type of office action (rejected, allowed, etc.) | String |
+| `legalSectionCode` | Legal statute under which action was taken | String |
+| `paragraphNumber` | Paragraph within document being referenced | String |
+| `obsoleteDocumentIdentifier` | Unique IFW repository document identifier | String |
+| `createDateTime` | Date/time entity was inserted in database | Date |
+| `createUserIdentifier` | Job identifier that initiated insert | String |
+| `id` | Unique record identifier | String |
+
+**Relationship to Enriched Citations:**
+- OA Citations: raw Form 892/1449 data — faster, broader coverage, no AI extraction
+- Enriched Citations: AI-processed data with `citationCategoryCode` (X/Y/A), `relatedClaimNumberText`, `passageLocationText`
+- Use OA Citations as a cross-check source against AI-enriched v3 data
 
 ---
 
@@ -56,8 +92,8 @@ Comprehensive list of all USPTO document codes used in patent prosecution.
 While the Citations MCP itself does **NOT download documents** (it returns citation metadata only), this reference file is critical for **Citations → PFW workflow integration**.
 
 **Citation-Related Document Codes (Used with PFW MCP):**
-- **CTFR** - Office Action (Non-Final Rejection) - *Where citations appear*
-- **CTNF** - Office Action (Final Rejection) - *Where citations are cited*
+- **CTNF** - Office Action (Non-Final Rejection) - *Where citations appear*
+- **CTFR** - Office Action (Final Rejection) - *Where citations are cited*
 - **NOA** - Notice of Allowance - *Citation context and examiner reasoning*
 - **892** - Notice of References Cited - *Examiner's citation list*
 - **IDS** - Information Disclosure Statement - *Applicant citations*
@@ -145,13 +181,13 @@ This two-step pattern is documented extensively in:
 
 ## API Architecture Notes
 
-### No Swagger Specification Available
+### API Documentation
 
-Unlike PFW, FPD and PTAB MCPs, the Citations API:
-- **No OpenAPI/Swagger file** - Uses generic DSAPI framework
-- **Field discovery via API** - `/v3/fields` endpoint returns available fields
-- **Limited documentation** - Primary reference is the markdown file in this folder
-- **22 total fields** (as of July 11, 2024) - Much smaller API surface than PFW/FPD/PTAB
+The Citations APIs are documented on the USPTO Open Data Portal:
+- **Enriched Citations v3**: [data.uspto.gov/apis/enriched-citations/search](https://data.uspto.gov/apis/enriched-citations/search) — Swagger available
+- **OA Citations v2**: [data.uspto.gov/apis/office-action-citations/search](https://data.uspto.gov/apis/office-action-citations/search) — Swagger available
+- **Field discovery**: Use `get_available_fields()` tool at runtime
+- **~22 total fields** for enriched citations, **~16 fields** for OA citations — much smaller API surface than PFW/FPD/PTAB
 
 ### Field Discovery and Validation
 
@@ -176,13 +212,14 @@ This is **different from PFW/FPD** which provide structured data directly from U
 
 These files should be updated when:
 1. **USPTO updates Citations API documentation** - Update `USPTO Enriched Citation API v3.md`
-2. **New fields are added to Citations API** - Regenerate field_configs.yaml
-3. **New document codes are added** - Update `Document_Descriptions_List.csv`
+2. **USPTO updates OA Citations API documentation** - Update `oa-citations.yaml` / `oa-enriched-citations.yaml`
+3. **New fields are added to Citations API** - Regenerate field_configs.yaml
+4. **New document codes are added** - Update `Document_Descriptions_List.csv`
 
 To update:
 ```bash
 # Download latest Citations API documentation
-# Visit: https://developer.uspto.gov/api-catalog/uspto-enriched-citation-api-v3
+# Visit: https://data.uspto.gov/apis/enriched-citations/search
 # Save as reference/USPTO Enriched Citation API v3.md
 
 # Verify available fields via API
