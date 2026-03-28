@@ -234,6 +234,8 @@ async def search_citations_minimal(
     tech_center: Optional[str] = None,
     date_start: Optional[str] = None,
     date_end: Optional[str] = None,
+    examiner_cited: Optional[bool] = None,
+    art_unit: Optional[str] = None,
     fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Minimal citation search for discovery (90-95% context reduction).
@@ -283,6 +285,8 @@ async def search_citations_minimal(
                 tech_center=tech_center,
                 date_start=date_start,
                 date_end=date_end,
+                examiner_cited=examiner_cited,
+                art_unit=art_unit,
             )
             result = build_query(query_params)
             query, params, warnings = result.query, result.params_used, result.warnings
