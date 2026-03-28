@@ -24,13 +24,13 @@ tool logic.
 4. Compare each response against the **Expect** line
 5. Tests marked ⭐ produce output needed by a later test — note the value before continuing
 
-Both STDIO and HTTP transport modes should pass all tests. Last validated: 2026-03-28 (28/28 PASS,
+Both STDIO and HTTP transport modes should pass all tests. Last validated: 2026-03-28 (29/29 PASS,
 both modes).
 
 ---
 
 Feature branch: `feature/api-update-and-fastmcp-3`
-Last validated: 2026-03-28 (STDIO + HTTP, Claude Desktop, 28/28 PASS)
+Last validated: 2026-03-28 (STDIO + HTTP, Claude Desktop, 29/29 PASS)
 
 Run in order. Tests marked ⭐ must complete before later tests that reference their output.
 
@@ -98,6 +98,20 @@ search_citations_minimal
 }
 ```
 **Expect:** ~47,000 numFound. All records show artUnit 2128.
+
+---
+
+### Test 5b: Minimal Search — examiner_cited + art_unit Convenience Parameters
+
+```
+search_citations_minimal
+{
+  "art_unit": "2128",
+  "examiner_cited": true,
+  "rows": 5
+}
+```
+**Expect:** ~39,000 numFound (subset of ~47,000 total for AU:2128 — examiner filter excludes applicant-cited records). All results show groupArtUnitNumber=2128 and examinerCitedReferenceIndicator=true. Tier = minimal. Note: examiner_cited and art_unit are convenience params on both search_citations_minimal and search_citations_balanced (parity added 2026-03-28).
 
 ---
 
