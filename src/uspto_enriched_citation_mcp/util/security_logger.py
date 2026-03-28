@@ -12,7 +12,7 @@ Provides dedicated security logging separate from application logs for:
 import logging
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
@@ -140,7 +140,7 @@ class SecurityLogger:
             **kwargs: Additional structured fields
         """
         event_data = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type.value,
             "message": message,
             **kwargs,

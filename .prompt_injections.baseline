@@ -1,43 +1,23 @@
 {
   "USAGE_EXAMPLES.md": {
-    "1690780d45a1e966d52771f12ff70c4df883db02e88d12bca63b38a3d1357d1c": {
-      "line": 813,
+    "545088aa8dc95b1bc9f628ac53b27d5e44d31db2923bd83e93c382ef9850ba0b": {
+      "line": 710,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
-    "46e91ccc5a28d7b41ef15149167b3875e1268c4ab4fb6589ae7abc82c72e52e7": {
-      "line": 693,
+    "6b1c5c6e3e8b459c210969eb283e43d0a0d7fedb2a9da2947003d0472ffe0412": {
+      "line": 833,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
-    "5d401b877320475532d8b2f828ccb02c7aef8d005b31d6e332912b5ae043be7e": {
-      "line": 731,
+    "846c86904dfcb0fd6aae1e66cf55e890b4c62b3b7a179dddb6210612ee4863cd": {
+      "line": 713,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
-    "76ae3948590b63f3c3e085051229eb66a3dc7628d547c1a63912f3a7b08e8b30": {
-      "line": 829,
+    "d1287f856bc8e4af15bf97f4d97ea2fc0c4bdfda16c8c526f70d8da3cf4ac56a": {
+      "line": 751,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
-    "846eed2846690d08ce87827785d8296ef1e48937524cda7f105f3812762eebc4": {
-      "line": 690,
-      "match": "Variation Selector steganography detected (1 selectors)"
-    }
-  },
-  "src\\uspto_enriched_citation_mcp\\api\\__init__.py": {
-    "6cff7e565811fae959e0365ad05e46037b9b32069efd28a844b2a7d3d73f5947": {
-      "line": 406,
-      "match": "System"
-    }
-  },
-  "src\\uspto_enriched_citation_mcp\\api\\client.py": {
-    "0415f9388054a48b54f00b5d5bafecd04b89a90f6cd5e80b2f7aca5b6a1efb6c": {
-      "line": 486,
-      "match": "System"
-    },
-    "1ccd2082429fe989f6fe98ef249c3277c6ea8d8a1f1a1df748c887cff76685f0": {
-      "line": 410,
-      "match": "System"
-    },
-    "b35774a5ad83b2d18b07cc3074e3659033343fe0b8a8e834d23e669f5c7dfc0b": {
-      "line": 4,
+    "febe03a6a0b04299349c8f7eb5e3201b505e2dde8c6631d25696aa8641adf2f9": {
+      "line": 849,
       "match": "Variation Selector steganography detected (1 selectors)"
     }
   },
@@ -51,22 +31,6 @@
     "907a9f3be22a47e8e133a88bb5b1034f5095383dea4e3552e98c0fd1ce4307d6": {
       "line": 128,
       "match": "system"
-    }
-  },
-  "src\\uspto_enriched_citation_mcp\\config\\secure_storage.py": {
-    "d4264b5374662787f57e14bb61ccf13ff836b3c514898b769e1fa17bba89e940": {
-      "line": 333,
-      "match": "instructions"
-    }
-  },
-  "src\\uspto_enriched_citation_mcp\\config\\tool_reflections.py": {
-    "28bfa8883e6294cf6c0ac5d45443560830bf8042570b9aeac1b28193ef6c6e77": {
-      "line": 308,
-      "match": "Variation Selector steganography detected (1 selectors)"
-    },
-    "36516ac586ccad358678d84c09a3f0dc63ea782ab6a1a671479b03ac2b849cd6": {
-      "line": 381,
-      "match": "Variation Selector steganography detected (1 selectors)"
     }
   },
   "src\\uspto_enriched_citation_mcp\\prompts\\__init__.py": {
@@ -146,8 +110,8 @@
       "line": 52,
       "match": "System"
     },
-    "8c1ff00ac3788f0b3d38096c25d727b91d3d0444d495d79d15402d8e46d6538c": {
-      "line": 205,
+    "d9b0bd5f6929fb164f29baa1271d8848cdf374b858fe5698e5b959a79c46629f": {
+      "line": 226,
       "match": "system"
     },
     "e3180550b51305aad14b7d3e26eeed8aa36ba50a6fa8973f2fb6c3aeff900ac2": {
@@ -155,10 +119,42 @@
       "match": "System"
     }
   },
+  "src\\uspto_enriched_citation_mcp\\ui\\views\\citation_results_view.py": {
+    "fb75868f8af81206478689795a623825ee9cad0bd7b2fa339bb011b52e83d4d6": {
+      "line": 12,
+      "match": "system"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\ui\\views\\oa_citations_view.py": {
+    "ef5e96d949d703bc0a047308a358428e3e5fb6bbb637b241992ee46cb7632ed4": {
+      "line": 12,
+      "match": "system"
+    }
+  },
+  "src\\uspto_enriched_citation_mcp\\ui\\views\\statistics_view.py": {
+    "2b78fe77f404e2af994b07b0737bdb152b9c188f18dd7bf35a56a0f917b3aa47": {
+      "line": 12,
+      "match": "system"
+    }
+  },
   "src\\uspto_enriched_citation_mcp\\util\\metrics.py": {
     "66c43e34ae678004a5e4755d6d9497948800b45f5462e3e2867cbe81193f4c19": {
       "line": 204,
       "match": "system"
+    }
+  },
+  "tests\\TEST_SUITE.md": {
+    "0bd18676b12f23858a8b98b9605829a5a0be22131d0f677f53a03ec977da9138": {
+      "line": 22,
+      "match": "prompt"
+    },
+    "60c0ade1d5b631070d36192ebd276a9760ab5f52de1c0700f78319acfd2b3956": {
+      "line": 16,
+      "match": "prompt"
+    },
+    "a916fce79c5c4f6673f1d150df15a6b5de763c66b97e1ada46939a46b6686a88": {
+      "line": 20,
+      "match": "prompt"
     }
   },
   "tests\\test_field_configuration.py": {

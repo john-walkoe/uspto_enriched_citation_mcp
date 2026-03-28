@@ -65,7 +65,9 @@ class TestTokenBucket:
 
         # Should fail to consume more
         assert bucket.consume(1) is False
-        assert bucket.tokens == 0.0
+        # Tokens approach zero but float precision means tiny remainder
+        # Use tolerance instead of exact equality
+        assert bucket.tokens < 1e-4
 
     def test_token_replenishment(self):
         """Test 1.4: Tokens replenish over time."""
@@ -475,13 +477,13 @@ class TestCaching:
         cache = get_fields_cache(ttl_seconds=60, max_size=10)
 
         # Cache should start empty
-        assert cache.currsize == 0
+        assert len(cache._cache) == 0
 
-        # Add item to cache
-        cache["test_key"] = {"field1": "value1"}
+        # Add item to cache using .set() method (not item assignment)
+        cache.set("test_key", {"field1": "value1"})
 
-        # Should be retrievable
-        assert cache["test_key"] == {"field1": "value1"}
+        # Should be retrievable via .get()
+        assert cache.get("test_key") == {"field1": "value1"}
 
     def test_search_cache(self):
         """Test 5.3: Search cache works correctly."""
@@ -489,18 +491,18 @@ class TestCaching:
 
         cache = get_search_cache(max_size=5)
 
-        # Add items
+        # Add items using .set() method (LRUCache uses OrderedDict, not __setitem__)
         for i in range(5):
-            cache[f"key_{i}"] = f"value_{i}"
+            cache.set(f"key_{i}", f"value_{i}")
 
-        # All should be retrievable
-        assert cache["key_0"] == "value_0"
+        # All should be retrievable via .get()
+        assert cache.get("key_0") == "value_0"
 
         # Add one more (should evict LRU)
-        cache["key_5"] = "value_5"
+        cache.set("key_5", "value_5")
 
         # Cache should still have 5 items (max_size)
-        assert cache.currsize <= 5
+        assert len(cache._cache) <= 5
 
 
 if __name__ == "__main__":

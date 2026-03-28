@@ -13,7 +13,7 @@ authors = [
 ]
 
 dependencies = [
-    "mcp>=1.1.2",
+    "fastmcp[apps]>=3.0.0",
     "httpx>=0.28.1",
     "pydantic>=2.10.6",
     "pydantic-settings>=2.7.1",
@@ -21,7 +21,8 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "click>=8.2.1",
     "structlog>=24.1.0",
-    "aiohttp>=3.8.0",
+    "starlette>=0.40.0",
+    "uvicorn[standard]>=0.32.0",
 ]
 
 [dependency-groups]

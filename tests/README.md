@@ -2,6 +2,24 @@
 
 This directory contains the test scripts for the USPTO Enriched Citation MCP Server.
 
+## Two kinds of tests
+
+### 1. `TEST_SUITE.md` — Manual MCP tests (start here)
+
+**[TEST_SUITE.md](TEST_SUITE.md)** is a Claude Desktop test suite with known-good inputs and
+expected outputs for every tool. These are end-to-end tests you run by pasting into Claude Desktop
+(or any MCP client) — they confirm the tools actually work against the live USPTO API, which the
+`pytest` suite below cannot fully do.
+
+Why this matters: the USPTO enriched citations API has a data coverage cutoff (2017-10-01 forward)
+and not all field values are populated in practice. The test cases in `TEST_SUITE.md` use verified
+records and queries that are known to return results — so instead of hunting for data that fits the
+API's constraints, you can use these as a reliable baseline.
+
+**Last validated:** 2026-03-28 — 28/28 PASS (STDIO + HTTP, Claude Desktop)
+
+### 2. `pytest` — Automated unit/integration tests
+
 ## Available MCP Tools (7 Total)
 
 The server provides these tools for citation research:

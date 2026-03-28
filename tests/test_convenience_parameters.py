@@ -74,7 +74,7 @@ class TestConvenienceParameters:
         """Test decision_type builds correct field:value query."""
         result = build_query(QueryParameters(decision_type="final"))
 
-        assert "decisionTypeCode:final" in result.query
+        assert "officeActionCategory:final" in result.query
         assert result.params_used["decision_type"] == "final"
         assert len(result.warnings) == 0
 

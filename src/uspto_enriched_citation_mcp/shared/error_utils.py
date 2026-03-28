@@ -97,10 +97,31 @@ def get_safe_error_message(
     """
     exception_type = type(exception).__name__
 
-    # Log full exception details internally (for debugging)
-    logger.error(
-        f"Exception occurred: {exception_type}: {str(exception)}", exc_info=True
+    # Log exception at appropriate level — expected domain errors are INFO,
+    # unexpected/unknown errors are WARNING or ERROR.
+    from .exceptions import (
+        USPTOCitationError,
+        NotFoundError,
+        ValidationError,
+        RateLimitError,
     )
+
+    if isinstance(exception, USPTOCitationError):
+        # Expected domain errors — log at INFO (validation failures, not found, rate limit)
+        if isinstance(exception, (NotFoundError, ValidationError, RateLimitError)):
+            logger.info(
+                f"Domain error ({exception_type}): {str(exception)}"
+            )
+        else:
+            # API errors, connection errors — log at WARNING
+            logger.warning(
+                f"Domain error ({exception_type}): {str(exception)}", exc_info=True
+            )
+    else:
+        # Unknown/unexpected exceptions — log at ERROR
+        logger.error(
+            f"Unexpected exception: {exception_type}: {str(exception)}", exc_info=True
+        )
 
     # Check for known exception types
     if exception_type in EXCEPTION_MESSAGES:

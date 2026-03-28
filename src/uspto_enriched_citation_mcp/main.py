@@ -1,29 +1,34 @@
 """USPTO Enriched Citation MCP Server"""
 
 import sys
-from typing import Dict, List, Optional, Any, NamedTuple
-from dataclasses import dataclass
-from mcp.server.fastmcp import FastMCP
+import os
+from typing import Dict, List, Optional, Any
+from fastmcp import FastMCP
+from fastmcp.server.apps import AppConfig, ResourceCSP
 import structlog
 
 # Local imports
 from .api.enriched_client import EnrichedCitationClient
-from .api.field_constants import QueryFieldNames
+from .api.oa_citations_client import OACitationsClient
 from .config.field_manager import FieldManager, DEFAULT_MINIMAL_FIELDS as MINIMAL_FIELDS, DEFAULT_BALANCED_FIELDS as BALANCED_FIELDS
 from .config.settings import get_settings
 from .config.feature_flags import get_feature_flags
 from .config.constants import (
-    API_DATA_START_DATE,
-    API_DATA_CUTOFF_DATE_STRING,
     MAX_MINIMAL_SEARCH_ROWS,
+    MAX_QUERY_LENGTH,
 )
 from .shared.error_utils import format_error_response
 from .services.citation_service import CitationService
+from .services.oa_citation_service import OACitationService
 from .util.request_context import RequestContext
 from .util.security_logger import get_security_logger
+from .util.query_validator import validate_lucene_syntax
+from .util.query_builder import (
+    QueryParameters,
+    validate_string_param,
+    build_query,
+)
 from pathlib import Path
-from datetime import datetime
-import re
 
 
 # Configure enhanced logging with file rotation and security hardening
@@ -59,30 +64,64 @@ structlog.configure(
 # The instructions help Claude discover and use the right tools efficiently.
 
 SERVER_INSTRUCTIONS = """
-Citations MCP provides USPTO citation data through 7 tools.
+Citations MCP provides USPTO citation data through 10 tools covering two APIs.
 
 ALWAYS-AVAILABLE TOOLS (non-deferred, immediate access):
-1. search_citations_minimal - Primary citation discovery (90-95% context reduction)
+1. search_citations_minimal - Primary enriched citation discovery (90-95% context reduction)
 2. citations_get_guidance - Workflow guidance and documentation (use section parameter)
 
+ENRICHED CITATIONS (v3) - AI-extracted passage locations, claim mapping, quality scores:
+- search_citations_minimal / search_citations_balanced - Progressive disclosure search
+- get_citation_details - Full record for specific citation by ID
+- get_citation_statistics - Aggregations and trend analysis
+- get_available_fields - Enriched Citations field discovery
+
+OFFICE ACTION CITATIONS (v2) - Raw citation lists from Form 892/1449, broader coverage:
+- search_oa_citations_minimal / search_oa_citations_balanced - OA citation search
+- get_oa_citation_fields - OA Citations field discovery
+
+UTILITY TOOLS:
+- validate_query - Lucene syntax validation and optimization
+- citations_get_guidance - All workflow and integration guidance
+
 PROGRESSIVE WORKFLOW:
-1. Discovery: Use search_citations_minimal for initial citation discovery
-2. Analysis: Search for search_citations_balanced for detailed citation analysis
-3. Deep Dive: Search for get_citation_details for individual citation deep analysis
-4. Statistics: Search for get_citation_statistics for aggregations and insights
+1. Discovery: search_citations_minimal → broad pattern identification
+2. Analysis: search_citations_balanced → detailed field analysis
+3. Deep Dive: get_citation_details → individual citation context
+4. OA Cross-check: search_oa_citations_minimal → verify via raw 892/1449 data
 
-TOOL CATEGORIES TO SEARCH:
-- Search tools: "search_citations" (minimal/balanced tiers for progressive disclosure)
-- Details tools: "get_citation_details" (deep analysis of specific citations)
-- Statistics tools: "get_citation_statistics" (aggregations, counts, trends)
-- Utility tools: "get_available_fields", "validate_query"
-
-For workflow guidance, call: citations_get_guidance(section="tools")
+For workflow guidance: citations_get_guidance(section="tools")
 For cross-MCP integration: citations_get_guidance(section="workflows_pfw")
 """
 
 # Initialize FastMCP with server instructions for tool search optimization
 mcp = FastMCP("uspto-enriched-citation-mcp", instructions=SERVER_INSTRUCTIONS)
+
+# =============================================================================
+# MCP APPS — Resource URIs and HTML view registration
+# =============================================================================
+from .ui.views import CITATION_RESULTS_HTML, OA_CITATIONS_HTML, STATISTICS_HTML  # noqa: E402
+
+_CITATION_RESULTS_URI = "ui://uspto-enriched-citations/citation-results.html"
+_OA_CITATIONS_URI = "ui://uspto-enriched-citations/oa-citations.html"
+_STATISTICS_URI = "ui://uspto-enriched-citations/statistics.html"
+_CSP = ResourceCSP(resource_domains=["https://cdn.jsdelivr.net"])
+
+
+@mcp.resource(_CITATION_RESULTS_URI, app=AppConfig(csp=_CSP))
+def citation_results_view() -> str:
+    return CITATION_RESULTS_HTML
+
+
+@mcp.resource(_OA_CITATIONS_URI, app=AppConfig(csp=_CSP))
+def oa_citations_view() -> str:
+    return OA_CITATIONS_HTML
+
+
+@mcp.resource(_STATISTICS_URI, app=AppConfig(csp=_CSP))
+def statistics_view() -> str:
+    return STATISTICS_HTML
+
 
 # Register all prompt templates with the MCP server
 # This must be done AFTER mcp is created to avoid circular imports
@@ -91,13 +130,15 @@ register_prompts(mcp)
 
 # Global variables for lazy initialization
 api_client = None
+oa_client = None
 field_manager = None
 citation_service = None
+oa_citation_service = None
 
 
 def initialize_services():
     """Initialize services with settings."""
-    global api_client, field_manager, citation_service
+    global api_client, oa_client, field_manager, citation_service, oa_citation_service
 
     if api_client is None:
         settings = get_settings()
@@ -107,7 +148,6 @@ def initialize_services():
         if settings.feature_flags_path:
             feature_flags_path = Path(settings.feature_flags_path)
         else:
-            # Try default location (project root)
             default_path = Path(__file__).parent.parent.parent / "feature_flags.conf"
             if default_path.exists():
                 feature_flags_path = default_path
@@ -125,175 +165,27 @@ def initialize_services():
             search_cache_size=settings.search_cache_size,
         )
 
+        oa_client = OACitationsClient(
+            api_key=settings.uspto_ecitation_api_key,
+            base_url=settings.uspto_base_url,
+            rate_limit=settings.request_rate_limit,
+            timeout=settings.api_timeout,
+            enable_cache=settings.enable_cache,
+            fields_cache_ttl=settings.fields_cache_ttl,
+            search_cache_size=settings.search_cache_size,
+        )
+
         # Load field manager from project root (consistent with other MCPs)
         config_path = Path(__file__).parent.parent.parent / "field_configs.yaml"
         field_manager = FieldManager(config_path)
 
-        # Initialize service layer
+        # Initialize service layers
         citation_service = CitationService(api_client, field_manager)
+        oa_citation_service = OACitationService(oa_client)
 
 
-# =============================================================================
-# DATA STRUCTURES FOR QUERY BUILDING
-# =============================================================================
-
-
-@dataclass
-class QueryParameters:
-    """Parameters for building Lucene query.
-
-    Consolidates query building parameters into a single object for better
-    maintainability and extensibility.
-    """
-    criteria: str = ""
-    applicant_name: Optional[str] = None
-    application_number: Optional[str] = None
-    patent_number: Optional[str] = None
-    tech_center: Optional[str] = None
-    date_start: Optional[str] = None
-    date_end: Optional[str] = None
-    decision_type: Optional[str] = None
-    category_code: Optional[str] = None
-    examiner_cited: Optional[bool] = None
-    art_unit: Optional[str] = None
-
-
-class QueryBuildResult(NamedTuple):
-    """Result of query building operation.
-
-    Provides self-documenting return values for build_query function.
-    """
-    query: str
-    params_used: Dict[str, str]
-    warnings: List[str]
-
-
-def validate_date_range(
-    date_str: str, field_name: str = "officeActionDate"
-) -> tuple[Optional[str], Optional[str]]:
-    """Validate date string in YYYY-MM-DD format.
-
-    Returns: (validated_date, warning_message)
-    Warning if office action date is before 2017-10-01 (API data availability cutoff).
-    """
-    if not date_str:
-        return None, None
-
-    clean_date = date_str.strip()
-    if not clean_date:
-        return None, None
-
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", clean_date):
-        raise ValueError("Date must be in YYYY-MM-DD format")
-
-    try:
-        date_obj = datetime.strptime(clean_date, "%Y-%m-%d")
-    except ValueError:
-        raise ValueError("Invalid date format")
-
-    # Check against API cutoff for office action dates
-    warning = None
-    if field_name == "officeActionDate":
-        if date_obj < API_DATA_START_DATE:
-            warning = f"Warning: Office action dates before {API_DATA_CUTOFF_DATE_STRING} not available in API. Using {clean_date} may return no results."
-
-    return clean_date, warning
-
-
-def validate_string_param(param: str, max_length: int = 200) -> str:
-    """Validate and clean string parameter."""
-    clean = param.strip() if param else None
-    if not clean:
-        return None
-
-    if len(clean) > max_length:
-        raise ValueError(f"Parameter too long (max {max_length} chars)")
-
-    if re.search(r'[<>"\\]', clean):
-        raise ValueError("Invalid characters in parameter")
-
-    return clean
-
-
-def build_query(params: QueryParameters) -> QueryBuildResult:
-    """Build Lucene query from parameters.
-
-    Args:
-        params: Query parameters consolidated in a single object
-
-    Returns:
-        QueryBuildResult with query string, params used, and warnings
-    """
-    parts = []
-    params_used = {}
-    warnings = []
-
-    if params.criteria:
-        parts.append(f"({params.criteria})")
-        params_used["base_criteria"] = params.criteria
-
-    if applicant_name := validate_string_param(params.applicant_name):
-        parts.append(f'{QueryFieldNames.FIRST_APPLICANT_NAME}:"{applicant_name}"')
-        params_used["applicant_name"] = applicant_name
-
-    if application_number := validate_string_param(params.application_number, 20):
-        parts.append(f"{QueryFieldNames.APPLICATION_NUMBER}:{application_number}")
-        params_used["application_number"] = application_number
-
-    if patent_number := validate_string_param(params.patent_number, 15):
-        parts.append(f"{QueryFieldNames.PUBLICATION_NUMBER}:{patent_number}")
-        params_used["patent_number"] = patent_number
-
-    if tech_center := validate_string_param(params.tech_center, 10):
-        parts.append(f"{QueryFieldNames.TECH_CENTER}:{tech_center}")
-        params_used["tech_center"] = tech_center
-
-    if params.date_start or params.date_end:
-        start_date, start_warning = (
-            validate_date_range(params.date_start) if params.date_start else (None, None)
-        )
-        end_date, end_warning = (
-            validate_date_range(params.date_end) if params.date_end else (None, None)
-        )
-
-        if start_warning:
-            warnings.append(start_warning)
-        if end_warning:
-            warnings.append(end_warning)
-
-        start = start_date or "*"
-        end = end_date or "*"
-        if start != "*" or end != "*":
-            parts.append(f"{QueryFieldNames.OFFICE_ACTION_DATE}:[{start} TO {end}]")
-            params_used["date_range"] = f"{start} TO {end}"
-
-    if decision_type := validate_string_param(params.decision_type, 50):
-        parts.append(f"{QueryFieldNames.DECISION_TYPE_CODE}:{decision_type}")
-        params_used["decision_type"] = decision_type
-
-    if category_code := validate_string_param(params.category_code, 10):
-        parts.append(f"{QueryFieldNames.CITATION_CATEGORY}:{category_code}")
-        params_used["category_code"] = category_code
-
-    if params.examiner_cited is not None:
-        # Convert boolean to lowercase string for Lucene query
-        examiner_cited_str = str(params.examiner_cited).lower()
-        parts.append(f"{QueryFieldNames.EXAMINER_CITED}:{examiner_cited_str}")
-        params_used["examiner_cited"] = examiner_cited_str
-
-    if art_unit := validate_string_param(params.art_unit, 10):
-        parts.append(f"{QueryFieldNames.GROUP_ART_UNIT}:{art_unit}")
-        params_used["art_unit"] = art_unit
-
-    if not parts:
-        raise ValueError("At least one search criterion required")
-
-    query = " AND ".join(parts)
-    return QueryBuildResult(query, params_used, warnings)
-
-
-@mcp.tool()
-async def get_available_fields() -> Dict[str, Any]:
+@mcp.tool(annotations={"defer_loading": True, "readOnlyHint": True})
+async def get_available_fields() -> Dict[str, Any]:  # no UI view — utility tool
     """Get all searchable fields from USPTO Enriched Citation API.
 
     Use for: Field discovery, query syntax validation, understanding data structure.
@@ -331,7 +223,7 @@ async def get_available_fields() -> Dict[str, Any]:
         return format_error_response("Field retrieval failed", 500, exception=e)
 
 
-@mcp.tool()
+@mcp.tool(app=AppConfig(resource_uri=_CITATION_RESULTS_URI), annotations={"defer_loading": False, "readOnlyHint": True})
 async def search_citations_minimal(
     criteria: str = "",
     rows: int = 50,
@@ -373,6 +265,10 @@ async def search_citations_minimal(
     with RequestContext() as request_id:
         try:
             initialize_services()
+            if criteria and len(criteria) > MAX_QUERY_LENGTH:
+                return format_error_response(
+                    f"Query too long (max {MAX_QUERY_LENGTH} characters)", 400
+                )
             if rows > MAX_MINIMAL_SEARCH_ROWS:
                 return format_error_response(
                     f"Max {MAX_MINIMAL_SEARCH_ROWS} rows for minimal search", 400
@@ -445,7 +341,7 @@ async def search_citations_minimal(
             return format_error_response("Search failed", 500, exception=e)
 
 
-@mcp.tool()
+@mcp.tool(app=AppConfig(resource_uri=_CITATION_RESULTS_URI), annotations={"defer_loading": True, "readOnlyHint": True})
 async def search_citations_balanced(
     criteria: str = "",
     rows: int = 20,
@@ -482,7 +378,8 @@ async def search_citations_balanced(
     Example: date_start='2015-01-01', date_end='2024-12-31' covers all available office actions.
 
     Convenience parameters (balanced mode only):
-    - category_code: Citation category code (e.g., '102', '103')
+    - decision_type: Office action type — use "CTNF" (non-final rejection) or "CTFR" (final rejection)
+    - category_code: Citation relevance code — X (anticipatory §102/103), Y (combined §103), A (background)
     - examiner_cited: Boolean filter for examiner-cited references (true/false)
     - art_unit: Group art unit number (e.g., '2128', '3600')
 
@@ -494,6 +391,10 @@ async def search_citations_balanced(
     """
     try:
         initialize_services()
+        if criteria and len(criteria) > MAX_QUERY_LENGTH:
+            return format_error_response(
+                f"Query too long (max {MAX_QUERY_LENGTH} characters)", 400
+            )
         if rows > 50:
             return format_error_response("Max 50 rows for balanced search", 400)
 
@@ -562,7 +463,7 @@ async def search_citations_balanced(
         return format_error_response("Search failed", 500, exception=e)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"defer_loading": True, "readOnlyHint": True})
 async def get_citation_details(
     citation_id: str, include_context: bool = True
 ) -> Dict[str, Any]:
@@ -574,11 +475,11 @@ async def get_citation_details(
     ⚠️ IMPORTANT: Returns citation METADATA only, NOT actual documents.
 
     2-STEP PFW MCP WORKFLOW:
-    Step 1: pfw_get_application_documents(app_number='{app_number}', document_code='CTFR', limit=20)
+    Step 1: pfw_get_application_documents(app_number='{app_number}', document_code='CTNF', limit=20)
 
     Document Code Decoder:
-    - CTFR: Non-Final Office Action (where citation appears)
-    - CTNF: Final Office Action Rejection
+    - CTNF: Non-Final Office Action (where most citations appear — start here)
+    - CTFR: Final Office Action Rejection
     - NOA: Notice of Allowance
     - 892: Examiner's Search Strategy & Citations List
     - IDS: Applicant's Information Disclosure Statement
@@ -596,14 +497,21 @@ async def get_citation_details(
         result = await citation_service.get_details(citation_id, include_context)
 
         # Add LLM guidance for document retrieval via PFW MCP
-        if result and "patentApplicationNumber" in result:
-            app_number = result.get("patentApplicationNumber", "")
+        # patentApplicationNumber is nested inside result["citation"], not at the top level
+        citation_doc = result.get("citation", {}) if result else {}
+        if result and citation_doc.get("patentApplicationNumber"):
+            app_number = citation_doc.get("patentApplicationNumber", "")
+            oa_category = citation_doc.get("officeActionCategory", "")
+            # Map officeActionCategory to PFW document_code
+            doc_code_map = {"CTNF": "CTNF", "CTFR": "CTFR"}
+            suggested_doc_code = doc_code_map.get(oa_category, "CTNF")
             result["pfw_document_retrieval_guidance"] = {
                 "notice": "⚠️ This is citation METADATA only. To get actual documents, use PFW MCP (2-step process):",
-                "step_1_get_documents": f"pfw_get_application_documents(app_number='{app_number}', document_code='CTFR', limit=20)",
+                "suggested_document_code": suggested_doc_code,
+                "step_1_get_documents": f"pfw_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)",
                 "common_citation_documents": {
-                    "CTFR": "Non-Final Office Action (where this citation appears)",
-                    "CTNF": "Final Office Action Rejection",
+                    "CTNF": "Non-Final Office Action (where this citation most likely appears — start here)",
+                    "CTFR": "Final Office Action Rejection",
                     "NOA": "Notice of Allowance (citation overcame or not used)",
                     "892": "Examiner's Search Strategy & Citations List",
                     "IDS": "Applicant's Information Disclosure Statement",
@@ -614,13 +522,13 @@ async def get_citation_details(
                 },
                 "example_workflow_analysis": f"""
 # When user asks "What did the examiner say?" or wants citation context:
-docs = pfw_get_application_documents(app_number='{app_number}', document_code='CTFR', limit=20)
+docs = pfw_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)
 content = pfw_get_document_content(app_number='{app_number}', document_identifier=docs['documents'][0]['documentIdentifier'])
 # Analyze content and respond to user question
 """,
                 "example_workflow_download": f"""
 # When user says "Get me the office action" or wants to review themselves:
-docs = pfw_get_application_documents(app_number='{app_number}', document_code='CTFR', limit=20)
+docs = pfw_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)
 download = pfw_get_document_download(app_number='{app_number}', document_identifier=docs['documents'][0]['documentIdentifier'])
 # Present as: **📁 [Download Office Action]({{download['proxy_download_url']}})**
 """,
@@ -641,7 +549,7 @@ xml_data = pfw_get_patent_or_application_xml(
         return format_error_response("Details retrieval failed", 500, exception=e)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"defer_loading": True, "readOnlyHint": True})
 async def validate_query(
     query: str, field_set: str = "citations_minimal"
 ) -> Dict[str, Any]:
@@ -670,7 +578,7 @@ async def validate_query(
         return format_error_response("Validation failed", 500, exception=e)
 
 
-@mcp.tool()
+@mcp.tool(app=AppConfig(resource_uri=_STATISTICS_URI), annotations={"defer_loading": True, "readOnlyHint": True})
 async def get_citation_statistics(
     criteria: str = "",
     stats_fields: List[str] = ["decisionTypeCode", "citationCategoryCode"],
@@ -684,14 +592,14 @@ async def get_citation_statistics(
         return format_error_response("Statistics retrieval failed", 500, exception=e)
 
 
-@mcp.tool()
+@mcp.tool(annotations={"defer_loading": False, "readOnlyHint": True})
 async def citations_get_guidance(section: str = "overview") -> str:
     """Get selective USPTO Citation guidance sections for context-efficient workflows
 
     🎯 QUICK REFERENCE - What section for your question?
 
     🔍 "Find citations by examiner/application/tech" → fields
-    📄 "Understand citation categories (X/Y/NPL)" → citation_codes
+    📄 "Understand citation categories (X/Y/A + NPL via nplIndicator)" → citation_codes
     🔖 "Citation data coverage (2017+)" → data_coverage
     🤝 "PFW workflow for office action documents" → workflows_pfw
     🚩 "PTAB citation correlation" → workflows_ptab (updated for 2026 PTAB API)
@@ -712,7 +620,7 @@ async def citations_get_guidance(section: str = "overview") -> str:
     - Trials: search_trials_minimal/balanced/complete
     - Documents: ptab_get_documents, ptab_get_document_download, ptab_get_document_content
     - See: citations_get_guidance(section='workflows_ptab') for integration patterns
-    - citation_codes: X/Y/A/NPL category decoder and strategic guidance
+    - citation_codes: X/Y/A category decoder; NPL identified by nplIndicator:true field
     - data_coverage: 2017+ eligibility and date handling
     - fields: Field selection strategies and Solr/Lucene syntax
     - tools: Tool-specific guidance and parameters
@@ -758,6 +666,191 @@ async def citations_get_guidance(section: str = "overview") -> str:
 
 
 # =============================================================================
+# OFFICE ACTION CITATIONS TOOLS (v2 API)
+# =============================================================================
+
+
+@mcp.tool(app=AppConfig(resource_uri=_OA_CITATIONS_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+async def search_oa_citations_minimal(
+    criteria: str = "",
+    rows: int = 50,
+    start: int = 0,
+    application_number: Optional[str] = None,
+    tech_center: Optional[str] = None,
+    art_unit: Optional[str] = None,
+    examiner_cited: Optional[bool] = None,
+    fields: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Search Office Action Citations (v2) for high-volume discovery (7 key fields).
+
+    OA Citations v2 covers raw citation lists extracted from Form PTO-892 (examiner) and
+    Form PTO-1449 (applicant) filed from 2017-10-01 forward. Less AI-processed than Enriched
+    Citations but broader coverage and faster for bulk application lookups.
+
+    Key fields returned: patentApplicationNumber, groupArtUnitNumber, techCenter,
+    referenceIdentifier, actionTypeCategory, examinerCitedReferenceIndicator, createDateTime.
+
+    Solr/Lucene Query Examples:
+    - By application: criteria='patentApplicationNumber:16751234'
+    - By tech center: criteria='techCenter:2100'
+    - By art unit: criteria='groupArtUnitNumber:2854'
+    - Examiner-cited only: criteria='examinerCitedReferenceIndicator:true'
+    - Combined: criteria='techCenter:1700 AND examinerCitedReferenceIndicator:true'
+
+    Use search_oa_citations_balanced for full 16-field detail on selected results.
+    For AI-enriched data (passage locations, claim mapping), use search_citations_minimal.
+    """
+    try:
+        initialize_services()
+
+        if rows > MAX_MINIMAL_SEARCH_ROWS:
+            return format_error_response(f"Max {MAX_MINIMAL_SEARCH_ROWS} rows for minimal search", 400)
+
+        # Build criteria string from convenience params
+        parts = []
+        if criteria:
+            try:
+                validate_lucene_syntax(criteria)
+            except ValueError as e:
+                return format_error_response(f"Invalid criteria: {e}", 400)
+            parts.append(f"({criteria})")
+        if application_number:
+            clean = validate_string_param(application_number, 20)
+            if clean:
+                parts.append(f"patentApplicationNumber:{clean}")
+        if tech_center:
+            clean = validate_string_param(tech_center, 10)
+            if clean:
+                parts.append(f"techCenter:{clean}")
+        if art_unit:
+            clean = validate_string_param(art_unit, 10)
+            if clean:
+                parts.append(f"groupArtUnitNumber:{clean}")
+        if examiner_cited is not None:
+            parts.append(f"examinerCitedReferenceIndicator:{str(examiner_cited).lower()}")
+
+        if not parts:
+            return format_error_response("At least one search criterion required", 400)
+
+        query = " AND ".join(parts)
+        result = await oa_citation_service.search_minimal(query, start, rows, fields)
+
+        if "error" in result:
+            return result
+
+        result["query_info"] = {
+            "constructed_query": query,
+            "tier": "minimal" if fields is None else "custom",
+            "api": "oa_citations_v2",
+        }
+        result["guidance"] = {
+            "next_steps": [
+                "Use search_oa_citations_balanced for full details on selected results",
+                "Cross-reference with search_citations_minimal for AI-enriched passage data",
+                "Use application numbers with PFW MCP for prosecution documents",
+            ]
+        }
+        return result
+
+    except ValueError as e:
+        return format_error_response("Invalid search parameters", 400, exception=e)
+    except Exception as e:
+        return format_error_response("OA Citations search failed", 500, exception=e)
+
+
+@mcp.tool(app=AppConfig(resource_uri=_OA_CITATIONS_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+async def search_oa_citations_balanced(
+    criteria: str = "",
+    rows: int = 25,
+    start: int = 0,
+    application_number: Optional[str] = None,
+    tech_center: Optional[str] = None,
+    art_unit: Optional[str] = None,
+    examiner_cited: Optional[bool] = None,
+    fields: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Search Office Action Citations (v2) with all 16 available fields.
+
+    Use after search_oa_citations_minimal for detailed analysis of selected applications.
+    All fields: patentApplicationNumber, groupArtUnitNumber, techCenter, referenceIdentifier,
+    parsedReferenceIdentifier, actionTypeCategory, legalSectionCode, examinerCitedReferenceIndicator,
+    applicantCitedExaminerReferenceIndicator, officeActionCitationReferenceIndicator,
+    workGroup, paragraphNumber, createDateTime, createUserIdentifier, obsoleteDocumentIdentifier, id.
+
+    OA Citations v2 data: 2017-10-01 to 30 days prior to current date.
+    """
+    try:
+        initialize_services()
+
+        if rows > 50:
+            return format_error_response("Max 50 rows for balanced OA Citations search", 400)
+
+        parts = []
+        if criteria:
+            try:
+                validate_lucene_syntax(criteria)
+            except ValueError as e:
+                return format_error_response(f"Invalid criteria: {e}", 400)
+            parts.append(f"({criteria})")
+        if application_number:
+            clean = validate_string_param(application_number, 20)
+            if clean:
+                parts.append(f"patentApplicationNumber:{clean}")
+        if tech_center:
+            clean = validate_string_param(tech_center, 10)
+            if clean:
+                parts.append(f"techCenter:{clean}")
+        if art_unit:
+            clean = validate_string_param(art_unit, 10)
+            if clean:
+                parts.append(f"groupArtUnitNumber:{clean}")
+        if examiner_cited is not None:
+            parts.append(f"examinerCitedReferenceIndicator:{str(examiner_cited).lower()}")
+
+        if not parts:
+            return format_error_response("At least one search criterion required", 400)
+
+        query = " AND ".join(parts)
+        result = await oa_citation_service.search_balanced(query, start, rows, fields)
+
+        if "error" in result:
+            return result
+
+        result["query_info"] = {
+            "constructed_query": query,
+            "tier": "balanced" if fields is None else "custom",
+            "api": "oa_citations_v2",
+        }
+        return result
+
+    except ValueError as e:
+        return format_error_response("Invalid search parameters", 400, exception=e)
+    except Exception as e:
+        return format_error_response("OA Citations search failed", 500, exception=e)
+
+
+@mcp.tool(annotations={"defer_loading": True, "readOnlyHint": True})
+async def get_oa_citation_fields() -> Dict[str, Any]:
+    """Get all searchable fields from the USPTO Office Action Citations API v2.
+
+    Returns the complete field list for building Lucene queries against the OA Citations dataset.
+    OA Citations v2 is the simpler counterpart to the AI-enriched citations — it provides
+    raw citation data from Form 892 and Form 1449 office actions.
+    """
+    try:
+        initialize_services()
+        fields = await oa_citation_service.get_fields()
+        return {
+            "status": "success",
+            "api": "oa_citations_v2",
+            "fields": fields.get("fields", []),
+            "note": "OA Citations v2 — raw 892/1449 citation data, 2017-10-01 forward",
+        }
+    except Exception as e:
+        return format_error_response("OA Citation field retrieval failed", 500, exception=e)
+
+
+# =============================================================================
 # PROMPT TEMPLATES
 # =============================================================================
 # All comprehensive prompt templates have been moved to src/uspto_enriched_citation_mcp/prompts/
@@ -774,12 +867,77 @@ async def citations_get_guidance(section: str = "overview") -> str:
 # =============================================================================
 
 
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    """Health check endpoint for reverse proxy / Docker deployments."""
+    from starlette.responses import PlainTextResponse
+    return PlainTextResponse("OK")
+
+
 def main():
-    """Synchronous entry point for console scripts."""
+    """Synchronous entry point for console scripts.
+
+    Transport is controlled by environment variables:
+      FASTMCP_TRANSPORT=http   → HTTP mode (required for MCP Apps)
+      FASTMCP_HOST=0.0.0.0     → bind address (HTTP mode only)
+      FASTMCP_PORT=8000         → port (HTTP mode only)
+      CORS_EXTRA_ORIGIN=https://  → additional CORS origin for reverse proxy
+
+    Default: stdio (Claude Desktop / Claude Code compatible)
+    """
     logger.info("Starting USPTO Enriched Citation MCP server...")
     initialize_services()
     logger.info("Progressive disclosure enabled - use minimal searches first")
-    mcp.run(transport="stdio")
+
+    transport = os.getenv("FASTMCP_TRANSPORT", "stdio")
+
+    if transport == "http":
+        settings = get_settings()
+
+        # SECURITY: Reject non-HTTPS base URLs — API key is sent as X-API-KEY header
+        if settings.uspto_base_url.startswith("http://"):
+            logger.error(
+                "HTTP USPTO_BASE_URL rejected in FASTMCP_TRANSPORT=http mode: "
+                "API key would be transmitted without TLS encryption. "
+                "Set USPTO_BASE_URL to https://api.uspto.gov or use FASTMCP_TRANSPORT=stdio."
+            )
+            raise ValueError(
+                "FASTMCP_TRANSPORT=http requires USPTO_BASE_URL to use HTTPS. "
+                "Got: " + settings.uspto_base_url
+            )
+
+        host = settings.http_host
+        port = settings.http_port
+
+        # Build CORS origins list
+        origins = ["http://localhost:8080", "http://127.0.0.1:8080"]
+        if settings.cors_extra_origin:
+            # SECURITY: Validate CORS origin to prevent injection of arbitrary origins
+            import re
+            if not re.match(r"^https?://[a-zA-Z0-9.\-]+(:[0-9]+)?$", settings.cors_extra_origin):
+                raise ValueError(
+                    f"CORS_EXTRA_ORIGIN must be a valid HTTP/HTTPS URL, got: {settings.cors_extra_origin}"
+                )
+            origins.append(settings.cors_extra_origin)
+            logger.info(f"CORS: added extra origin {settings.cors_extra_origin}")
+
+        try:
+            from starlette.middleware.cors import CORSMiddleware
+            import uvicorn
+            app = CORSMiddleware(
+                mcp.http_app(),
+                allow_origins=origins,
+                allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                allow_headers=["Content-Type", "Accept", "X-API-KEY", "Mcp-Session-Id"],
+                expose_headers=["Mcp-Session-Id"],
+            )
+            logger.info(f"Starting HTTP transport on {host}:{port}")
+            uvicorn.run(app, host=host, port=port)
+        except ImportError as e:
+            logger.error(f"HTTP transport requires starlette and uvicorn: {e}")
+            raise
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

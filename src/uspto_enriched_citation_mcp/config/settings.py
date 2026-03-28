@@ -9,6 +9,7 @@ from pydantic import Field, field_validator
 from .constants import (
     DEFAULT_BASE_URL,
     DEFAULT_MCP_SERVER_PORT,
+    DEFAULT_HTTP_PORT,
     DEFAULT_RATE_LIMIT_RPM,
     DEFAULT_API_TIMEOUT,
     DEFAULT_CONNECT_TIMEOUT,
@@ -98,6 +99,20 @@ class Settings(BaseSettings):
     feature_flags_path: Optional[str] = Field(
         default=None,
         validation_alias="FEATURE_FLAGS_PATH"
+    )
+
+    # HTTP Transport (for MCP Apps / reverse proxy)
+    http_port: int = Field(
+        default=DEFAULT_HTTP_PORT,
+        validation_alias="FASTMCP_PORT"
+    )
+    http_host: str = Field(
+        default="0.0.0.0",
+        validation_alias="FASTMCP_HOST"
+    )
+    cors_extra_origin: Optional[str] = Field(
+        default=None,
+        validation_alias="CORS_EXTRA_ORIGIN"
     )
 
     # Logging & Security

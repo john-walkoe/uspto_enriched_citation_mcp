@@ -151,8 +151,9 @@ class RateLimitError(USPTOCitationError):
 class APIError(USPTOCitationError):
     """Generic API error (500 Internal Server Error)."""
 
-    def __init__(self, message: str = "API error occurred", **kwargs):
-        super().__init__(message, status_code=500, **kwargs)
+    def __init__(self, message: str = "API error occurred", status_code: int = 500, **kwargs):
+        # status_code parameter allows subclasses to override without conflicting with kwargs
+        super().__init__(message, status_code=status_code, **kwargs)
 
 
 class APIConnectionError(APIError):
@@ -174,7 +175,9 @@ class APITimeoutError(APIError):
         details = kwargs.pop("details", {})
         if timeout_seconds:
             details["timeout_seconds"] = timeout_seconds
-        super().__init__(message, status_code=504, details=details, **kwargs)
+        if details:
+            kwargs["details"] = details
+        super().__init__(message, status_code=504, **kwargs)
 
 
 class APIUnavailableError(APIError):
@@ -260,10 +263,10 @@ def exception_to_response(exc: Exception) -> dict:
             "message": str(exc),
         }
 
-    # Default to 500 for unknown exceptions
+    # Default to 500 for unknown exceptions, but preserve the message
     return {
         "status": "error",
-        "error": "Internal server error",
+        "error": str(exc),
         "code": 500,
         "message": "An unexpected error occurred",
     }

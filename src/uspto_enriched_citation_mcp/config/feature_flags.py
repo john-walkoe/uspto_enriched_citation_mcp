@@ -6,6 +6,7 @@ Supports environment variables, configuration files, and programmatic overrides.
 
 import os
 import logging
+import threading
 from typing import Dict, Optional, Any
 from enum import Enum
 from pathlib import Path
@@ -285,8 +286,9 @@ class FeatureFlags:
         }
 
 
-# Global feature flags instance
+# Global feature flags instance — thread-safe lazy initialization
 _feature_flags: Optional[FeatureFlags] = None
+_feature_flags_lock = threading.Lock()
 
 
 def get_feature_flags(config_file: Optional[Path] = None) -> FeatureFlags:
@@ -300,8 +302,9 @@ def get_feature_flags(config_file: Optional[Path] = None) -> FeatureFlags:
         FeatureFlags instance
     """
     global _feature_flags
-    if _feature_flags is None:
-        _feature_flags = FeatureFlags(config_file=config_file)
+    with _feature_flags_lock:
+        if _feature_flags is None:
+            _feature_flags = FeatureFlags(config_file=config_file)
     return _feature_flags
 
 

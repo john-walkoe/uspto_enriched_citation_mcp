@@ -44,6 +44,8 @@ cover/
 
 # Environment variables
 .env
+.env.*
+!.env.*.example
 .venv
 env/
 venv/
@@ -92,3 +94,6 @@ Claude_Documents/
 
 # Test archive
 tests/archive/
+
+# Internal audit documents (not for public release)
+audits/

@@ -138,6 +138,41 @@ jobs:
           echo "✅ No dependency vulnerabilities detected"
         fi
 
+    - name: Run pip-audit
+      run: |
+        uv pip install pip-audit
+        uv run pip-audit --format=json --output=pip-audit.json || true
+
+    - name: Check pip-audit results
+      run: |
+        if [ -f pip-audit.json ]; then
+          VULNS=$(uv run python -c "import json; data=json.load(open('pip-audit.json')); print(len(data.get('dependencies', [{}])[0].get('vulns', []) if isinstance(data, dict) else sum(len(d.get('vulns', [])) for d in data)))" 2>/dev/null || echo "0")
+          # Count total vulnerabilities across all packages
+          TOTAL=$(uv run python -c "
+import json
+data = json.load(open('pip-audit.json'))
+deps = data if isinstance(data, list) else data.get('dependencies', [])
+total = sum(len(d.get('vulns', [])) for d in deps)
+print(total)
+" 2>/dev/null || echo "0")
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "❌ pip-audit found $TOTAL vulnerable package(s):"
+            uv run python -c "
+import json
+data = json.load(open('pip-audit.json'))
+deps = data if isinstance(data, list) else data.get('dependencies', [])
+for d in deps:
+    for v in d.get('vulns', []):
+        print(f\"  {d['name']}=={d['version']}: {v['id']} - {v.get('description', 'no description')[:80]}\")
+" 2>/dev/null || echo "  Run 'pip-audit' locally for details"
+            exit 1
+          else
+            echo "✅ pip-audit: no vulnerable packages found"
+          fi
+        else
+          echo "✅ pip-audit: no report generated"
+        fi
+
   code-quality-check:
     name: Code Quality and Security
     runs-on: ubuntu-latest

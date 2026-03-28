@@ -249,8 +249,9 @@ class RateLimiter:
         }
 
 
-# Global rate limiter instance
+# Global rate limiter instance — thread-safe lazy initialization
 _rate_limiter: Optional[RateLimiter] = None
+_rate_limiter_lock = threading.Lock()
 
 
 def get_rate_limiter(config: Optional[RateLimitConfig] = None) -> RateLimiter:
@@ -264,13 +265,11 @@ def get_rate_limiter(config: Optional[RateLimitConfig] = None) -> RateLimiter:
         RateLimiter instance
     """
     global _rate_limiter
-
-    if _rate_limiter is None:
-        if config is None:
-            # Use default configuration
-            config = RateLimitConfig()
-        _rate_limiter = RateLimiter(config)
-
+    with _rate_limiter_lock:
+        if _rate_limiter is None:
+            if config is None:
+                config = RateLimitConfig()
+            _rate_limiter = RateLimiter(config)
     return _rate_limiter
 
 

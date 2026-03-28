@@ -48,19 +48,36 @@ Sample requests that the user can give to the LLM to trigger the examples are as
 - *"Do a complete due diligence check including citations for this patent"*
 - *"Check if applications with petition red flags have unusual citation patterns"*
 
+**Example 11 - Office Action Citations v2 (raw 892/1449 data):**
+- *"Cross-check the enriched citations for application 17896175 against OA Form 892 data"*
+- *"Find all OA citations in art unit 2854 and compare coverage with enriched citations"*
+- *"Get the raw citation list from Form 892 for this application"*
+
 ## Table of Contents
+
+**Enriched Citations v3 (AI-extracted)**
 1. [Progressive Disclosure Workflow](#-example-1-progressive-disclosure-workflow)
 2. [Ultra-Minimal Mode (99% Token Reduction)](#-example-2-ultra-minimal-mode-99-token-reduction)
 3. [Examiner Citation Pattern Analysis](#-example-3-examiner-citation-pattern-analysis-pfw--citations)
 4. [Citation Category Analysis (X/Y/A/NPL)](#-example-4-citation-category-analysis-xyanpl)
 5. [Prior Art Landscape Mapping](#-example-5-prior-art-landscape-mapping)
 6. [Art Unit Citation Norms](#-example-6-art-unit-citation-norms)
+
+**Cross-MCP Integration**
+
 7. [Cross-MCP Integration with PFW](#-example-7-cross-mcp-integration-with-pfw)
 8. [Cross-MCP Integration with PTAB](#-example-8-cross-mcp-integration-with-ptab)
 9. [Cross-MCP Integration with FPD](#-example-9-cross-mcp-integration-with-fpd)
 10. [Complete Lifecycle Analysis](#-example-10-complete-lifecycle-analysis-four-mcp-integration)
-11. [Known Patents for Testing](#known-patents-for-testing)
-12. [Full Tool Reference](#full-tool-reference)
+
+**Office Action Citations v2 (raw 892/1449 data)**
+
+11. [OA Citations: Discovery & Cross-Check](#-example-11-oa-citations-discovery--cross-check)
+
+**Reference**
+
+12. [Known Patents for Testing](#known-patents-for-testing)
+13. [Full Tool Reference](#full-tool-reference)
 
 ---
 
@@ -322,9 +339,9 @@ print(f"Examiner citation rate: {examiner_citations/total_citations*100:.1f}%")
 all_citations = [c for item in citation_data for c in item['citations']]
 category_dist = Counter([c['citationCategoryCode'] for c in all_citations])
 print(f"\nCitation Category Distribution:")
-print(f"  X (US patents - critical): {category_dist['X']}")
-print(f"  Y (Foreign patents): {category_dist.get('Y', 0)}")
-print(f"  A (Background): {category_dist.get('A', 0)}")
+print(f"  X (§102 anticipation — highly relevant): {category_dist['X']}")
+print(f"  Y (§103 inventive step — combined refs): {category_dist.get('Y', 0)}")
+print(f"  A (Background — general state of art): {category_dist.get('A', 0)}")
 print(f"  NPL (Non-patent literature): {category_dist.get('NPL', 0)}")
 ```
 
@@ -346,21 +363,24 @@ print(f"  NPL (Non-patent literature): {category_dist.get('NPL', 0)}")
 
 #### Citation Category Codes
 
-**X - US Patents (§102/103 basis)**
-- Most relevant to patentability
-- Critical prior art for rejection/allowance
+> **Note**: X, Y, and A are **relevance ratings** (how strongly the reference affects patentability), not citation type designators. Both US and foreign patents can carry X, Y, or A ratings.
+
+**X — Highly Relevant (§ 102 anticipation)**
+- Alone anticipates novelty of a claim
+- Most critical prior art for rejection/allowance
 - Primary focus for invalidity analysis
 
-**Y - Foreign Patents**
-- Relevant to patentability but not US patents
-- Important for international prior art
+**Y — Relevant to Inventive Step (§ 103)**
+- Relevant when combined with other references
+- Important for obviousness analysis
+- Still significant prior art
 
-**A - Background References**
-- US patents for context only
-- Not basis for rejection
+**A — Background / General State of Art**
+- Reference for context only
+- Not a direct basis for rejection
 - Background/understanding material
 
-**NPL - Non-Patent Literature**
+**NPL — Non-Patent Literature**
 - Scientific papers, technical documents
 - Often indicates sophisticated prior art search
 - Critical for AI/software/biotech fields
@@ -395,8 +415,8 @@ print(f"CITATION CATEGORY ANALYSIS")
 print(f"=========================")
 print(f"Total citations: {citations['response']['numFound']}")
 print(f"\nCategory Breakdown:")
-print(f"  X (US - critical): {categories['X']} (Examiner: {examiner_by_category.get('X', 0)}, Applicant: {applicant_by_category.get('X', 0)})")
-print(f"  Y (Foreign): {categories.get('Y', 0)} (Examiner: {examiner_by_category.get('Y', 0)}, Applicant: {applicant_by_category.get('Y', 0)})")
+print(f"  X (§102 anticipation): {categories['X']} (Examiner: {examiner_by_category.get('X', 0)}, Applicant: {applicant_by_category.get('X', 0)})")
+print(f"  Y (§103 inventive step): {categories.get('Y', 0)} (Examiner: {examiner_by_category.get('Y', 0)}, Applicant: {applicant_by_category.get('Y', 0)})")
 print(f"  A (Background): {categories.get('A', 0)} (Examiner: {examiner_by_category.get('A', 0)}, Applicant: {applicant_by_category.get('A', 0)})")
 print(f"  NPL (Non-patent): {categories.get('NPL', 0)} (Examiner: {examiner_by_category.get('NPL', 0)}, Applicant: {applicant_by_category.get('NPL', 0)})")
 ```
@@ -566,8 +586,8 @@ print(f"\n**📁 [Download Office Action ({download_link['pageCount']} pages)]({
 ```
 
 **Document Code Decoder (Citation-Related):**
-- **CTFR**: Non-Final Office Action (where citation appears)
-- **CTNF**: Final Office Action Rejection
+- **CTNF**: Non-Final Office Action (first rejection — where most citations appear)
+- **CTFR**: Final Office Action (final rejection)
 - **NOA**: Notice of Allowance (citation overcame or not used)
 - **892**: Examiner's Search Strategy & Citations List
 - **IDS**: Applicant's Information Disclosure Statement
@@ -884,6 +904,109 @@ else:
 
 ---
 
+### 📋 Example 11: OA Citations — Discovery & Cross-Check
+
+The **Office Action Citations v2** API provides raw citation data extracted directly from Form 892 and Form 1449. It has broader coverage than Enriched Citations and is the recommended cross-check source.
+
+**When to use OA Citations vs Enriched Citations:**
+
+| | OA Citations v2 | Enriched Citations v3 |
+|---|---|---|
+| **Data source** | Raw Form 892/1449 | AI-extracted from OA text |
+| **Coverage** | Broader (older records) | Narrower but richer |
+| **Passage locations** | No | Yes |
+| **Claim mapping** | No | Yes |
+| **Best for** | Discovery, cross-check, volume | Deep analysis |
+
+#### Stage 1: OA Citation Discovery
+
+```python
+# Broad OA citation discovery for an art unit
+oa_results = search_oa_citations_minimal(
+    criteria='groupArtUnitNumber:2854 AND createDateTime:[2020-01-01T00:00:00Z TO *]',
+    rows=50
+)
+
+print(f"Found {oa_results['response']['numFound']} OA citations")
+
+# OA minimal returns 7 fields:
+# patentApplicationNumber, groupArtUnitNumber, techCenter,
+# referenceIdentifier, actionTypeCategory, examinerCitedReferenceIndicator, createDateTime
+for doc in oa_results['response']['docs'][:5]:
+    print(f"{doc['referenceIdentifier']} — {doc.get('actionTypeCategory', 'N/A')}")
+```
+
+#### Stage 2: Cross-Check with Enriched Citations
+
+A useful pattern is to check whether a reference appearing in OA citations also shows up in enriched citations with passage/claim detail:
+
+```python
+app_number = '17896175'
+
+# Get OA citations (broader coverage, raw data)
+oa_citations = search_oa_citations_minimal(
+    criteria=f'patentApplicationNumber:{app_number}',
+    rows=50
+)
+oa_refs = {doc['referenceIdentifier'] for doc in oa_citations['response']['docs']}
+
+# Get enriched citations (AI-extracted passage locations and claim mapping)
+enriched_citations = search_citations_minimal(
+    criteria=f'patentApplicationNumber:{app_number} AND officeActionDate:[2017-10-01 TO *]',
+    rows=50
+)
+enriched_refs = {doc['citedDocumentIdentifier'] for doc in enriched_citations['response']['docs']}
+
+# Compare coverage
+only_in_oa = oa_refs - enriched_refs
+only_in_enriched = enriched_refs - oa_refs
+in_both = oa_refs & enriched_refs
+
+print(f"OA only (not enriched): {len(only_in_oa)} refs")
+print(f"Enriched only: {len(only_in_enriched)} refs")
+print(f"In both: {len(in_both)} refs")
+
+# Get passage detail for refs that appear in both (highest confidence)
+if in_both:
+    ref_id = next(iter(in_both))
+    detail = search_citations_balanced(
+        criteria=f'patentApplicationNumber:{app_number} AND citedDocumentIdentifier:{ref_id}',
+        rows=5
+    )
+    for doc in detail['response']['docs']:
+        print(f"Passage: {doc.get('passageLocationText', 'N/A')}")
+        print(f"Claims: {doc.get('relatedClaimNumberText', 'N/A')}")
+```
+
+#### Stage 3: OA Citations Balanced (All 16 Fields)
+
+```python
+# Get full OA citation context for selected application
+oa_balanced = search_oa_citations_balanced(
+    criteria=f'patentApplicationNumber:{app_number}',
+    rows=20
+)
+
+# All 16 fields including:
+# legalSectionCode, actionTypeCategory, officeActionNumber,
+# nplText, countryCode, kindCode, applicantCitedExaminerReferenceIndicator
+for doc in oa_balanced['response']['docs']:
+    print(f"Ref: {doc.get('referenceIdentifier')}")
+    print(f"  Legal section: {doc.get('legalSectionCode', 'N/A')}")
+    print(f"  Action type: {doc.get('actionTypeCategory', 'N/A')}")
+    print(f"  Examiner cited: {doc.get('examinerCitedReferenceIndicator')}")
+```
+
+#### Field Discovery for OA Citations
+
+```python
+# Discover all available OA citation fields
+oa_fields = get_oa_citation_fields()
+# Returns all 16 field names with descriptions and query guidance
+```
+
+---
+
 ## Known Patents for Testing
 
 These patents/applications can be used for testing citation workflows:
@@ -941,6 +1064,23 @@ These patents/applications can be used for testing citation workflows:
 - **Purpose**: Get database statistics and aggregations
 - **Use Cases**: Volume analysis, trend identification, strategic planning
 
+### Office Action Citations v2 Tools
+
+**search_oa_citations_minimal** - OA Citation Discovery
+- **Purpose**: High-volume Office Action citation discovery from Form 892/1449 data
+- **Fields**: 7 preset fields (`patentApplicationNumber`, `groupArtUnitNumber`, `techCenter`, `referenceIdentifier`, `actionTypeCategory`, `examinerCitedReferenceIndicator`, `createDateTime`)
+- **Recommended**: 50-100 results for discovery/cross-check
+- **API**: Office Action Citations v2 (broader coverage than Enriched Citations v3)
+
+**search_oa_citations_balanced** - OA Citation Analysis
+- **Purpose**: Detailed Office Action citation analysis with all available fields
+- **Fields**: All 16 OA citation fields including `legalSectionCode`, `officeActionNumber`, `nplText`, `kindCode`, `countryCode`
+- **Recommended**: 10-20 results for detailed analysis
+
+**get_oa_citation_fields** - OA Citation Field Discovery
+- **Purpose**: Discover OA Citations API field names and query syntax
+- **Use Cases**: Query construction, field validation for OA citation searches
+
 ### Guidance Tool
 
 **citations_get_guidance** - Selective Workflow Guidance
@@ -995,6 +1135,29 @@ criteria='groupArtUnitNumber:2854 AND officeActionDate:[2020-01-01 TO 2024-12-31
 # Find X/Y category citations (critical prior art)
 criteria='(citationCategoryCode:X OR citationCategoryCode:Y) AND publicationNumber:9049188'
 ```
+
+### OA Citations v2 Query Patterns
+
+```python
+# OA citations use the same Lucene syntax but different field names
+
+# Find OA citations for an application
+criteria='patentApplicationNumber:17896175'
+
+# Examiner-cited references in an art unit
+criteria='groupArtUnitNumber:2854 AND examinerCitedReferenceIndicator:true'
+
+# OA citations by technology center with date filter
+criteria='techCenter:2100 AND createDateTime:[2020-01-01T00:00:00Z TO *]'
+
+# OA citations with legal section code (rejection basis)
+criteria='patentApplicationNumber:17896175 AND legalSectionCode:102'
+
+# NPL-only OA citations
+criteria='groupArtUnitNumber:1759 AND nplIndicator:true'
+```
+
+**Note**: OA Citations uses `referenceIdentifier` (not `citedDocumentIdentifier`) and `createDateTime` (not `officeActionDate`) for date filtering. Use `get_oa_citation_fields` to see all available field names.
 
 ### Important Date Coverage Notes
 

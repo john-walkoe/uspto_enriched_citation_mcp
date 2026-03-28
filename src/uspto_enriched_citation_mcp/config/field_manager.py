@@ -257,6 +257,51 @@ class FieldManager:
 
         return True, "Field validation passed"
 
+    def validate_fields(self, field_list: List[str]) -> Tuple[bool, List[str]]:
+        """
+        Validate a list of field names against available fields.
+
+        Args:
+            field_list: List of field names to validate
+
+        Returns:
+            Tuple of (is_valid, list of invalid field names)
+        """
+        all_available = self.get_all_available_fields()
+        invalid = [f for f in field_list if f not in all_available]
+        return (len(invalid) == 0, invalid)
+
+    def get_all_available_fields(self) -> List[str]:
+        """
+        Get list of all available fields from predefined sets.
+
+        Returns:
+            List of all unique field names across all predefined sets
+        """
+        all_fields = set()
+        sets = self.config.get("predefined_sets", {})
+        for field_set in sets.values():
+            fields = field_set.get("fields", [])
+            all_fields.update(fields)
+        # If no config loaded, return defaults
+        if not all_fields:
+            return list(DEFAULT_MINIMAL_FIELDS) + list(DEFAULT_BALANCED_FIELDS)
+        return sorted(list(all_fields))
+
+    def get_field_set_description(self, set_name: str) -> str:
+        """
+        Get description for a predefined field set.
+
+        Args:
+            set_name: Name of the field set
+
+        Returns:
+            Description string or empty string if not found
+        """
+        sets = self.config.get("predefined_sets", {})
+        field_set = sets.get(set_name, {})
+        return field_set.get("description", "")
+
     def filter_response_custom(
         self, response: Dict, custom_fields: List[str], include_id: bool = True
     ) -> Dict:

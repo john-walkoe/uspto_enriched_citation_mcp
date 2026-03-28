@@ -45,14 +45,14 @@ class TestBasic:
             enable_cache=False
         )
         assert client.api_key == "test_key_32_characters_long_example"  # pragma: allowlist secret
-        assert client.base_url == "https://developer.uspto.gov/ds-api"
+        assert client.base_url == "https://api.uspto.gov"
 
     @pytest.mark.asyncio
     async def test_client_initialization(self, mock_client):
         """Test client initialization."""
         client = mock_client
         assert client.api_key == "test_key_32_characters_long_example"  # pragma: allowlist secret
-        assert client.base_url == "https://developer.uspto.gov/ds-api"
+        assert client.base_url == "https://api.uspto.gov"
         assert client.enable_cache is False
 
     @pytest.mark.asyncio

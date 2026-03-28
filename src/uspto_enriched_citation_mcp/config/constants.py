@@ -39,12 +39,23 @@ MAX_QUERY_NESTING_DEPTH = 20
 MAX_RANGE_QUERIES = 10
 
 # === API CONFIGURATION ===
-# USPTO API base URL
-DEFAULT_BASE_URL = "https://developer.uspto.gov/ds-api"
+# USPTO ODP API base URL (migrated from developer.uspto.gov/ds-api)
+DEFAULT_BASE_URL = "https://api.uspto.gov"
+
+# Enriched Citations v3 endpoint paths
+ENRICHED_CITATIONS_FIELDS_PATH = "/api/v1/patent/oa/enriched_cited_reference_metadata/v3/fields"
+ENRICHED_CITATIONS_RECORDS_PATH = "/api/v1/patent/oa/enriched_cited_reference_metadata/v3/records"
+
+# Office Action Citations v2 endpoint paths
+OA_CITATIONS_FIELDS_PATH = "/api/v1/patent/oa/oa_citations/v2/fields"
+OA_CITATIONS_RECORDS_PATH = "/api/v1/patent/oa/oa_citations/v2/records"
 
 # === MCP SERVER ===
 # Default MCP server port
 DEFAULT_MCP_SERVER_PORT = 8081
+
+# Default HTTP transport port (for MCP Apps / reverse proxy deployments)
+DEFAULT_HTTP_PORT = 8000
 
 # === RATE LIMITING ===
 # Default rate limit (requests per minute)

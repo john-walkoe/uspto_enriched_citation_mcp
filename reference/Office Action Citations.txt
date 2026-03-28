@@ -1,0 +1,89 @@
+From - https://data.uspto.gov/apis/office-action-citations/search
+
+Office Action Citations
+This API allows for daily refresh and retrieval of citation data from Office Actions mailed from October 1, 2017 to 30 days prior to the current date. It uses information derived from citations referenced on the Form PTO-892, Form PTO-1449, and text of Office Actions.​
+
+The United States Patent and Trademark Office (USPTO) Office Action Research Dataset for Patents contains detailed information derived from the Office actions issued by patent examiners to applicants during the patent examination process. The “Office action” is a written notification to the applicant of the examiner’s decision on patentability. It generally discloses the reasons for any rejections, objections, or requirements and includes relevant information or references that the applicant may find useful for responding to the examiner and deciding whether to continue prosecuting the application.
+
+DH Legacy Dataset: USPTO Office Action Citations API v2​
+
+DH Legacy Description: USPTO Office Action Citations API (will be migrated to ODP) | United States Patent and Trademark Office - Open Data Portal
+
+POSThttps://api.uspto.gov/api/v1/patent/oa/oa_citations/v2/records
+
+Returns a list of all OA Citations that match your search term.
+
+Note: API Key is required. Obtain an API key.
+
+POST See Swagger documentation
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+Response
+Successful request.
+
+Data Property	Description	Type
+applicantCitedExaminerReferenceIndicator ​	field indicates whether the prior U.S. patent grant or U.S. pre-grant publication citation was retrieved from the Form PTO-1449. Note that, since applicants can submit multiple Forms PTO-1449 during examination, prior art citation data from this source may be incomplete for patent applications still pending with the Office as of June 2017​	Boolean
+createUserIdentifier​	The Job Identifier of the job that initiated the insert of the entity into the database.​	String
+workGroup	A subdivision within a group art unit. It represents a smaller team of patent examiners that share similar technical expertise. Usually associated with examiner IDs. ​	String
+officeActionCitationReferenceIndicator​	Indicates whether the citation was referenced in an Office action. When this field is positive (value of 1), the ifw_number, action_type, and action_subtype fields will identify the relevant Office action and rejection grounds for which the citation is referenced.​	Boolean
+referenceIdentifier​	Identification of the cited patent document as it relates to the PCT document. BDR needs to parsing XML (both 892 and 1449), extract data, and combine extracted data to make this field. Sometimes this info comes from Office Action.(Patent number or publication number)​	String
+actionTypeCategory​	Includes the type of office action issued by the examiner such as rejected, cancelled, withdrawn, interpreted, objected or allowed events that indicate the procedural state of a patent application during examination ​	String
+patentApplicationNumber​	The unique number assigned to a patent application when it is filed. The application number includes a two-digit series code and a six-digit serial number.​	String
+legalSectionCode	Indicates the category or nature of the action taken on the patent application, such as filing, office action, amendment, allowance, or abandonment. Legal section code indicates the specific legal provision or statute under which a particular action, rejection, or decision is made in the patent application process​	String
+groupArtUnitNumber	a four-digit code used by USPTO to categorize and assign patent applications to specialized examiner teams based on technical subject matter. It helps ensure that applications are reviewed y examiners with relevant expertise. the first two digits represent the technology center and the last two-digit identifies the specific art unit team within that center​	String
+createDateTime​	The date and time that entity is inserted in the database.​	Date
+techCenter​ ​	a four-digt code used by USPTO to categorize and assign patent applications to specialized examiner teams based on technical subject matter. It helps ensure that applications are reviewed by examiners with relevant expertise. the first two digits represent the technology center​	String
+paragraphNumber	Indicates the specific number paragraph within a patent document or office action that is being referenced or cited​	String
+obsoleteDocumentIdentifier​	(Key) A unique identifier for a document stored in the IFW repository. ​	String
+parsedReferenceIdentifier​	Contains only the numeric value of a referenceIdentifier​	String
+Id	unique identifier​	String
+examinerCitedReferenceIndicator​	field indicates whether the prior U.S. patent grant or U.S. pre-grant publication citation was retrieved from the Form PTO-892.​	Boolean
+
+
+ENDPOINT
+https://api.uspto.gov/api/v1/patent/oa/oa_citations/v2/records
+JSON RESPONSE SAMPLE
+{
+  "response": {
+    "start": 0,
+    "numFound": 2,
+    "docs": [
+      {
+        "applicantCitedExaminerReferenceIndicator": false,
+        "createUserIdentifier": "ETL_SYS",
+        "workGroup": "1740",
+        "officeActionCitationReferenceIndicator": false,
+        "referenceIdentifier": "------- European Patent",
+        "patentApplicationNumber": "14404075",
+        "actionTypeCategory": "",
+        "legalSectionCode": "",
+        "groupArtUnitNumber": "1742",
+        "createDateTime": "2025-07-09T15:40:52",
+        "techCenter": "1700",
+        "obsoleteDocumentIdentifier": "IXRYOH0ORXEAPX1",
+        "parsedReferenceIdentifier": "",
+        "id": "67d1e8f3956ca6cb0c9f6b54c2a7839f",
+        "examinerCitedReferenceIndicator": true
+      },
+      {
+        "applicantCitedExaminerReferenceIndicator": true,
+        "createUserIdentifier": "ETL_SYS",
+        "workGroup": "1740",
+        "officeActionCitationReferenceIndicator": false,
+        "referenceIdentifier": "------- European Patent",
+        "patentApplicationNumber": "14404075",
+        "actionTypeCategory": "",
+        "legalSectionCode": "",
+        "groupArtUnitNumber": "1742",
+        "createDateTime": "2025-07-09T15:40:52",
+        "techCenter": "1700",
+        "obsoleteDocumentIdentifier": "IXRYOH0ORXEAPX1",
+        "parsedReferenceIdentifier": "",
+        "id": "6dfedff7ed31f51adaa9da15fc60ae0b",
+        "examinerCitedReferenceIndicator": false
+      }
+    ]
+  }
+}
+}

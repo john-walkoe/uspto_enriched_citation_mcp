@@ -92,30 +92,31 @@ This is a **Model Context Protocol (MCP) server** that provides structured acces
 
 ### Tool Search Optimization
 
-**Status**: Enabled in Claude Code v2.1.7+ (built-in, automatic)
+**Status**: Implemented via `annotations={"defer_loading": ...}` on all 10 tools.
 
-Citations MCP supports tool search for context efficiency:
-- **Token Savings**: 50-60% reduction in tool definition overhead (~3-5K tokens saved)
-- **Auto-detection**: When MCP tools exceed 10% of context, tool search activates automatically
-- **Entry Points**: `search_citations_minimal` and `citations_get_guidance` always available
-- **Progressive Discovery**: Other tools loaded on-demand via MCPSearch
+Tool search is supported at two levels:
 
-To verify tool search is working:
+**1. MCP Server (this repo) — `defer_loading` annotations on tools:**
+
+| Tool | `defer_loading` | Reason |
+|------|----------------|--------|
+| `search_citations_minimal` | `False` — always loaded | Primary entry point |
+| `citations_get_guidance` | `False` — always loaded | Workflow discovery |
+| All other 8 tools | `True` — deferred | Loaded on-demand by search |
+
+The `annotations={"defer_loading": False/True}` flag passes through FastMCP 3.0's tool listing to any client that supports MCP tool search (Claude API with `advanced-tool-use` beta, Claude Code with `tengu_mcp_tool_search: true`).
+
+**2. Claude Code (client) — automatic BM25 tool search:**
+
+Claude Code globally enables BM25 tool search via `tengu_mcp_tool_search: true` in `~/.claude.json`. No per-MCP configuration needed — it activates automatically when tools exceed 10% of context. The `serverInstructions` (`instructions=SERVER_INSTRUCTIONS` on FastMCP constructor) tell Claude Code what this server does and which tools to search for.
+
+**3. Claude API (if calling directly):**
+Add `betas=["advanced-tool-use-2025-11-20"]` and include `{"type": "tool_search_tool_bm25_20251119", "name": "tool_search_tool_bm25"}` in tools. The `defer_loading` annotations are respected automatically.
+
+To verify tool search is working in Claude Code:
 ```bash
-# Run in Claude Code CLI
 /context
-# Should show: "MCP tools: loaded on-demand (N servers)"
-```
-
-To enable manually (if needed):
-```bash
-# Windows PowerShell
-$env:ENABLE_TOOL_SEARCH = "true"
-claude
-
-# Linux/Mac
-export ENABLE_TOOL_SEARCH=true
-claude
+# Should show MCP tools with reduced token count
 ```
 
 ### Key Components

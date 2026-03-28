@@ -1,10 +1,12 @@
-# USPTO Enriched Citation API v3 MCP Server
+# USPTO Patent Citation MCP Server (Enriched v3 + OA v2)
 
-A high-performance Model Context Protocol (MCP) server for USPTO Enriched Citation API v3 with **token-saving context reduction** capabilities (90-95%), **progressive disclosure workflows**, and **seamless cross-MCP integration** for complete patent lifecycle analysis.
+A high-performance Model Context Protocol (MCP) server providing access to **two USPTO patent citation APIs** — the **Enriched Citations v3** (AI-extracted passage locations, claim mapping) and the **Office Action Citations v2** (raw Form 892/1449 citation data) — with **token-saving context reduction** (90-95%), **progressive disclosure workflows**, **interactive MCP Apps UI panels**, and **seamless cross-MCP integration** for complete patent lifecycle analysis.
 
 [![Platform Support](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-blue.svg)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
-[![API](https://img.shields.io/badge/API-USPTO%20Enriched%20Citation%20v3-green.svg)]()
+[![FastMCP](https://img.shields.io/badge/FastMCP-3.0-orange.svg)]()
+[![APIs](https://img.shields.io/badge/APIs-Enriched%20v3%20%7C%20OA%20v2-green.svg)]()
+[![MCP Apps](https://img.shields.io/badge/MCP%20Apps-UI%20Views-blueviolet.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## 📚 Documentation
@@ -86,11 +88,11 @@ The PowerShell script will:
 - **📊Progressive Disclosure Workflow** - Minimal discovery → Balanced analysis → Detailed citation examination
 - **🎯Token-Saving Context Reduction** - 90-95% reduction to optimized search results
 - **📋Lucene Query Syntax Support** - Full Apache Lucene Query Parser Syntax with validation
-- **✨Citation-Specific Features** - Decision types (CITED/DISCARDED/REFERRED/FOLLOWED), citation context, passage analysis
+- **✨Two Citation APIs** - Enriched Citations v3 (AI-extracted) + Office Action Citations v2 (raw 892/1449)
+- **🖥️MCP Apps UI** - Interactive card-based panels for citation results, OA citations, and statistics
 - **🔗Cross-MCP Integration** - Links to Patent File Wrapper, PTAB, and other USPTO MCPs
-- **:computer:AI-Powered Data Extraction** - Uses machine learning and NLP data extraction from USPTO
-- **:alarm_clock:Time-Coverage** - Office actions mailed from October 1, 2017 to 30 days prior to current date
-- **🛡️Production-Ready Resilience** - Structured logging, retry logic, error handling, timeout handling
+- **🌐HTTP + stdio Dual Transport** - stdio for Claude Desktop, HTTP mode for MCP Apps and reverse proxies
+- **🛡️Production-Ready Resilience** - Structured logging, retry logic, circuit breaker, rate limiting
 
 ### Workflow Design - All Performed by LLM with Minimal User Guidance
 
@@ -136,36 +138,36 @@ The Citations MCP provides **5 guided workflow prompts** accessible directly in 
 - **Smart Validation** - Automatic format detection and guidance
 - **Cross-MCP Integration** - Seamless workflows with PTAB, FPD, Citations, and Pinecone MCPs
 
-## 📊 Available Functions
+## 📊 Available Functions (10 Tools)
 
-### Search Functions (Progressive Disclosure Tools)
+### Enriched Citations v3 Tools (AI-extracted passage locations, claim mapping)
 
-| Function (Display Name) | Use Case | Requirements |
-|----------|----------|------------------|
-| `search_citations_minimal` | Ultra-fast citation discovery with 8 essential fields | USPTO_API_KEY |
-| `search_citations_balanced` | Comprehensive citation analysis with 18+ fields for detailed research | USPTO_API_KEY |
+| Tool | Use Case | Requirements |
+|------|----------|--------------|
+| `search_citations_minimal` | Ultra-fast citation discovery — 8 essential fields, 90-95% context reduction | USPTO_API_KEY |
+| `search_citations_balanced` | Comprehensive citation analysis — 19 fields, 80-85% context reduction | USPTO_API_KEY |
+| `get_citation_details` | Full single citation record by ID. **⚠️ Metadata only — use PFW for actual documents** | USPTO_API_KEY |
+| `get_citation_statistics` | Database statistics and aggregations for strategic planning | USPTO_API_KEY |
+| `get_available_fields` | Discover Enriched Citations field names and query syntax | None |
 
-**Discovery Search Tier (`search_citations_minimal`)**: Identify relevant citations quickly
+### Office Action Citations v2 Tools (raw Form 892/1449 data — broader coverage)
 
-- **Essential 8 fields**: Core identifiers (citedReferenceIdentifier, applicationNumberText, patentNumber)
-- **Decision intelligence**: Decision types, citing office dates, art unit analysis
-- **Cross-reference ready**: Links to Patent File Wrapper and PTAB databases
-- **90-95% context reduction**: Focus on most critical information for discovery
+| Tool | Use Case | Requirements |
+|------|----------|--------------|
+| `search_oa_citations_minimal` | High-volume OA citation discovery — 7 key fields | USPTO_API_KEY |
+| `search_oa_citations_balanced` | Detailed OA citation analysis — all 16 fields | USPTO_API_KEY |
+| `get_oa_citation_fields` | Discover OA Citations field names and query syntax | None |
 
-**Balanced Search Tier (`search_citations_balanced`)**: Comprehensive citation analysis  
+### Utility Tools
 
-- **18+ key fields**: Technical classifications, examiner information, filing/grant dates
-- **Integration ready**: Complete field set for portfolio and competitive intelligence
-- **80-85% context reduction**: Rich metadata without unnecessary document bloat
-
-### Analysis Functions
-
-| Function (Display Name) | Purpose | Requirements |
-|----------|---------|------------|
-| `get_citation_details` | Complete citation details by unique identifier with optional citing context. **⚠️ Returns metadata only - use PFW MCP 2-step workflow for actual documents** | USPTO_API_KEY |
-| `get_citation_statistics` | Get database statistics and aggregations for strategic planning | USPTO_API_KEY |
-| `get_available_fields` | Discover searchable field names and query syntax guidance | None |
+| Tool | Purpose | Requirements |
+|------|---------|--------------|
 | `validate_query` | Validate Lucene syntax and get optimization suggestions | None |
+| `citations_get_guidance` | Context-efficient selective guidance sections | None |
+
+**When to use each API:**
+- **Enriched Citations v3**: When you need passage locations, claim mapping, quality scores, or AI-extracted analysis. Coverage from 2017-10-01.
+- **OA Citations v2**: When you need broader coverage, raw Form 892/1449 data, or want to cross-check enriched results. Recommended as a secondary verification source.
 
 **Detailed Citation Tier (`get_citation_details`)**: Single citation deep dive
 
@@ -244,11 +246,11 @@ The MCP server supports user-customizable field sets through YAML configuration 
 **⚠️ API v3 Field Reality (22 total fields as of 2024-07-11)**
 
 - **Core Identifiers**: `citedDocumentIdentifier`, `patentApplicationNumber`, `publicationNumber`, `id`
-- **Citation Metadata**: `citationCategoryCode`, `examinerCitedReferenceIndicator`, `applicantCitedExaminerReferenceIndicator`
+- **Citation Metadata**: `citationCategoryCode` (X=anticipates/obviates alone, Y=obviates combined — only X and Y in dataset, per WIPO ST.14), `examinerCitedReferenceIndicator`, `applicantCitedExaminerReferenceIndicator`
 - **Organizational**: `groupArtUnitNumber`, `techCenter`, `workGroupNumber`
 - **Temporal**: `officeActionDate`, `createDateTime`
 - **Content**: `passageLocationText`, `relatedClaimNumberText`, `qualitySummaryText`, `officeActionCategory`
-- **Reference Details**: `inventorNameText`, `kindCode`, `countryCode`, `nplIndicator`
+- **Reference Details**: `inventorNameText`, `kindCode`, `countryCode`, `nplIndicator` (boolean — X/Y records can be NPL)
 - **System**: `createUserIdentifier`, `obsoleteDocumentIdentifier`
 
 **❌ Fields NOT Available (despite code references):**
@@ -292,7 +294,7 @@ inventorNameText:Smith*                               # Inventor name prefix wil
 **Boolean Logic:**
 ```sql
 techCenter:2100 AND groupArtUnitNumber:2854           # Boolean AND
-citationCategoryCode:X OR citationCategoryCode:Y      # Boolean OR (US or foreign patents)
+citationCategoryCode:X OR citationCategoryCode:Y      # Only X and Y are populated in this dataset
 techCenter:2100 NOT groupArtUnitNumber:1600          # Boolean NOT
 ```
 
@@ -306,8 +308,8 @@ citedDocumentIdentifier:US*                           # Cited document wildcard
 **Citation Indicators:**
 ```sql
 examinerCitedReferenceIndicator:true                  # Only examiner-cited references
-nplIndicator:true                                     # Non-patent literature only
-citationCategoryCode:NPL                              # NPL citations
+nplIndicator:true                                     # Non-patent literature only (boolean field)
+citationCategoryCode:X                                # X-category citations only
 ```
 
 **Complex Multi-Field:**
@@ -363,8 +365,8 @@ docs = pfw_get_application_documents(
 ```
 
 **Document Code Decoder (Citation-Related Documents):**
-- **CTFR**: Non-Final Office Action (where citation appears)
-- **CTNF**: Final Office Action Rejection
+- **CTNF**: Non-Final Office Action (first rejection — where most citations appear)
+- **CTFR**: Final Office Action (final rejection)
 - **NOA**: Notice of Allowance (citation overcame or not used)
 - **892**: Examiner's Search Strategy & Citations List
 - **IDS**: Applicant's Information Disclosure Statement
@@ -462,6 +464,48 @@ download = pfw_get_document_download(
 
 For detailed integration workflows, cross-referencing examples, and complete use cases, see [USAGE_EXAMPLES.md](USAGE_EXAMPLES.md#cross-mcp-integration-workflows).
 
+## 🌐 HTTP Mode & MCP Apps
+
+This server supports dual transport: **stdio** (default, for Claude Desktop) and **HTTP** (for MCP Apps and browser-based clients).
+
+### Starting in HTTP Mode
+
+```bash
+FASTMCP_TRANSPORT=http uv run uspto-enriched-citation-mcp
+# Server starts at http://localhost:8000/mcp
+```
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `FASTMCP_TRANSPORT` | `stdio` | `stdio` for Claude Desktop, `http` for HTTP transport |
+| `FASTMCP_PORT` | `8000` | HTTP port |
+| `FASTMCP_HOST` | `0.0.0.0` | HTTP bind address |
+| `CORS_EXTRA_ORIGIN` | *(none)* | Additional CORS origin for reverse proxy deployments |
+
+### MCP Apps UI Panels
+
+MCP Apps panels render in **both stdio and HTTP mode**. stdio is sufficient for Claude Desktop — HTTP mode is only needed for browser-based clients (e.g. `basic-host` test harness).
+
+When run via an MCP Apps-capable client, three card-based UI panels render automatically:
+
+| Tool(s) | View | What You See |
+|---------|------|--------------|
+| `search_citations_minimal`, `search_citations_balanced` | Citation Results | Color-coded citation cards (X=red, Y=orange, A=green), examiner/applicant badges, "Open in Patent Center" links |
+| `search_oa_citations_minimal`, `search_oa_citations_balanced` | OA Citations | Office Action citation cards with 892/1449 source badges, legal section code badges |
+| `get_citation_statistics` | Statistics | Summary stat cards and horizontal bar chart breakdowns |
+
+### Testing MCP Apps (basic-host)
+
+```bash
+# Terminal 1 — start server in HTTP mode
+FASTMCP_TRANSPORT=http uv run uspto-enriched-citation-mcp
+
+# Terminal 2 — start basic-host
+cd ~/ext-apps/examples/basic-host
+SERVERS='["http://localhost:8000/mcp"]' npm start
+# Open http://localhost:8080, run any search tool, card UI renders in the panel
+```
+
 ## 🛠️ Installation & Setup
 
 ### Prerequisites
@@ -491,8 +535,7 @@ See [INSTALL.md](INSTALL.md) for complete cross-platform installation guide.
         "uspto-enriched-citation-mcp"
       ],
       "env": {
-        "USPTO_ECITATION_API_KEY": "your_actual_USPTO_api_key_here",
-        "ECITATION_RATE_LIMIT": "100"
+        "USPTO_API_KEY": "your_actual_USPTO_api_key_here"
       }
     }
   }
@@ -518,7 +561,22 @@ See [INSTALL.md](INSTALL.md) for complete cross-platform installation guide.
 
 ## 🧪 Testing
 
-### Core Tests (Essential)
+### Manual MCP Tests — Claude Desktop (Recommended First Step)
+
+**[tests/TEST_SUITE.md](tests/TEST_SUITE.md)** contains 28 end-to-end tests with known-good inputs
+and verified expected outputs for every tool. Run these in Claude Desktop to confirm the MCP is
+working correctly against the live USPTO API.
+
+This is especially useful because the USPTO enriched citations API has a data coverage cutoff and
+not all field values are populated in practice — hunting for data that fits can be frustrating.
+The test suite uses pre-verified records and queries so you get reliable results immediately.
+
+**To run:** Open Claude Desktop, paste this prompt, then append the tests you want to run:
+> *"Please perform these MCP tests in order. For each test, call the tool with the parameters shown and tell me whether the result matches the expected output. Report PASS, PARTIAL, or FAIL for each."*
+
+**Last validated:** 2026-03-28 — 28/28 PASS (STDIO + HTTP)
+
+### Automated Tests — pytest
 
 **With uv (Recommended):**
 ```bash
@@ -548,7 +606,7 @@ See [tests/README.md](tests/README.md) for comprehensive testing guide.
 
 ```
 uspto_enriched_citation_mcp/
-├── field_configs.yaml             # Root-level field customization
+├── field_configs.yaml             # Root-level field customization (minimal + balanced sets)
 ├── .gitignore                     # Git ignore patterns
 ├── .pre-commit-config.yaml        # Pre-commit hooks configuration
 ├── .secrets.baseline              # Secret scanning baseline
@@ -558,22 +616,29 @@ uspto_enriched_citation_mcp/
 ├── src/
 │   └── uspto_enriched_citation_mcp/
 │       ├── __init__.py            # Package initialization
-│       ├── __main__.py           # Entry point for -m execution
-│       ├── main.py                 # MCP server with 7 tools
-│       ├── shared_secure_storage.py # Cross-MCP API key storage (Windows DPAPI)
-│       ├── config/                # Configuration modules
-│       │   ├── settings.py        # Environment configuration
-│       │   ├── field_manager.py   # YAML-based field configuration
-│       │   ├── secure_storage.py  # Windows DPAPI encryption
-│       │   ├── feature_flags.py   # Runtime feature toggles
-│       │   └── tool_reflections.py # LLM guidance and metadata
+│       ├── __main__.py            # Entry point for -m execution
+│       ├── main.py                # FastMCP 3.0 server — 10 tools + MCP Apps resources
+│       ├── shared_secure_storage.py # Cross-MCP API key storage (Windows DPAPI / Linux 600)
 │       ├── api/                   # API client modules
-│       │   ├── enriched_client.py # Modern httpx-based client with circuit breaker
-│       │   ├── client.py          # Deprecated aiohttp client (v2.0)
-│       │   └── field_constants.py # Field definitions
+│       │   ├── base_citation_client.py # Shared transport, circuit breaker, retry, caching
+│       │   ├── enriched_client.py # Enriched Citations v3 (api.uspto.gov, X-API-KEY auth)
+│       │   ├── oa_citations_client.py # Office Action Citations v2 (api.uspto.gov)
+│       │   └── field_constants.py # Field name constants
+│       ├── config/                # Configuration modules
+│       │   ├── settings.py        # Environment configuration (incl. HTTP/CORS settings)
+│       │   ├── constants.py       # API endpoint paths and defaults
+│       │   ├── field_manager.py   # YAML-based field configuration
+│       │   ├── feature_flags.py   # Runtime feature toggles
+│       │   └── tool_reflections.py # LLM guidance (loads reference/tool_guidance.md)
 │       ├── services/              # Business logic layer
-│       │   └── citation_service.py # Citation operations
-│       ├── prompts/               # Multi-step analysis workflows
+│       │   ├── citation_service.py # Enriched Citations operations
+│       │   └── oa_citation_service.py # OA Citations operations
+│       ├── ui/                    # MCP Apps HTML views (stdio + HTTP)
+│       │   └── views/
+│       │       ├── citation_results_view.py  # Enriched citation card UI (filter pills)
+│       │       ├── oa_citations_view.py      # OA citation card UI (filter pills)
+│       │       └── statistics_view.py        # Statistics summary + bar chart
+│       ├── prompts/               # Multi-step analysis workflow templates
 │       │   ├── patent_citation_analysis.py
 │       │   ├── enhanced_examiner_behavior_intelligence_PFW_PTAB_FPD.py
 │       │   ├── litigation_citation_research_PFW_PTAB.py
@@ -586,33 +651,47 @@ uspto_enriched_citation_mcp/
 │       │   ├── exceptions.py      # Custom exception classes
 │       │   └── enums.py           # Enum definitions
 │       └── util/                  # Utility modules
+│           ├── query_builder.py   # QueryParameters, build_query, validate_string_param
+│           ├── query_validator.py # Lucene syntax validation
 │           ├── rate_limiter.py    # Token bucket rate limiting
 │           ├── retry.py           # Exponential backoff retry logic
-│           ├── cache.py           # LRU caching for API responses
-│           ├── security_logger.py # Security event logging
-│           ├── query_validator.py # Lucene query validation
-│           └── request_context.py # Request context management
+│           ├── cache.py           # LRU/TTL caching for API responses
+│           ├── logging.py         # Rotating file logger setup
+│           ├── metrics.py         # Request metrics collection
+│           ├── security_logger.py # Security event logging + prompt injection detection
+│           └── request_context.py # Request ID tracking
+├── reference/                     # API reference documents (gitignored user copies)
+│   └── tool_guidance.md           # Static LLM guidance content (loaded by tool_reflections.py)
+├── audits/                        # Code review audit reports
 ├── deploy/                        # Deployment scripts
-│   ├── linux_setup.sh            # Linux deployment script (uv + API key setup)
-│   └── windows_setup.ps1         # PowerShell deployment script (DPAPI + Claude Desktop)
-├── tests/                         # Test files
-│   ├── README.md                 # Test suite documentation
-│   ├── test_basic.py             # Core functionality tests
-│   ├── test_integration.py       # Integration tests (API key required)
-│   ├── test_security.py          # Security tests (injection detection)
-│   ├── test_resilience.py        # Circuit breaker and rate limiting tests
-│   ├── test_field_configuration.py # Field management tests
-│   └── test_statistics.py        # Citation statistics tests
+│   ├── linux_setup.sh             # Linux setup (uv + shared key detection)
+│   ├── windows_setup.ps1          # Windows setup (DPAPI + Claude Desktop config)
+│   ├── manage_api_keys.ps1        # Windows key management utility
+│   ├── Validation-Helpers.psm1    # PowerShell key validators
+│   └── validation-helpers.sh      # Bash key validators + cross-MCP key detection
+├── tests/                         # Test suite
+│   ├── README.md                  # Test suite documentation
+│   ├── TEST_SUITE.md              # Manual test cases (28 tests, STDIO mode)
+│   ├── test_basic.py              # Core functionality (no API key required)
+│   ├── test_convenience_parameters.py # Convenience param → query builder tests
+│   ├── test_field_configuration.py    # Field management tests
+│   ├── test_integration.py            # Integration tests (API key required)
+│   ├── test_oa_citations_client.py    # OA Citations client tests
+│   ├── test_oa_citation_service.py    # OA Citations service tests
+│   ├── test_resilience.py             # Circuit breaker and rate limiting tests
+│   ├── test_security.py               # Injection detection + input validation tests
+│   ├── test_statistics.py             # Citation statistics tests
+│   └── test_unified_key_management.py # API key storage tests
 ├── pyproject.toml                 # Package configuration
-├── uv.lock                        # uv lockfile (if using uv)
+├── uv.lock                        # Dependency lockfile
 ├── README.md                      # This file
 ├── INSTALL.md                     # Installation guide
 ├── USAGE_EXAMPLES.md              # Function examples and workflows
-├── PROMPTS.md                     # Detailed prompt template documentation
-├── API_KEY_GUIDE.md              # API key setup guide with screenshots
-├── ENVIRONMENTS.md               # Environment configuration
+├── PROMPTS.md                     # Prompt template documentation
+├── API_KEY_GUIDE.md               # API key setup guide with screenshots
+├── ENVIRONMENTS.md                # Environment configuration reference
 ├── SECURITY_GUIDELINES.md         # Security best practices
-└── SECURITY_SCANNING.md          # Secret detection and prevention guide
+└── SECURITY_SCANNING.md           # Secret detection and prevention guide
 ```
 
 ## 🔍 Troubleshooting
@@ -624,9 +703,9 @@ uspto_enriched_citation_mcp/
 - **For test scripts:** Environment variables must be set
 
 **Setting USPTO API Key for Testing:**
-- **Windows Command Prompt:** `set USPTO_ECITATION_API_KEY=your_key`
-- **Windows PowerShell:** `$env:USPTO_ECITATION_API_KEY="your_key"`
-- **Linux/macOS:** `export USPTO_ECITATION_API_KEY=your_key`
+- **Windows Command Prompt:** `set USPTO_API_KEY=your_key`
+- **Windows PowerShell:** `$env:USPTO_API_KEY="your_key"`
+- **Linux/macOS:** `export USPTO_API_KEY=your_key`
 
 #### uv vs pip Issues
 - **uv advantages:** Better dependency resolution, faster installs
@@ -644,7 +723,7 @@ uspto_enriched_citation_mcp/
 
 #### Authentication Errors
 - **Cause:** Missing or invalid API key
-- **Solution:** Verify `USPTO_ECITATION_API_KEY` environment variable or Claude Desktop config
+- **Solution:** Verify `USPTO_API_KEY` environment variable or Claude Desktop config
 - **API Key Source:** Get free API key from [USPTO Open Data Portal](https://data.uspto.gov/myodp/)
 
 #### MCP Server Won't Start
@@ -656,7 +735,7 @@ uspto_enriched_citation_mcp/
 1. Check the test scripts for working examples
 2. Review the field configuration in `field_configs.yaml`
 3. Verify your Claude Desktop configuration matches the provided templates
-4. Use `get_tool_reflections` for workflow-specific guidance
+4. Use `citations_get_guidance` for workflow-specific guidance
 
 ## 🛡️ Security & Production Readiness
 

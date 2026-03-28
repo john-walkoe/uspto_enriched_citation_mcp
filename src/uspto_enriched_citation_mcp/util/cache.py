@@ -396,9 +396,10 @@ def generate_cache_key(prefix: str, *args, **kwargs) -> str:
     return key_str
 
 
-# Global cache instances
+# Global cache instances — thread-safe lazy initialization via module-level locks
 _fields_cache: Optional[TTLCache] = None
 _search_cache: Optional[LRUCache] = None
+_cache_init_lock = threading.Lock()
 
 
 def get_fields_cache(ttl_seconds: int = 3600, max_size: int = 10) -> TTLCache:
@@ -413,9 +414,10 @@ def get_fields_cache(ttl_seconds: int = 3600, max_size: int = 10) -> TTLCache:
         TTLCache instance
     """
     global _fields_cache
-    if _fields_cache is None:
-        _fields_cache = TTLCache(default_ttl_seconds=ttl_seconds, max_size=max_size)
-        logger.info(f"Fields cache initialized (TTL: {ttl_seconds}s, max: {max_size})")
+    with _cache_init_lock:
+        if _fields_cache is None:
+            _fields_cache = TTLCache(default_ttl_seconds=ttl_seconds, max_size=max_size)
+            logger.info(f"Fields cache initialized (TTL: {ttl_seconds}s, max: {max_size})")
     return _fields_cache
 
 
@@ -430,9 +432,10 @@ def get_search_cache(max_size: int = 100) -> LRUCache:
         LRUCache instance
     """
     global _search_cache
-    if _search_cache is None:
-        _search_cache = LRUCache(max_size=max_size)
-        logger.info(f"Search cache initialized (max: {max_size})")
+    with _cache_init_lock:
+        if _search_cache is None:
+            _search_cache = LRUCache(max_size=max_size)
+            logger.info(f"Search cache initialized (max: {max_size})")
     return _search_cache
 
 

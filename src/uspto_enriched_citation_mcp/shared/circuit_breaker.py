@@ -164,6 +164,14 @@ class CircuitBreaker:
                 raise  # Re-raise original exception
 
             except Exception as e:
+                # Rate-limit errors should NOT count toward circuit breaker failures
+                # — they are expected responses, not service health failures.
+                from .exceptions import RateLimitError as DomainRateLimitError
+
+                if isinstance(e, DomainRateLimitError):
+                    # Re-raise without counting as a failure
+                    raise
+
                 # Unexpected exception - also count as failure
                 self._failure_count += 1
                 self._last_failure_time = time.time()

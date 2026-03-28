@@ -92,25 +92,57 @@ class CitationService:
             }
 
     async def get_statistics(self, criteria: str = "") -> Dict[str, Any]:
-        """Get database statistics and aggregations."""
+        """Get database statistics with breakdowns via parallel count queries."""
+        import asyncio
+
         try:
-            # Perform a minimal search to get count information
-            fields = self.field_manager.get_field_set("citations_minimal")
-            result = await self.client.search_citations(
-                criteria=criteria or "*:*",
-                fields=fields,
-                rows=0,  # Only get count, no actual results
+            base = criteria or "*:*"
+
+            def scoped(extra: str) -> str:
+                if criteria:
+                    return f"({criteria}) AND ({extra})"
+                return extra
+
+            # Run all count queries in parallel (rows=0 fetches no docs, just numFound)
+            results = await asyncio.gather(
+                self.client.search_citations(criteria=base, rows=0),
+                self.client.search_citations(criteria=scoped("citationCategoryCode:X"), rows=0),
+                self.client.search_citations(criteria=scoped("citationCategoryCode:Y"), rows=0),
+                self.client.search_citations(criteria=scoped("citationCategoryCode:A"), rows=0),
+                self.client.search_citations(criteria=scoped("examinerCitedReferenceIndicator:true"), rows=0),
+                self.client.search_citations(criteria=scoped("applicantCitedExaminerReferenceIndicator:true"), rows=0),
+                return_exceptions=True,
             )
 
-            total_found = result.get("response", {}).get("numFound", 0)
+            def count(r: Any) -> int:
+                if isinstance(r, Exception):
+                    return 0
+                return r.get("response", {}).get("numFound", 0)
+
+            total      = count(results[0])
+            x_count    = count(results[1])
+            y_count    = count(results[2])
+            a_count    = count(results[3])
+            examiner   = count(results[4])
+            applicant  = count(results[5])
 
             return {
                 "status": "success",
-                "total_citations": total_found,
+                "total_citations": total,
                 "query": criteria or "all records",
-                "note": "Full aggregation statistics require additional API endpoints not yet implemented",
-                "available_stats": {"total_matching_citations": total_found},
-                "guidance": "Use search functions with specific criteria to analyze subsets of data",
+                "examiner_cited_count": examiner,
+                "applicant_cited_count": applicant,
+                "breakdowns": {
+                    "Citation Category": {
+                        "X — Novel (§102)": x_count,
+                        "Y — Inventive Step (§103)": y_count,
+                        "A — Background Art": a_count,
+                    },
+                    "Cited By": {
+                        "Examiner (Form 892)": examiner,
+                        "Applicant (Form 1449)": applicant,
+                    },
+                },
             }
         except Exception as e:
             from ..shared.error_utils import get_safe_error_message
@@ -119,7 +151,6 @@ class CitationService:
             return {
                 "status": "error",
                 "error": safe_message,
-                "message": "Statistics retrieval not fully implemented",
             }
 
     def _get_cross_mcp_links(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
