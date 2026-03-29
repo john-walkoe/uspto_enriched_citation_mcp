@@ -188,7 +188,7 @@ function buildCard(doc) {
       ${inventor ? `<div class="meta-item"><span class="meta-label">Inventor / Author</span><span class="meta-val">${inventor}</span></div>` : ''}
       ${doc.relatedClaimNumberText ? `<div class="meta-item"><span class="meta-label">Claims</span><span class="meta-val">${doc.relatedClaimNumberText}</span></div>` : ''}
     </div>
-    ${passages?.length ? `<div class="passage">📍 ${Array.isArray(passages) ? passages[0].substring(0,200) : passages.substring(0,200)}${(Array.isArray(passages)?passages[0]:passages).length > 200 ? '…' : ''}</div>` : ''}
+    ${passages?.length ? `<div class="passage">📍 ${Array.isArray(passages) ? passages[0].substring(0,500) : passages.substring(0,500)}${(Array.isArray(passages)?passages[0]:passages).length > 500 ? '…' : ''}</div>` : ''}
     ${appNum ? `<div class="pfw-link"><button class="pfw-btn" data-app="${appNum}">Open in PFW →</button></div>` : ''}
   `;
   div.querySelector('.pfw-btn')?.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${appNum}` }));

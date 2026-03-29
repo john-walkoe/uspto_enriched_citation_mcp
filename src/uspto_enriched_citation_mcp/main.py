@@ -674,7 +674,7 @@ async def citations_get_guidance(section: str = "overview") -> str:
 # =============================================================================
 
 
-@mcp.tool(app=AppConfig(resource_uri=_OA_CITATIONS_URI), annotations={"defer_loading": True, "readOnlyHint": True})
+@mcp.tool(app=AppConfig(resource_uri=_OA_CITATIONS_URI), annotations={"defer_loading": False, "readOnlyHint": True})
 async def search_oa_citations_minimal(
     criteria: str = "",
     rows: int = 50,
