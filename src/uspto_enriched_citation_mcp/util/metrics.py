@@ -10,6 +10,7 @@ Provides pluggable hooks for collecting operational metrics such as:
 """
 
 import time
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Dict
 from enum import Enum
