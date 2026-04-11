@@ -74,7 +74,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
   <span class="badge" id="tier-badge">loading...</span>
 </div>
 <div class="summary-bar" id="summary-bar" style="display:none"></div>
-<div class="login-note">Tip: <strong>Open in Patent Center →</strong> opens the <em>citing application</em> in USPTO Patent Center (login required). <strong>Google Patents →</strong> opens the <em>cited reference</em> on Google Patents (no login needed).</div>
+<div class="login-note">Tip: <strong>Open citing application in Patent Center →</strong> opens the application that cited this reference (USPTO login required). <strong>View cited patent or application on Google Patents →</strong> opens the cited reference itself (no login needed).</div>
 <div class="filter-bar" id="filter-bar" style="display:none"></div>
 <div id="loading">Loading OA Citation results...</div>
 <div id="error" style="display:none"></div>
@@ -190,7 +190,7 @@ function buildCard(doc) {
       <div class="meta-item"><span class="meta-label">Created</span><span class="meta-val">${created}</span></div>
     </div>
     ${(appNum || gpUrl) ? `<div class="pfw-link">
-      ${appNum ? `<button class="pfw-btn">Open in Patent Center →</button>` : ''}
+      ${appNum ? `<button class="pfw-btn">Open citing application in Patent Center →</button>` : ''}
       ${gpUrl ? `<button class="gp-btn">View cited patent or application on Google Patents →</button>` : ''}
     </div>` : ''}
   `;
