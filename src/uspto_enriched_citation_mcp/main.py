@@ -105,7 +105,17 @@ from .ui.views import CITATION_RESULTS_HTML, OA_CITATIONS_HTML, STATISTICS_HTML 
 _CITATION_RESULTS_URI = "ui://uspto-enriched-citations/citation-results.html"
 _OA_CITATIONS_URI = "ui://uspto-enriched-citations/oa-citations.html"
 _STATISTICS_URI = "ui://uspto-enriched-citations/statistics.html"
-_CSP = ResourceCSP(resource_domains=["https://cdn.jsdelivr.net"])
+
+# Build CSP domain list — always includes CDN; MCP_APP_EXTRA_DOMAINS adds more
+# (comma-separated) for reverse-proxy / Docker deployments.
+_csp_domains = ["https://cdn.jsdelivr.net"]
+_extra_csp = os.getenv("MCP_APP_EXTRA_DOMAINS", "").strip()
+if _extra_csp:
+    for _d in _extra_csp.split(","):
+        _d = _d.strip()
+        if _d:
+            _csp_domains.append(_d)
+_CSP = ResourceCSP(resource_domains=_csp_domains)
 
 
 @mcp.resource(_CITATION_RESULTS_URI, app=AppConfig(csp=_CSP))
