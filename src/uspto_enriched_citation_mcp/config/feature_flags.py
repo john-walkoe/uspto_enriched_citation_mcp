@@ -5,13 +5,14 @@ Supports environment variables, configuration files, and programmatic overrides.
 """
 
 import os
-import logging
 import threading
 from typing import Dict, Optional, Any
 from enum import Enum
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from ..util.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class FeatureFlag(str, Enum):

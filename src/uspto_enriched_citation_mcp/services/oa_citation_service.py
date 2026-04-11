@@ -1,11 +1,11 @@
 """Business logic for USPTO Office Action Citations API v2 tools."""
 
-import logging
 from typing import Dict, List, Optional
 
 from ..api.oa_citations_client import OACitationsClient, OA_CITATIONS_MINIMAL_FIELDS, OA_CITATIONS_ALL_FIELDS
+from ..util.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class OACitationService:

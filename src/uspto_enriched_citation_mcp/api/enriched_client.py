@@ -10,6 +10,9 @@ import time
 from typing import Dict, List, Optional, Tuple, Union
 
 from .base_citation_client import BaseCitationClient
+from ..util.logging import get_logger
+
+logger = get_logger(__name__)
 from ..config.constants import (
     ENRICHED_CITATIONS_FIELDS_PATH,
     ENRICHED_CITATIONS_RECORDS_PATH,
@@ -73,8 +76,6 @@ class EnrichedCitationClient(BaseCitationClient):
             return await self._get_fields_impl()
         except CircuitBreakerError:
             # Circuit breaker is open — try stale cache for graceful degradation.
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 "Circuit breaker open for get_fields, attempting fallback to stale cache"
             )
@@ -96,8 +97,6 @@ class EnrichedCitationClient(BaseCitationClient):
             raise
         except (APITimeoutError, APIConnectionError) as e:
             # Transient error — try stale cache before giving up.
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 f"Transient error in get_fields ({type(e).__name__}), "
                 "attempting stale cache fallback"

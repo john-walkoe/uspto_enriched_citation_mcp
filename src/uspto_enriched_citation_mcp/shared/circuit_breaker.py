@@ -6,7 +6,6 @@ Based on standard circuit breaker pattern with configurable thresholds.
 """
 
 import asyncio
-import logging
 import time
 from enum import Enum
 from typing import Callable, Optional, TypeVar
@@ -14,7 +13,9 @@ from functools import wraps
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from ..util.logging import get_logger
+
+logger = get_logger(__name__)
 
 T = TypeVar("T")
 

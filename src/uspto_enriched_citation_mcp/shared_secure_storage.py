@@ -31,11 +31,12 @@ import ctypes.wintypes
 import os
 import secrets
 import sys
-import logging
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from .util.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DATA_BLOB(ctypes.Structure):

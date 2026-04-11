@@ -10,12 +10,13 @@ Provides pluggable hooks for collecting operational metrics such as:
 """
 
 import time
-import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Dict
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+from .logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class MetricType(Enum):

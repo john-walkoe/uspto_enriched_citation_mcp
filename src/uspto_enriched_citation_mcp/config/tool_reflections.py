@@ -11,6 +11,10 @@ import re
 from pathlib import Path
 from typing import Dict
 
+from ..util.logging import get_logger
+
+_logger = get_logger(__name__)
+
 # ---------------------------------------------------------------------------
 # Content loading
 # ---------------------------------------------------------------------------
@@ -34,8 +38,7 @@ try:
         _SECTION_MAP[section_name] = section_body
 
 except Exception as exc:
-    import logging
-    logging.getLogger(__name__).warning(
+    _logger.warning(
         "Could not load tool_guidance.md (%s): guidance strings unavailable", exc
     )
 

@@ -6,10 +6,11 @@ while preserving full details for internal logging.
 """
 
 import re
-import logging
 from typing import Optional, Dict
 
-logger = logging.getLogger(__name__)
+from ..util.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Sensitive patterns to remove from error messages
 SENSITIVE_PATTERNS = [

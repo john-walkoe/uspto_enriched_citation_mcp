@@ -2,11 +2,12 @@
 
 import yaml
 import re
-import logging
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from ..util.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 # Default field configurations (DRY - single source of truth)

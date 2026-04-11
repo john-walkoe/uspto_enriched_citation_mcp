@@ -10,9 +10,10 @@ import random
 import time
 from typing import Callable, Optional, Tuple, Type
 from functools import wraps
-import logging
 
-logger = logging.getLogger(__name__)
+from .logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def calculate_backoff(

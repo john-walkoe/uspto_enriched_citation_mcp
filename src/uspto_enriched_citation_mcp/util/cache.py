@@ -14,9 +14,10 @@ import threading
 from typing import Any, Optional, Dict
 from collections import OrderedDict
 from dataclasses import dataclass
-import logging
 
-logger = logging.getLogger(__name__)
+from .logging import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass

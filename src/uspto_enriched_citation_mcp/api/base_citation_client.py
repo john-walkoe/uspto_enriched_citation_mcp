@@ -7,7 +7,6 @@ API-specific endpoints and field sets.
 """
 
 import httpx
-import logging
 import time
 from typing import Dict, List, Optional, TYPE_CHECKING
 
@@ -31,8 +30,9 @@ from ..shared.exceptions import (
     APIResponseError,
     ValidationError,
 )
+from ..util.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BaseCitationClient:
