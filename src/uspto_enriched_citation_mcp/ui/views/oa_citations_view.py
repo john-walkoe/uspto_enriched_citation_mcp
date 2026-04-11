@@ -74,7 +74,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
   <span class="badge" id="tier-badge">loading...</span>
 </div>
 <div class="summary-bar" id="summary-bar" style="display:none"></div>
-<div class="login-note">Tip: "Open in Patent Center" links require a USPTO account — log in at <strong>patentcenter.uspto.gov</strong> first. Google Patents links open without login.</div>
+<div class="login-note">Tip: <strong>Open in Patent Center →</strong> opens the <em>citing application</em> in USPTO Patent Center (login required). <strong>Google Patents →</strong> opens the <em>cited reference</em> on Google Patents (no login needed).</div>
 <div class="filter-bar" id="filter-bar" style="display:none"></div>
 <div id="loading">Loading OA Citation results...</div>
 <div id="error" style="display:none"></div>
