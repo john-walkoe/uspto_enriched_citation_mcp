@@ -593,6 +593,13 @@ The n8n integration enables powerful automation workflows combining USPTO citati
 **Advanced (for development/testing):**
 - `LOG_LEVEL`: Logging verbosity (Default: "INFO")
 
+**Reverse proxy / Docker deployments:**
+- `MCP_APP_EXTRA_DOMAINS`: Comma-separated domains appended to the MCP Apps Content-Security-Policy. Set this when the client loads the MCP App iframe through a host other than `cdn.jsdelivr.net` (e.g. a corporate reverse proxy or Docker host). Example: `https://your-proxy.example.com`
+- `CORS_EXTRA_ORIGIN`: Additional allowed CORS origin for HTTP transport mode (e.g. `https://your-proxy.example.com`)
+- `FASTMCP_TRANSPORT`: Set to `http` to enable HTTP transport (Default: `stdio`)
+- `FASTMCP_HOST`: HTTP bind address (Default: `0.0.0.0`)
+- `FASTMCP_PORT`: HTTP port (Default: `8000`)
+
 ### Claude Code MCP Configuration (Recommended)
 
 **Method 1: Using Claude Code CLI**

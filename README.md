@@ -481,6 +481,7 @@ FASTMCP_TRANSPORT=http uv run uspto-enriched-citation-mcp
 | `FASTMCP_PORT` | `8000` | HTTP port |
 | `FASTMCP_HOST` | `0.0.0.0` | HTTP bind address |
 | `CORS_EXTRA_ORIGIN` | *(none)* | Additional CORS origin for reverse proxy deployments |
+| `MCP_APP_EXTRA_DOMAINS` | *(none)* | Comma-separated additional domains added to the MCP Apps Content-Security-Policy (e.g. `https://your-proxy.example.com`). Needed when the client loads the iframe through a reverse proxy or Docker host. |
 
 ### MCP Apps UI Panels
 
@@ -490,8 +491,8 @@ When run via an MCP Apps-capable client, three card-based UI panels render autom
 
 | Tool(s) | View | What You See |
 |---------|------|--------------|
-| `search_citations_minimal`, `search_citations_balanced` | Citation Results | Color-coded citation cards (X=red, Y=orange, A=green), examiner/applicant badges, "Open in Patent Center" links |
-| `search_oa_citations_minimal`, `search_oa_citations_balanced` | OA Citations | Office Action citation cards with 892/1449 source badges, legal section code badges |
+| `search_citations_minimal`, `search_citations_balanced` | Citation Results | Color-coded citation cards (X=red, Y=orange, A=green), examiner/applicant badges, "Open in Patent Center" (citing application) and "View cited patent or application on Google Patents" links, pipe-separated passage locations |
+| `search_oa_citations_minimal`, `search_oa_citations_balanced` | OA Citations | Office Action citation cards with 892/1449 source badges, legal section code badges, "Open in Patent Center" and "View cited patent or application on Google Patents" links |
 | `get_citation_statistics` | Statistics | Summary stat cards and horizontal bar chart breakdowns |
 
 ### Testing MCP Apps (basic-host)
@@ -518,6 +519,10 @@ SERVERS='["http://localhost:8000/mcp"]' npm start
 ### Installation
 
 See [INSTALL.md](INSTALL.md) for complete cross-platform installation guide.
+
+### Docker Deployment
+
+A `Dockerfile` is included at the repo root for containerized deployments. For an all-in-one stack running all four USPTO MCPs (Citations on port 8000, PFW on 8001, PTAB on 8002, FPD on 8003) see the companion repo `uspto_docker_mcp`, which provides a single `docker compose up` entry point with shared volumes for logs and databases.
 
 ### Claude Desktop Windows Configuration
 
@@ -741,6 +746,7 @@ uspto_enriched_citation_mcp/
 
 ### Enhanced Error Handling
 - **Structured logging** - Request ID tracking for better debugging and monitoring
+- **CWE-532 sanitized logging** - All loggers use `get_logger()` from `util/logging.py`, which applies a `SanitizingFilter` to redact API keys, tokens, and other sensitive values from log output before they reach any handler
 - **Request timeout handling** - Configurable timeouts for API reliability
 - **Production-grade responses** - Clean error messages without internal system details
 - **Environment validation** - API key format and presence checking

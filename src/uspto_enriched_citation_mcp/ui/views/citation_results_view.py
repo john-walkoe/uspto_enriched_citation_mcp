@@ -218,7 +218,7 @@ function buildCard(doc) {
     ${passages?.length ? `<div class="passage">📍 ${formatPassages(passages)}</div>` : ''}
     ${(appNum || gpUrl) ? `<div class="pfw-link">
       ${appNum ? `<button class="pfw-btn">Open in Patent Center →</button>` : ''}
-      ${gpUrl ? `<button class="gp-btn">Google Patents →</button>` : ''}
+      ${gpUrl ? `<button class="gp-btn">View cited patent or application on Google Patents →</button>` : ''}
     </div>` : ''}
   `;
   if (appNum) div.querySelector('.pfw-btn')?.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${appNum}` }));
