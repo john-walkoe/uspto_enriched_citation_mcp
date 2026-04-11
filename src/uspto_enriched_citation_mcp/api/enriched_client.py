@@ -137,8 +137,6 @@ class EnrichedCitationClient(BaseCitationClient):
                 criteria, start, rows, selected_fields
             )
         except CircuitBreakerError:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 f"Circuit breaker open for search (criteria: {criteria[:50]!r}), "
                 "attempting stale cache fallback"
@@ -158,8 +156,6 @@ class EnrichedCitationClient(BaseCitationClient):
                     return cached
             raise
         except (APITimeoutError, APIConnectionError) as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(
                 f"Transient error in search ({type(e).__name__}), "
                 "attempting stale cache fallback"

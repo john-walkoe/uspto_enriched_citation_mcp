@@ -9,14 +9,16 @@ Provides dedicated security logging separate from application logs for:
 - API access patterns
 """
 
-import logging
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 from enum import Enum
+
+from .logging import get_logger
 
 
 class SecurityEventType(Enum):
@@ -53,7 +55,7 @@ class SecurityLogger:
             name: Logger name (default: "security")
             log_dir: Directory for log files (default: auto-detect)
         """
-        self.logger = logging.getLogger(f"uspto_ecitation.{name}")
+        self.logger = get_logger(f"security.{name}")
         self.logger.setLevel(logging.INFO)
 
         # Prevent duplicate handlers

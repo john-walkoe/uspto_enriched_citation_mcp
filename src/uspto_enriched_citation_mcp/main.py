@@ -106,16 +106,18 @@ _CITATION_RESULTS_URI = "ui://uspto-enriched-citations/citation-results.html"
 _OA_CITATIONS_URI = "ui://uspto-enriched-citations/oa-citations.html"
 _STATISTICS_URI = "ui://uspto-enriched-citations/statistics.html"
 
-# Build CSP domain list — always includes CDN; MCP_APP_EXTRA_DOMAINS adds more
-# (comma-separated) for reverse-proxy / Docker deployments.
-_csp_domains = ["https://cdn.jsdelivr.net"]
-_extra_csp = os.getenv("MCP_APP_EXTRA_DOMAINS", "").strip()
-if _extra_csp:
-    for _d in _extra_csp.split(","):
-        _d = _d.strip()
-        if _d:
-            _csp_domains.append(_d)
-_CSP = ResourceCSP(resource_domains=_csp_domains)
+def _build_csp_domains() -> list[str]:
+    """Build CSP domain list for MCP Apps. Always includes CDN; MCP_APP_EXTRA_DOMAINS adds more."""
+    domains = ["https://cdn.jsdelivr.net"]
+    extra = os.getenv("MCP_APP_EXTRA_DOMAINS", "").strip()
+    if extra:
+        for d in extra.split(","):
+            d = d.strip()
+            if d:
+                domains.append(d)
+    return domains
+
+_CSP = ResourceCSP(resource_domains=_build_csp_domains())
 
 
 @mcp.resource(_CITATION_RESULTS_URI, app=AppConfig(csp=_CSP))

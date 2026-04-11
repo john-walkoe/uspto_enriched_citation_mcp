@@ -32,7 +32,7 @@ class TestSecurityLogger:
 
         assert logger is not None
         assert logger.logger is not None
-        assert logger.logger.name == "uspto_ecitation.test_init"
+        assert logger.logger.name == "uspto_ecitation.security.test_init"
 
     def test_auth_success_logging(self, security_logger):
         """Test 1.2: Authentication success logging."""

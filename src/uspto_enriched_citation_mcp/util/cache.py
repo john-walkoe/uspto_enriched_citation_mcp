@@ -318,14 +318,14 @@ class LRUCache(CacheStatsMixin):
                 last_accessed=time.time(),
             )
 
-            self._cache[key] = entry
-
-            # Evict least recently used if over size
-            if len(self._cache) > self.max_size:
+            # Evict LRU before adding new entry to stay within max_size
+            if self.max_size > 0 and len(self._cache) >= self.max_size:
                 evicted_key, evicted_entry = self._cache.popitem(last=False)
                 logger.debug(
                     f"LRU evicted: {evicted_key} (hits: {evicted_entry.hit_count})"
                 )
+
+            self._cache[key] = entry
 
             logger.debug(f"LRU set: {key} (size: {len(self._cache)}/{self.max_size})")
 
