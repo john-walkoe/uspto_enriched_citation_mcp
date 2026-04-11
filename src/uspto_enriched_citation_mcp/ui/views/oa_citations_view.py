@@ -54,9 +54,11 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 .meta-label { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
 .meta-val { color: #1a1a2e; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.pfw-link { margin-top: 6px; }
+.pfw-link { margin-top: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .pfw-btn { display: inline-block; background: #2d4a22; color: #fff; border: none; border-radius: 4px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
 .pfw-btn:hover { background: #5a8a3a; }
+.gp-btn { display: inline-block; background: #4a90d9; color: #fff; border: none; border-radius: 4px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+.gp-btn:hover { background: #1a3a6b; }
 
 #loading { text-align: center; padding: 30px; color: #666; }
 #error { background: #fde8e8; border: 1px solid #f5c6cb; color: #721c24; padding: 10px 14px; margin: 10px 14px; border-radius: 4px; }
@@ -72,7 +74,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
   <span class="badge" id="tier-badge">loading...</span>
 </div>
 <div class="summary-bar" id="summary-bar" style="display:none"></div>
-<div class="login-note">Tip: "Open in PFW" links require a USPTO account — log in at <strong>patentcenter.uspto.gov</strong> first or the link will redirect to a login page.</div>
+<div class="login-note">Tip: "Open in PFW" links require a USPTO account — log in at <strong>patentcenter.uspto.gov</strong> first. Google Patents links open without login.</div>
 <div class="filter-bar" id="filter-bar" style="display:none"></div>
 <div id="loading">Loading OA Citation results...</div>
 <div id="error" style="display:none"></div>
@@ -137,12 +139,21 @@ function render(data) {
   document.getElementById('content').style.display = 'block';
 }
 
+function googlePatentsUrl(id) {
+  if (!id || id === '—') return null;
+  // Only show for patent/publication identifiers: 2-letter country code + digits
+  // Excludes NPL references (journal articles, books, etc.)
+  if (!/^[A-Z]{2}\d/.test(id)) return null;
+  return `https://patents.google.com/patent/${encodeURIComponent(id)}`;
+}
+
 function buildCard(doc) {
   const div = document.createElement('div');
   div.className = 'card';
 
-  const refId = doc.referenceIdentifier || doc.parsedReferenceIdentifier || '—';
+  const refId  = doc.referenceIdentifier || doc.parsedReferenceIdentifier || '—';
   const appNum = doc.patentApplicationNumber || '';
+  const gpUrl  = googlePatentsUrl(refId);
   const artUnit = doc.groupArtUnitNumber || '—';
   const techCenter = doc.techCenter || '—';
   const actionType = doc.actionTypeCategory || '';
@@ -176,11 +187,14 @@ function buildCard(doc) {
       ${para ? `<div class="meta-item"><span class="meta-label">Paragraph</span><span class="meta-val">${para}</span></div>` : ''}
       <div class="meta-item"><span class="meta-label">Created</span><span class="meta-val">${created}</span></div>
     </div>
-    ${appNum ? `<div class="pfw-link"><button class="pfw-btn" data-appnum="${appNum}">Open in PFW →</button></div>` : ''}
+    ${(appNum || gpUrl) ? `<div class="pfw-link">
+      ${appNum ? `<button class="pfw-btn">Open in PFW →</button>` : ''}
+      ${gpUrl ? `<button class="gp-btn">Google Patents →</button>` : ''}
+    </div>` : ''}
   `;
 
-  const btn = div.querySelector('.pfw-btn');
-  if (btn) btn.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${btn.dataset.appnum}` }));
+  if (appNum) div.querySelector('.pfw-btn')?.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${appNum}` }));
+  if (gpUrl)  div.querySelector('.gp-btn')?.addEventListener('click',  () => app.openLink({ url: gpUrl }));
 
   return div;
 }
