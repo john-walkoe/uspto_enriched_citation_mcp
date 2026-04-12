@@ -885,7 +885,15 @@ async def get_oa_citation_fields() -> Dict[str, Any]:
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request):
-    """Health check endpoint for reverse proxy / Docker deployments."""
+    """
+    Health check endpoint for reverse proxy / Docker deployments.
+
+    NOTE: This endpoint is intentionally unauthenticated to support
+    load balancer health probes and container orchestration (Kubernetes,
+    Docker Compose, etc.). It returns only a static "OK" response and
+    does not expose any sensitive data. Rate limiting is applied globally
+    via the RateLimiter.
+    """
     from starlette.responses import PlainTextResponse
     return PlainTextResponse("OK")
 
@@ -937,21 +945,81 @@ def main():
             origins.append(settings.cors_extra_origin)
             logger.info(f"CORS: added extra origin {settings.cors_extra_origin}")
 
-        try:
-            from starlette.middleware.cors import CORSMiddleware
-            import uvicorn
-            app = CORSMiddleware(
-                mcp.http_app(),
-                allow_origins=origins,
-                allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-                allow_headers=["Content-Type", "Accept", "X-API-KEY", "Mcp-Session-Id"],
-                expose_headers=["Mcp-Session-Id"],
-            )
-            logger.info(f"Starting HTTP transport on {host}:{port}")
-            uvicorn.run(app, host=host, port=port)
-        except ImportError as e:
-            logger.error(f"HTTP transport requires starlette and uvicorn: {e}")
-            raise
+        # HTTP middleware classes — defined before the app so they are in scope
+        # when we call app.add_middleware() after creating the app
+        class APIKeyAuthMiddleware:
+            """Validates X-API-KEY header on all non-health requests in HTTP mode."""
+            def __init__(self, app):
+                self.app = app
+
+            async def __call__(self, scope, receive, send):
+                from starlette.requests import Request
+                request = Request(scope, receive)
+                # Health endpoint is intentionally open for load balancer probes
+                if request.url.path == "/health":
+                    await self.app(scope, receive, send)
+                    return
+                key = request.headers.get("x-api-key")
+                settings = get_settings()
+                if not key or key != settings.uspto_ecitation_api_key:
+                    from starlette.responses import JSONResponse
+                    response = JSONResponse({"error": "Unauthorized"}, status_code=401)
+                    await response(scope, receive, send)
+                    return
+                await self.app(scope, receive, send)
+
+        class SecurityHeadersMiddleware:
+            """Adds browser security headers to all HTTP responses."""
+            def __init__(self, app):
+                self.app = app
+
+            async def __call__(self, scope, receive, send):
+                status_and_headers = {}
+                original_send = send
+
+                async def capturing_send(message):
+                    if message["type"] == "http.response.start":
+                        status_and_headers["status"] = message.get("status", 200)
+                        status_and_headers["headers"] = dict(message.get("headers", []))
+                    await original_send(message)
+
+                await self.app(scope, receive, capturing_send)
+
+                if scope["type"] == "http" and status_and_headers:
+                    security_headers = [
+                        (b"x-content-type-options", b"nosniff"),
+                        (b"x-frame-options", b"DENY"),
+                        (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
+                        (
+                            b"content-security-policy",
+                            b"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+                        ),
+                    ]
+                    existing = dict(status_and_headers.get("headers", {}))
+                    for k, v in security_headers:
+                        existing[k] = v
+                    await original_send({
+                        "type": "http.response.start",
+                        "status": status_and_headers.get("status", 200),
+                        "headers": [(k, v) for k, v in existing.items()],
+                    })
+
+        from starlette.middleware.cors import CORSMiddleware
+        import uvicorn
+        app = CORSMiddleware(
+            mcp.http_app(),
+            allow_origins=origins,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            # X-API-KEY removed from allow_headers — auth is now enforced via
+            # APIKeyAuthMiddleware, not CORS; reduces browser exposure of the key
+            allow_headers=["Content-Type", "Accept", "Mcp-Session-Id"],
+            expose_headers=["Mcp-Session-Id"],
+        )
+        # Add custom middleware after CORS so auth runs before CORS processes the request
+        app.add_middleware(APIKeyAuthMiddleware)
+        app.add_middleware(SecurityHeadersMiddleware)
+        logger.info(f"Starting HTTP transport on {host}:{port}")
+        uvicorn.run(app, host=host, port=port)
     else:
         mcp.run(transport="stdio")
 

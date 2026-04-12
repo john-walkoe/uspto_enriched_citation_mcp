@@ -767,6 +767,9 @@ uspto_enriched_citation_mcp/
 - **Security guidelines** - Complete documentation for secure development practices
 - **Structured error responses** - No sensitive information leakage in error messages
 - **API key validation** - Format checking and presence validation
+- **HTTP transport authentication** - When running in HTTP mode (`FASTMCP_TRANSPORT=http`), the server validates the `X-API-KEY` header on every request (except `/health`)
+- **Security headers** - `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and `Content-Security-Policy` headers applied to all HTTP responses
+- **Rate limiting** - Token-bucket rate limiter (100 req/min default); in multi-replica deployments, enforce at the reverse proxy layer
 
 ### Request Tracking & Debugging
 

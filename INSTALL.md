@@ -933,6 +933,27 @@ Expected response format:
 - Consider firewall rules for the MCP server port
 - Regular updates of dependencies
 
+### API Key Rotation
+
+If your USPTO API key is compromised or you need to rotate it:
+
+1. **Generate a new key** at [USPTO Developer Portal](https://developer.uspto.gov/ds-api/) (sign in → API Keys → generate new key)
+2. **Update the stored key:**
+   - **Windows:** Re-run `python -m uspto_enriched_citation_mcp.main` and use the interactive prompt, or update the `USPTO_API_KEY` environment variable
+   - **Linux/macOS:** Update the `USPTO_API_KEY` environment variable in your Claude Desktop/Code or systemd service config, then restart the MCP server
+3. **Restart the service** — the in-memory cache is automatically cleared on restart, ensuring no stale data under the old key
+4. **Verify** — run a simple query to confirm the new key works
+
+**Note:** On Linux/macOS the key is stored with filesystem permissions only (`chmod 0o600`). For production deployments, use a secrets manager (e.g., HashiCorp Vault, AWS Secrets Manager) and inject the key via environment variables at startup.
+
+### Rate Limiting in Production
+
+The server uses a per-process token-bucket rate limiter (100 requests/minute by default). If you run **multiple replicas** of the server behind a load balancer, each process maintains its own independent rate limit bucket — effectively multiplying the total throughput by the number of replicas.
+
+For single-instance deployments (default, suitable for most use cases): no action needed.
+
+For multi-replica production deployments: enforce rate limiting at the reverse proxy or API gateway layer (nginx, Traefik, AWS ALB, etc.) instead of relying on the per-process limiter.
+
 ## 📈 Success Checklist
 
 - [ ] Python 3.10+ installed (via uv)
