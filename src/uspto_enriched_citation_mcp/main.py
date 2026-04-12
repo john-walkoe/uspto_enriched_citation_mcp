@@ -95,7 +95,11 @@ For cross-MCP integration: citations_get_guidance(section="workflows_pfw")
 """
 
 # Initialize FastMCP with server instructions for tool search optimization
-mcp = FastMCP("uspto-enriched-citation-mcp", instructions=SERVER_INSTRUCTIONS)
+mcp = FastMCP(
+    "uspto-enriched-citation-mcp",
+    instructions=SERVER_INSTRUCTIONS,
+    icons=[{"src": "https://raw.githubusercontent.com/tailwindlabs/heroicons/master/src/24/outline/document-magnifying-glass.svg", "mimeType": "image/svg+xml"}],
+)
 
 # =============================================================================
 # MCP APPS — Resource URIs and HTML view registration
