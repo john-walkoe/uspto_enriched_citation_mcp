@@ -970,12 +970,18 @@ def main():
                     return
                 key = request.headers.get("x-api-key")
                 from ..shared_secure_storage import SecureStorageManager
+                import secrets as _secrets
                 storage = SecureStorageManager()
                 expected = (
                     storage.get_internal_auth_secret()
-                    or os.environ.get("INTERNAL_AUTH_SECRET", "uspto_mcp_shared_secret_2025")
+                    or os.environ.get("INTERNAL_AUTH_SECRET")
                 )
-                if not key or key != expected:
+                if not expected:
+                    from starlette.responses import JSONResponse
+                    response = JSONResponse({"error": "Server misconfigured: INTERNAL_AUTH_SECRET not set"}, status_code=500)
+                    await response(scope, receive, send)
+                    return
+                if not key or not _secrets.compare_digest(key, expected):
                     from starlette.responses import JSONResponse
                     response = JSONResponse({"error": "Unauthorized"}, status_code=401)
                     await response(scope, receive, send)
