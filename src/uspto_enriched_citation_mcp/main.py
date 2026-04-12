@@ -945,23 +945,33 @@ def main():
             origins.append(settings.cors_extra_origin)
             logger.info(f"CORS: added extra origin {settings.cors_extra_origin}")
 
-        # HTTP middleware classes — defined before the app so they are in scope
-        # when we call app.add_middleware() after creating the app
         class APIKeyAuthMiddleware:
-            """Validates X-API-KEY header on all non-health requests in HTTP mode."""
+            """Validates X-API-KEY header on all non-health requests in HTTP mode.
+
+            Checks against INTERNAL_AUTH_SECRET (the shared cross-MCP secret),
+            not the external USPTO API key.  Health endpoint is intentionally
+            open for load balancer probes.
+            """
             def __init__(self, app):
                 self.app = app
 
             async def __call__(self, scope, receive, send):
+                if scope["type"] != "http":
+                    await self.app(scope, receive, send)
+                    return
                 from starlette.requests import Request
                 request = Request(scope, receive)
-                # Health endpoint is intentionally open for load balancer probes
                 if request.url.path == "/health":
                     await self.app(scope, receive, send)
                     return
                 key = request.headers.get("x-api-key")
-                settings = get_settings()
-                if not key or key != settings.uspto_ecitation_api_key:
+                from ..shared_secure_storage import SecureStorageManager
+                storage = SecureStorageManager()
+                expected = (
+                    storage.get_internal_auth_secret()
+                    or os.environ.get("INTERNAL_AUTH_SECRET", "uspto_mcp_shared_secret_2025")
+                )
+                if not key or key != expected:
                     from starlette.responses import JSONResponse
                     response = JSONResponse({"error": "Unauthorized"}, status_code=401)
                     await response(scope, receive, send)
@@ -974,50 +984,46 @@ def main():
                 self.app = app
 
             async def __call__(self, scope, receive, send):
-                status_and_headers = {}
-                original_send = send
+                if scope["type"] != "http":
+                    await self.app(scope, receive, send)
+                    return
 
-                async def capturing_send(message):
+                _SECURITY_HEADERS = [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
+                    (
+                        b"content-security-policy",
+                        b"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+                    ),
+                ]
+
+                async def patched_send(message):
                     if message["type"] == "http.response.start":
-                        status_and_headers["status"] = message.get("status", 200)
-                        status_and_headers["headers"] = dict(message.get("headers", []))
-                    await original_send(message)
+                        headers = list(message.get("headers", []))
+                        headers.extend(_SECURITY_HEADERS)
+                        message = {**message, "headers": headers}
+                    await send(message)
 
-                await self.app(scope, receive, capturing_send)
-
-                if scope["type"] == "http" and status_and_headers:
-                    security_headers = [
-                        (b"x-content-type-options", b"nosniff"),
-                        (b"x-frame-options", b"DENY"),
-                        (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
-                        (
-                            b"content-security-policy",
-                            b"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
-                        ),
-                    ]
-                    existing = dict(status_and_headers.get("headers", {}))
-                    for k, v in security_headers:
-                        existing[k] = v
-                    await original_send({
-                        "type": "http.response.start",
-                        "status": status_and_headers.get("status", 200),
-                        "headers": [(k, v) for k, v in existing.items()],
-                    })
+                await self.app(scope, receive, patched_send)
 
         from starlette.middleware.cors import CORSMiddleware
         import uvicorn
-        app = CORSMiddleware(
-            mcp.http_app(),
-            allow_origins=origins,
-            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-            # X-API-KEY removed from allow_headers — auth is now enforced via
-            # APIKeyAuthMiddleware, not CORS; reduces browser exposure of the key
-            allow_headers=["Content-Type", "Accept", "Mcp-Session-Id"],
-            expose_headers=["Mcp-Session-Id"],
+        # Middleware stack (outermost first): SecurityHeaders → APIKeyAuth → CORS → mcp app
+        # Security headers wrap everything so they appear on 401 responses too.
+        app = SecurityHeadersMiddleware(
+            APIKeyAuthMiddleware(
+                CORSMiddleware(
+                    mcp.http_app(),
+                    allow_origins=origins,
+                    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                    # X-API-KEY removed from allow_headers — auth is enforced via
+                    # APIKeyAuthMiddleware, not CORS; reduces browser key exposure
+                    allow_headers=["Content-Type", "Accept", "Mcp-Session-Id"],
+                    expose_headers=["Mcp-Session-Id"],
+                )
+            )
         )
-        # Add custom middleware after CORS so auth runs before CORS processes the request
-        app.add_middleware(APIKeyAuthMiddleware)
-        app.add_middleware(SecurityHeadersMiddleware)
         logger.info(f"Starting HTTP transport on {host}:{port}")
         uvicorn.run(app, host=host, port=port)
     else:
