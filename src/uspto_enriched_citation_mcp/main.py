@@ -955,6 +955,10 @@ def main():
             Checks against INTERNAL_AUTH_SECRET (the shared cross-MCP secret),
             not the external USPTO API key.  Health endpoint is intentionally
             open for load balancer probes.
+
+            Auth is opt-in: if INTERNAL_AUTH_SECRET is not set (via secure
+            storage or env var), all requests are allowed through.  Set the
+            secret to enforce authentication.
             """
             def __init__(self, app):
                 self.app = app
@@ -975,12 +979,7 @@ def main():
                     _get_secret()
                     or os.environ.get("INTERNAL_AUTH_SECRET")
                 )
-                if not expected:
-                    from starlette.responses import JSONResponse
-                    response = JSONResponse({"error": "Server misconfigured: INTERNAL_AUTH_SECRET not set"}, status_code=500)
-                    await response(scope, receive, send)
-                    return
-                if not key or not _secrets.compare_digest(key, expected):
+                if expected and not _secrets.compare_digest(key or "", expected):
                     from starlette.responses import JSONResponse
                     response = JSONResponse({"error": "Unauthorized"}, status_code=401)
                     await response(scope, receive, send)
