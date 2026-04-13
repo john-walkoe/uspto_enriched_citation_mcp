@@ -9,6 +9,12 @@ A high-performance Model Context Protocol (MCP) server providing access to **two
 [![MCP Apps](https://img.shields.io/badge/MCP%20Apps-UI%20Views-blueviolet.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+## Demo
+
+Patent citation analysis for a machine learning application — discovering examiner citation patterns, cross-referencing prosecution history via PFW, and surfacing prior art with interactive MCP Apps UI panels.
+
+https://github.com/user-attachments/assets/668bd241-5d98-4932-90b3-129c28084bc6
+
 ## 📚 Documentation
 
 | Document | Description |
