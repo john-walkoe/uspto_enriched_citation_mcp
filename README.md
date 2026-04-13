@@ -11,7 +11,7 @@ A high-performance Model Context Protocol (MCP) server providing access to **two
 
 ## Demo
 
-Patent citation analysis for a machine learning application — discovering examiner citation patterns, cross-referencing prosecution history via PFW, and surfacing prior art with interactive MCP Apps UI panels.
+A single prompt drives a full examiner citation analysis — Enriched Citations MCP and Patent File Wrapper MCP working together to profile examiner citation patterns across both the enriched and raw OA datasets, with ultra-minimal field selection to keep token usage lean. Ultra-minimal mode requests only the fields needed for each step, so in the video you'll see many fields showing as — (not requested). That's intentional, not missing data.
 
 https://github.com/user-attachments/assets/668bd241-5d98-4932-90b3-129c28084bc6
 
