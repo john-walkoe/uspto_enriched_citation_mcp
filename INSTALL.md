@@ -483,6 +483,70 @@ uspto_enriched_citation: uv --directory /root/mcp/uspto_enriched_citation_mcp ru
 }
 ```
 
+## 🐳 Docker / HTTP Mode
+
+HTTP mode is suitable for n8n, remote clients, reverse proxies, or multi-user deployments.
+
+### Setup
+
+1. Create a `.env` file in the project root:
+   ```bash
+   # .env
+   USPTO_API_KEY=your_30_char_lowercase_key_here
+
+   # Optional — set to enforce x-api-key header auth on the /mcp endpoint
+   # INTERNAL_AUTH_SECRET=your_shared_secret_here
+
+   # Optional — add when exposing directly to claude.ai
+   # CORS_EXTRA_ORIGIN=https://claude.ai
+   ```
+
+2. Start the server:
+   ```bash
+   docker compose up -d
+   ```
+
+3. Verify:
+   ```bash
+   curl http://localhost:8000/health
+   ```
+   Expected: `{"status": "ok"}`
+
+### MCP Endpoint
+
+```
+http://localhost:8000/mcp
+```
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `USPTO_API_KEY` | Yes | — | USPTO Open Data Portal API key |
+| `FASTMCP_TRANSPORT` | No | `http` | Transport mode (`http` set in Dockerfile) |
+| `FASTMCP_HOST` | No | `0.0.0.0` | HTTP bind address |
+| `FASTMCP_PORT` | No | `8000` | HTTP port |
+| `LOG_LEVEL` | No | `INFO` | Logging verbosity |
+| `INTERNAL_AUTH_SECRET` | No | *(none)* | Shared secret for endpoint auth (`x-api-key` header). Unset = open. |
+| `CORS_EXTRA_ORIGIN` | No | *(none)* | Additional CORS origin (e.g. `https://claude.ai`) |
+| `MCP_APP_EXTRA_DOMAINS` | No | *(none)* | Additional CSP domains for MCP Apps iframe |
+| `ECITATION_RATE_LIMIT` | No | `100` | Requests per minute |
+
+### Claude Code / Claude Desktop — HTTP Mode Config
+
+```json
+{
+  "mcpServers": {
+    "uspto_enriched_citations": {
+      "command": "npx",
+      "args": ["mcp-remote", "http://localhost:8000/mcp"]
+    }
+  }
+}
+```
+
+---
+
 ## 🔀 n8n Integration (Linux)
 
 For workflow automation with **locally hosted n8n instances**, you can integrate the USPTO Enriched Citation MCP as a node using nerding-io's community MCP client connector.
