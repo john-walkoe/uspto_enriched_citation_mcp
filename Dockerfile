@@ -10,13 +10,16 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # Dependency layer — cached unless pyproject.toml or uv.lock changes
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# --no-install-project: install deps only (hatchling needs src/ to build the project itself)
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --no-install-project
 
-# Source and config
+# Source and config (now present for the second uv sync that installs the project)
 COPY src/ ./src/
 COPY field_configs.yaml ./
 COPY reference/ ./reference/
+
+RUN uv sync --frozen --no-dev
 
 # HTTP transport — overridden per-service in docker-compose.yml
 ENV FASTMCP_TRANSPORT=http
