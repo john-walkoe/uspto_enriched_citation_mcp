@@ -969,7 +969,7 @@ def main():
                     await self.app(scope, receive, send)
                     return
                 key = request.headers.get("x-api-key")
-                from ..shared_secure_storage import SecureStorageManager
+                from .shared_secure_storage import SecureStorageManager
                 import secrets as _secrets
                 storage = SecureStorageManager()
                 expected = (
