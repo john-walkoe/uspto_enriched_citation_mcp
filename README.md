@@ -482,6 +482,7 @@ FASTMCP_TRANSPORT=http uv run uspto-enriched-citation-mcp
 | `FASTMCP_HOST` | `0.0.0.0` | HTTP bind address |
 | `CORS_EXTRA_ORIGIN` | *(none)* | Additional CORS origin for reverse proxy deployments |
 | `MCP_APP_EXTRA_DOMAINS` | *(none)* | Comma-separated additional domains added to the MCP Apps Content-Security-Policy (e.g. `https://your-proxy.example.com`). Needed when the client loads the iframe through a reverse proxy or Docker host. |
+| `INTERNAL_AUTH_SECRET` | *(none)* | Shared secret for endpoint authentication (`x-api-key` header). Opt-in: if unset, all requests pass through. When set, requests without the matching header are rejected with 401. Inject via reverse proxy so MCP clients do not need to configure it manually. |
 
 ### MCP Apps UI Panels
 
@@ -767,7 +768,7 @@ uspto_enriched_citation_mcp/
 - **Security guidelines** - Complete documentation for secure development practices
 - **Structured error responses** - No sensitive information leakage in error messages
 - **API key validation** - Format checking and presence validation
-- **HTTP transport authentication** - When running in HTTP mode (`FASTMCP_TRANSPORT=http`), the server validates the `X-API-KEY` header on every request (except `/health`)
+- **HTTP transport authentication** - When running in HTTP mode (`FASTMCP_TRANSPORT=http`), the server optionally validates the `X-API-KEY` header. Set `INTERNAL_AUTH_SECRET` to enable enforcement; if unset, all requests are allowed through. The `/health` endpoint is always unauthenticated.
 - **Security headers** - `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and `Content-Security-Policy` headers applied to all HTTP responses
 - **Rate limiting** - Token-bucket rate limiter (100 req/min default); in multi-replica deployments, enforce at the reverse proxy layer
 

@@ -189,21 +189,29 @@ Security Features:
   [*] Secure password input (API keys hidden during entry)
   [*] Memory cleanup after key entry (prevents leaks)
 
-Available Tools (6):
-  - ec_search_citations_minimal (ultra-fast discovery)
-  - ec_search_citations_balanced (detailed analysis)
-  - ec_search_by_patent (patent-specific citations)
-  - ec_search_by_examiner (examiner citation patterns)
-  - ec_get_citation_details (full citation details)
-  - ec_get_tool_reflections (workflow guidance)
+Available Tools (10):
+  Enriched Citations v3 (always-loaded):
+  - search_citations_minimal (ultra-fast discovery — 8 fields)
+  - citations_get_guidance (workflow help, section parameter)
+  Enriched Citations v3 (deferred):
+  - search_citations_balanced (comprehensive analysis — 19 fields)
+  - get_citation_details (full single citation record)
+  - get_citation_statistics (aggregations and trend analysis)
+  - get_available_fields (field name and query syntax reference)
+  Office Action Citations v2 (deferred):
+  - search_oa_citations_minimal (high-volume OA discovery)
+  - search_oa_citations_balanced (detailed OA analysis)
+  - get_oa_citation_fields (OA field names and syntax)
+  Utility (deferred):
+  - validate_query (Lucene syntax validation)
 
 Key Management:
   Manage keys: ./deploy/manage_api_keys.ps1
   Test keys:   uv run python tests/test_unified_key_management.py
   Cross-MCP:   Keys shared with FPD, PFW, and PTAB MCPs
 
-Test with: ec_search_citations_minimal
-Learn workflows: ec_get_tool_reflections
+Test with: search_citations_minimal
+Learn workflows: citations_get_guidance
 PS C:\Users\YOUR_USERNAME\uspto_enriched_citation_mcp>
 ```
 
@@ -599,6 +607,7 @@ The n8n integration enables powerful automation workflows combining USPTO citati
 - `FASTMCP_TRANSPORT`: Set to `http` to enable HTTP transport (Default: `stdio`)
 - `FASTMCP_HOST`: HTTP bind address (Default: `0.0.0.0`)
 - `FASTMCP_PORT`: HTTP port (Default: `8000`)
+- `INTERNAL_AUTH_SECRET`: Shared secret for endpoint protection (`x-api-key` header). Opt-in: if unset, all requests pass through. When set, requests without the correct header are rejected with 401. Inject via reverse proxy so MCP clients do not need to configure it manually.
 
 ### Claude Code MCP Configuration (Recommended)
 

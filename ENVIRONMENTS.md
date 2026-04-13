@@ -91,7 +91,7 @@ cp .env.production.example .env
 2. **Update the API key:**
 ```bash
 # Edit .env
-USPTO_ECITATION_API_KEY=your_actual_api_key_here
+USPTO_API_KEY=your_actual_api_key_here
 ```
 
 3. **Run application:**
