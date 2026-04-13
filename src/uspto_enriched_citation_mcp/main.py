@@ -969,11 +969,10 @@ def main():
                     await self.app(scope, receive, send)
                     return
                 key = request.headers.get("x-api-key")
-                from .shared_secure_storage import SecureStorageManager
+                from .shared_secure_storage import get_internal_auth_secret as _get_secret
                 import secrets as _secrets
-                storage = SecureStorageManager()
                 expected = (
-                    storage.get_internal_auth_secret()
+                    _get_secret()
                     or os.environ.get("INTERNAL_AUTH_SECRET")
                 )
                 if not expected:
