@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/john-walkoe-uspto-enriched-citation-mcp-badge.png)](https://mseep.ai/app/john-walkoe-uspto-enriched-citation-mcp)
+
 # USPTO Patent Citation MCP Server (Enriched v3 + OA v2)
 
 A high-performance Model Context Protocol (MCP) server providing access to **two USPTO patent citation APIs** — the **Enriched Citations v3** (AI-extracted passage locations, claim mapping) and the **Office Action Citations v2** (raw Form 892/1449 citation data) — with **token-saving context reduction** (90-95%), **progressive disclosure workflows**, **interactive MCP Apps UI panels**, and **seamless cross-MCP integration** for complete patent lifecycle analysis.
