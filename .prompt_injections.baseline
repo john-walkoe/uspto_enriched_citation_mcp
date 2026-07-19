@@ -1,0 +1,364 @@
+{
+  "USAGE_EXAMPLES.md": {
+    "545088aa8dc95b1bc9f628ac53b27d5e44d31db2923bd83e93c382ef9850ba0b": {
+      "line": 710,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "6b1c5c6e3e8b459c210969eb283e43d0a0d7fedb2a9da2947003d0472ffe0412": {
+      "line": 833,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "846c86904dfcb0fd6aae1e66cf55e890b4c62b3b7a179dddb6210612ee4863cd": {
+      "line": 713,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "d1287f856bc8e4af15bf97f4d97ea2fc0c4bdfda16c8c526f70d8da3cf4ac56a": {
+      "line": 751,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "febe03a6a0b04299349c8f7eb5e3201b505e2dde8c6631d25696aa8641adf2f9": {
+      "line": 849,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/auth/pages.py": {
+    "3888276ac5d3e3ddfb644eb298f2f0b76aa540632d2efcb1471fe363be3ae7e6": {
+      "line": 14,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/auth/provider.py": {
+    "f1180f869f9ca5acd899aa92a2e71aa9243db342a07fc3a297b6fb87afb02c9b": {
+      "line": 351,
+      "match": "prompt"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/config/field_manager.py": {
+    "179d4ad89ba72ba129f927f8c76bf3ae47f33e0f659ad646f95532d7a6ce7468": {
+      "line": 69,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/main.py": {
+    "e24e87d5d2874b6cb1940f3d591385fd527e0fe634211159968e3d267cfffb7d": {
+      "line": 118,
+      "match": "instructions"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/prompts/__init__.py": {
+    "398f4fc2918170efdf566fd6d9e2141253637573ef4cbe508180360bea2e7562": {
+      "line": 33,
+      "match": "prompts"
+    },
+    "6079cf0aa03a9736a032dbcfbb71d7f3b5986042ed38dc7bb30b6ba9b6d46899": {
+      "line": 16,
+      "match": "Prompts"
+    },
+    "9cda4c6dcdae8b406e67cc017bae297461e9d09873f0219faf144014b6d3a64c": {
+      "line": 33,
+      "match": "prompt"
+    },
+    "a616c9b623eea9f4704dbb3c4f79e46d3185bb2dbb01467204be211bd633b963": {
+      "line": 2,
+      "match": "Prompt"
+    },
+    "dfae9401641a4db254a76171e9125aeccc65b9407cfb1873ebd68ea79f340ed6": {
+      "line": 8,
+      "match": "prompts"
+    },
+    "ef562bf86f47974ef733ad2310ace31cfea9c64b2b17bc928bdc34b4ea9be7b7": {
+      "line": 5,
+      "match": "prompt"
+    },
+    "f82b406d96758f6714485415d40974275a656a7e796f735eba57ad8e5d921b0b": {
+      "line": 32,
+      "match": "prompt"
+    },
+    "ff6a2305d4c8a06b88ab5ec4e45a895fb8661e3f804c21b88dac11f602238450": {
+      "line": 4,
+      "match": "prompt"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/prompts/art_unit_citation_assessment.py": {
+    "083093237db03a8dd647cca3f5acdd692adf9b0b71b7c418655b4a315c3c99b8": {
+      "line": 10,
+      "match": "prompt"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/prompts/enhanced_examiner_behavior_intelligence_PFW_PTAB_FPD.py": {
+    "29ef1b550693b787ed7de0303f9d385b97364678e5e5ca34a98ea3742d0f81f1": {
+      "line": 16,
+      "match": "prompt"
+    },
+    "39158dc120d4050049c8a1cf425d9ffd0264a1e1a02b1d479f3fb5d901888ebf": {
+      "line": 60,
+      "match": "prompt"
+    },
+    "6d07951541815d059b3d03e722e21c422e68d9db5e0235e9378e8057d11e6121": {
+      "line": 17,
+      "match": "prompts"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/prompts/litigation_citation_research_PFW_PTAB.py": {
+    "b57ae417d101d21ae4bc0338f2a92cb709ee2ff2f1a98144344348a4648139fa": {
+      "line": 10,
+      "match": "prompt"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/prompts/patent_citation_analysis.py": {
+    "98e30d35a3d21aeb0de44836b4053a6619f2e00969aef77eb10f55a54354fe35": {
+      "line": 9,
+      "match": "prompt"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/prompts/technology_citation_landscape_PFW.py": {
+    "0a869a1994211e41619aeb1471a73b3defc068268233ba477a4ab79a65dfc485": {
+      "line": 10,
+      "match": "prompt"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/prompts/templates/enhanced_examiner_behavior_intelligence.md": {
+    "50670c2a898b9d517cf4eec471a06846d1348dd934882ed9d5cf0a43ab6ced45": {
+      "line": 283,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "b916f082cd3aa07204b6b04c8692f1806e9ab5eb220babe4e2f7b1faf129a96f": {
+      "line": 1483,
+      "match": "prompt"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/server_bootstrap.py": {
+    "5029e75b32453932fc0c780fee9cf9e872255e77006d673ec6aeedc4957a126e": {
+      "line": 61,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/shared/error_utils.py": {
+    "2df6bd9c6582b638a218f7e3256dec8b3a779a9c51c3e31656d60505688b7d5c": {
+      "line": 40,
+      "match": "System"
+    },
+    "8459fc3c791524380300be132305bfec9d05e8db00f57ee7247ac04582872050": {
+      "line": 47,
+      "match": "System"
+    },
+    "ff5a120d80b0a92fe36f947c1e91c102a80d806d675d2ffc71f8db3ba7d27648": {
+      "line": 221,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/shared/injection_scan.py": {
+    "0002a0a817390c29d3fa5b19f1d8abf040b66cb38b39fa0cff9f0553e318267a": {
+      "line": 5,
+      "match": "instruction"
+    },
+    "01720ea3b23cabedccd51eacedd46bf22d16261ffbc488d28961388f5d44bba8": {
+      "line": 44,
+      "match": "system"
+    },
+    "0423e3dc699fc1ae96dc4e5107857d89a9d8863e1d9d85dd2508502e7a3bc260": {
+      "line": 42,
+      "match": "prompts"
+    },
+    "0aa341446165028e47d506a923735c38d89eb57186577fe0d7ba8e84a72e0070": {
+      "line": 33,
+      "match": "prompt"
+    },
+    "38026145c886f824c62ea5b4ab1dfa5d82a45b66aa0d1d26a0b4fd47a6da8eb3": {
+      "line": 97,
+      "match": "instruction"
+    },
+    "5195a4fda154acaaef4e8ddbfc4f5c31dbc733186d2287147e0c764ed377fb9e": {
+      "line": 35,
+      "match": "instructions"
+    },
+    "55692f1bc32fba8a11d9f4953d70b0008810c7c437df7ed9dd31a6a253a68d85": {
+      "line": 94,
+      "match": "INSTRUCTIONS"
+    },
+    "557f5ca045368d0f56e5ee7b0ccc70b6108ead4541194249b867c72682304b37": {
+      "line": 30,
+      "match": "ignore"
+    },
+    "64620cafec3899e869b98308a95d36a07c828935c2346cc94846553b1a2b516b": {
+      "line": 33,
+      "match": "instructions"
+    },
+    "6c17a0fd54ba35347deed8b5893b32c4668be10189d38b369ed5257e45aeffa1": {
+      "line": 30,
+      "match": "instructions"
+    },
+    "6ee811622d5ea84740f088767a8eb3946002ab575f41690f9b466953b99ef8b9": {
+      "line": 42,
+      "match": "system"
+    },
+    "713655d417fa5509df182450f061e80ddbccb25e905bc5943c91ec0e84334065": {
+      "line": 43,
+      "match": "prompts"
+    },
+    "7aea14d69ec3a83b1f1bb1a8af507c0a96bde476f8871efd507995c8221edc2e": {
+      "line": 33,
+      "match": "system"
+    },
+    "7e58f0954d87fa57ca437fc9808032de9fed2faff84b47744a262e3cc2b31562": {
+      "line": 98,
+      "match": "instructions"
+    },
+    "83dfe1ff087a06f7db5166615a5379fd08a978662f3c4171ac0a40d56244d1bc": {
+      "line": 31,
+      "match": "instructions"
+    },
+    "85d203de1013db0db4db1579b3dd35fa8b6d09d8fe3456e1dee601674a814e57": {
+      "line": 44,
+      "match": "prompt"
+    },
+    "8c7c13606f86e86589d1d74b8a238a07ba9d491db878e5afd8961a02f2b25250": {
+      "line": 44,
+      "match": "instructions"
+    },
+    "8d1fd7af42138f65d993a10765da8953ed77864abeddf3ab13bd7d2a3aa5e646": {
+      "line": 31,
+      "match": "prompt"
+    },
+    "8e2e897178890f1c36744e3af21d6dff1f56b832319aa4a81ea9cc2d0f2b1bdb": {
+      "line": 37,
+      "match": "instructions"
+    },
+    "91c508165e98bd89c614b679948edefb5f4c989e48f9782b6712015b7f3ded20": {
+      "line": 50,
+      "match": "instructions"
+    },
+    "9311a39614385e7a9d97ccf3d74f5f605fee2ad76eab16e882e2298c4417fc46": {
+      "line": 30,
+      "match": "prompt"
+    },
+    "a2042bc06dd92fbe4c915216d6fcf40795e3add172336c165c2d007dd20caf95": {
+      "line": 79,
+      "match": "instructions"
+    },
+    "a6c2bf639dda8e4b6e2390fa2fefc0c6f2f3ba9d588f1ae7d18cdf022dd777f7": {
+      "line": 42,
+      "match": "instructions"
+    },
+    "affe94b55292e0cf41b213d414e2cad4509e8585d719fe7e43261fb4bccf555d": {
+      "line": 5,
+      "match": "prompt"
+    },
+    "bea6e5c13595c7d436c997ff1f967beaa082b3bdbb280093c965200d7eec7497": {
+      "line": 98,
+      "match": "ignore"
+    },
+    "cb0a6b410b51b7e4605381e4b5cf81ae955ab0def02596599b92223641462846": {
+      "line": 35,
+      "match": "ignore"
+    },
+    "d44622bd33d3a8647f6bbe24fce37dcb67cb3202af300da8ef8f353b1048ba65": {
+      "line": 98,
+      "match": "ignore previous instructions"
+    },
+    "dda36dcbf499613a61bf468f715782c48b75f977ed76e0ae4be8490025b50db5": {
+      "line": 43,
+      "match": "instructions"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/ui/views/citation_results_view.py": {
+    "f523eec07121ec649db0007845758fd60d1c544e1eceab26b28d0d1b55daae42": {
+      "line": 12,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/ui/views/oa_citations_view.py": {
+    "04f50cd7e6718dc42a2746d82c7710c2c58c98e1dd7893fa01eeb60cdc58dea5": {
+      "line": 12,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/ui/views/statistics_view.py": {
+    "488431da57ff40de8fd534d4fa6f9d2e51be6834e27dbed51120de18df77a18f": {
+      "line": 12,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/ui/views/user_management_view.py": {
+    "f8180fb343ab654dce268db8e71fd9a72b65ee1f922ef45571a3ec9571839b4f": {
+      "line": 12,
+      "match": "system"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/util/metrics.py": {
+    "1ffd72defca7459c8ceba5a76588713bf5f83f83d458c6e500a66f2357dca147": {
+      "line": 206,
+      "match": "system"
+    }
+  },
+  "tests/TEST_SUITE.md": {
+    "52aa9462f67e5c8351fe6b07725061c07f742a22a18036e60ae31ae559282123": {
+      "line": 22,
+      "match": "prompt"
+    },
+    "9888c7e832729bad9b9c5397ced46725305e9b151fa62ef8f6be35f42f4992e1": {
+      "line": 16,
+      "match": "prompt"
+    },
+    "b2f33f2bf68efc096205e6353c646e342bef4661e8c4f5041b5dd4356a4939de": {
+      "line": 20,
+      "match": "prompt"
+    }
+  },
+  "tests/test_field_configuration.py": {
+    "7a59a77ce0e63e99ab3cd57648a866b5b54e589ae658356149c8ec2c3e910c27": {
+      "line": 2,
+      "match": "system"
+    },
+    "b16235d3c413cd3ffbbcc370a0d749e39d88007c4cb4abdfbd0036b468d257e3": {
+      "line": 4,
+      "match": "system"
+    }
+  },
+  "tests/test_injection_scan.py": {
+    "14d92c85f3246419ec1a2624156d9d23034e5754baee4cf5904e2d139c747e20": {
+      "line": 20,
+      "match": "output your system prompt"
+    },
+    "3d9b1a668c26106874eecdf3e10a081a7c28655a6e3fbd9adf61ecfe8eeef9bc": {
+      "line": 164,
+      "match": "ignore"
+    },
+    "41d3f6afc995e16d9621b05b8842c44b1ab6f766198381d51a1bced4e7f82269": {
+      "line": 112,
+      "match": "ignore"
+    },
+    "8aa43d6e98e7b63b0f3dec01253a2dbe3b94f3ad5d46bbee7aa576e221ce2f0c": {
+      "line": 20,
+      "match": "prompt"
+    },
+    "9a2dbada6fe4ebb58e04f00c6cf22acb87e4039f5ed66e40d1a6424b11460612": {
+      "line": 20,
+      "match": "instructions"
+    },
+    "a32f4336a80f62d1ae2e9d36f85d501a1cc09e98940f7b13cabe3ab622bb4b44": {
+      "line": 20,
+      "match": "ignore the previous instructions"
+    },
+    "b8352bc44185df06c6f42713c8094354e9b24ab03b6cf48f33cab825186a2478": {
+      "line": 20,
+      "match": "system"
+    },
+    "f2ec5ae48f6897960d6dbe008d5744543e9329cf7296e57e6bfbe11f07f1d759": {
+      "line": 20,
+      "match": "ignore"
+    }
+  },
+  "tests/test_resilience.py": {
+    "c99155959363629e58d67fa2190b78634788dead8394a300fd28a97ae2e02180": {
+      "line": 5,
+      "match": "system"
+    }
+  },
+  "tests/test_unified_key_management.py": {
+    "1f36b10fab2027a55e8720cc852913651052ca46c9893858c3378463dfaa00bf": {
+      "line": 6,
+      "match": "system"
+    }
+  }
+}

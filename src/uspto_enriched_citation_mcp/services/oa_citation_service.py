@@ -1,0 +1,80 @@
+"""Business logic for USPTO Office Action Citations API v2 tools."""
+
+from typing import Dict, List, Optional
+
+from ..api.oa_citations_client import OACitationsClient, OA_CITATIONS_MINIMAL_FIELDS, OA_CITATIONS_ALL_FIELDS
+from ..util.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class OACitationService:
+    """Service layer for OA Citations v2 operations."""
+
+    def __init__(self, client: OACitationsClient):
+        self.client = client
+
+    async def _search(
+        self,
+        criteria: str,
+        start: int,
+        rows: int,
+        custom_fields: Optional[List[str]],
+        default_fields: List[str],
+    ) -> Dict:
+        """Shared search body for the minimal/balanced tiers.
+
+        Runs the search with the tier's default field set (or the caller's
+        custom set), applies client-side field filtering, and annotates docs
+        with PFW cross-MCP links.
+        """
+        fields = custom_fields if custom_fields is not None else default_fields
+        result = await self.client.search_records(criteria, start, rows, fields)
+        if "error" in result:
+            return result
+
+        docs = result.get("response", {}).get("docs", [])
+
+        # OA Citations API ignores fl — filter fields client-side when custom set requested
+        if custom_fields is not None:
+            field_set = set(custom_fields)
+            result["response"]["docs"] = [
+                {k: v for k, v in doc.items() if k in field_set}
+                for doc in docs
+            ]
+            docs = result["response"]["docs"]
+
+        for doc in docs:
+            app_num = doc.get("patentApplicationNumber", "")
+            if app_num:
+                doc["_pfw_link"] = f"Use PFW MCP: pfw_get_application_documents(app_number='{app_num}')"
+
+        return result
+
+    async def search_minimal(
+        self,
+        criteria: str,
+        start: int = 0,
+        rows: int = 50,
+        custom_fields: Optional[List[str]] = None,
+    ) -> Dict:
+        """Search OA Citations with minimal field set for high-volume discovery."""
+        return await self._search(
+            criteria, start, rows, custom_fields, OA_CITATIONS_MINIMAL_FIELDS
+        )
+
+    async def search_balanced(
+        self,
+        criteria: str,
+        start: int = 0,
+        rows: int = 25,
+        custom_fields: Optional[List[str]] = None,
+    ) -> Dict:
+        """Search OA Citations with all available fields."""
+        return await self._search(
+            criteria, start, rows, custom_fields, OA_CITATIONS_ALL_FIELDS
+        )
+
+    async def get_fields(self) -> Dict:
+        """Retrieve the list of searchable OA Citations v2 fields."""
+        return await self.client.get_fields()

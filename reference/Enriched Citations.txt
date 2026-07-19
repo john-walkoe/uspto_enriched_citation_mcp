@@ -1,0 +1,142 @@
+From - https://data.uspto.gov/apis/enriched-citations/search
+
+Enriched Citations
+
+The Enriched Citation API provides the IP5 and the public with greater insight into the patent evaluation process, and marks one of the first production implementations of the usage of artificial intelligence (AI) for data extraction at the USPTO. It allows users to quickly view information about which references, or prior art, were cited in specific patent application office actions. This quick access to an organized and prioritized citation list helps users identify relevant prior art, ultimately improving the accuracy and consistency of the patent examination. These references include: ​
+
+bibliographic information of the reference​
+the claims that the prior art was cited against​
+the relevant sections that the examiner relied upon. ​​
+The API allows for daily refresh and retrieval of enrich citation data from Office Actions mailed from October 1, 2017, to 30 days prior to the current date.​
+
+Empowered by state-of-the-art machine learning, AI, and natural language processing algorithms, the enriched citation API analyzes the structure and content of office actions. The API then uses sophisticated information extraction and entity extraction algorithms to accurately locate:
+
+the statutes used by examiners,
+the claims rejected based on prior art,​
+the specific prior art references cited, and​
+specific relevant sections in the cited prior art references used.​
+An entity resolution algorithm is then used to consolidate the extraction results with the reference lists in the application, including references cited by applicants and by examiners. The process is fully automated and highly tunable, and able to incorporate feedback from manual reviewers to improve efficiency and accuracy.​
+
+DH Legacy Dataset: Office Actions Enriched citation v3​
+
+DH Legacy Description: USPTO Enriched Citation API v3 (will be migrated to ODP) | United States Patent and Trademark Office - Open Data Portal
+
+POSThttps://api.uspto.gov/api/v1/patent/oa/enriched_cited_reference_metadata/v3/records
+
+Returns a list of all Enriched Citations that match your search term.
+
+Note: API Key is required. Obtain an API key.
+
+POST See Swagger documentation
+
+If you have any questions or errors, please visit the Support page for assistance.
+
+Response
+Successful request.
+
+Data Property	Description	Type
+officeActionDate​ ​	The date the office action was recorded.​	Date
+relatedClaimNumberText	(Key) A collection of claims related to current citation. A citation within a search report must refer to one or many claims.​	String
+applicantCitedExaminerReferenceIndicator​	field indicates whether the prior U.S. patent grant or U.S. pre-grant publication citation was retrieved from the Form PTO-1449. Note that, since applicants can submit multiple Forms PTO-1449 during examination, prior art citation data from this source may be incomplete for patent applications still pending with the Office as of June 2017​	Boolean
+createUserIdentifier	The Job Identifier of the job that initiated the insert of the entity into the database.​	String
+officeActionCategory​		String
+patentApplicationNumber​	The unique number assigned to a patent application when it is filed. The application number includes a two-digit series code and a six-digit serial number.​	String
+inventorNameText​	The citation document title that may contain a company name, inventor or owner.​	String
+groupArtUnitNumber	A four-digit code used by USPTO to categorize and assign patent applications to specialized examiner teams based on technical subject matter. It helps ensure that applications are reviewed by examiners with relevant expertise. the first two digits represent the technology center and the last two digit identifies the specific art unit team within that center​	String
+qualitySummaryText​	Quality summary based on the current status of the review of a patent application or office action. (i.e. #1: No 892 and IDS was retrieved #2: Prior art was missed by algorithm #3: Prior art (NPL) was not resolve correctly #4: Prior art (Foreign Application) was not resolve correctly #5: Prior art (US Application) was not resolve correctly #6: NPL was used in the rejection​	String
+createDateTime​ ​	The date and time that entity is inserted in the database.​	Date
+techCenter	a four-digit code used by USPTO to categorize and assign patent applications to specialized examiner teams based on technical subject matter. It helps ensure that applications are reviewed y examiners with relevant expertise. the first two digits represent the technology center​	String
+citedDocumentIdentifier	(Key) Identification of the cited patent document as it relates to the PCT document. BDR needs to parsing XML (both 892 and 1449), extract data, and combine extracted data to make this field. Sometimes this info comes from Office Action.(Patent number or publication number)​	String
+passageLocationText	A collection of passage locations related to current citation.​	String
+obsoleteDocumentIdentifier​	(Key) A unique identifier for a document stored in the IFW repository. ​	Boolean
+citationCategoryCode ​	A code given to a category that indicates the relevance of any document cited in the search report accompanying published patent applications. (i.e. X, Y, A, E, L, O, T, P, &, D)​	Boolean
+id	unique identifier​	String
+Examinercitedreferenceindicator​	field indicates whether the prior U.S. patent grant or U.S. pre-grant publication citation was retrieved from the Form PTO-892.​	Boolean
+
+ENDPOINT
+https://api.uspto.gov/api/v1/patent/oa/enriched_cited_reference_metadata/v3/records
+JSON RESPONSE SAMPLE
+{
+  "response": {
+    "start": 0,
+    "numFound": 3,
+    "docs": [
+      {
+        "relatedClaimNumberText": "1,7",
+        "officeActionDate": "2019-10-21T00:00:00",
+        "createUserIdentifier": "ETL_SYS",
+        "applicantCitedExaminerReferenceIndicator": false,
+        "kindCode": "A1",
+        "nplIndicator": false,
+        "workGroupNumber": "2830",
+        "patentApplicationNumber": "15739603",
+        "officeActionCategory": "CTNF",
+        "inventorNameText": "Supriya; Amrit",
+        "groupArtUnitNumber": "2837",
+        "qualitySummaryText": "AOK",
+        "createDateTime": "2026-03-02T21:36:52",
+        "techCenter": "2800",
+        "citedDocumentIdentifier": "US 20190165601 A1",
+        "countryCode": "US",
+        "passageLocationText": [
+          "c. 112|figure 3|claim 9|claims 1-23|c. 103|claim 1|claims 12, 13 and 15|claim 2|claims 1 and 7|claim 8|claims 16-22|claim 7|claims 4-6|claim 5|claims 2-6, 8-11 and 14|c. 112|figure 3|claim 9|claims 1-23|c. 103|claim 12|claims 12, 13 and 15|claim 1|claims 1 and 7|claim 2|claims 16-22|claim 8|claims 4-6|claim 7|claims 2-6, 8-11 and 14|claim 5"
+        ],
+        "obsoleteDocumentIdentifier": "K1V5RMZ8RXEAPX0",
+        "id": "d7e95803517f677b3875dc476a61a817",
+        "citationCategoryCode": "Y",
+        "examinerCitedReferenceIndicator": true,
+        "publicationNumber": "20190165601"
+      },
+      {
+        "relatedClaimNumberText": "1,7",
+        "officeActionDate": "2019-10-21T00:00:00",
+        "createUserIdentifier": "ETL_SYS",
+        "applicantCitedExaminerReferenceIndicator": false,
+        "kindCode": "A1",
+        "nplIndicator": false,
+        "workGroupNumber": "2830",
+        "patentApplicationNumber": "15739603",
+        "officeActionCategory": "CTNF",
+        "inventorNameText": "Simms, Kevin A.",
+        "groupArtUnitNumber": "2837",
+        "qualitySummaryText": "AOK",
+        "createDateTime": "2026-03-02T21:36:52",
+        "techCenter": "2800",
+        "citedDocumentIdentifier": "US 20030090348 A1",
+        "countryCode": "US",
+        "passageLocationText": [
+          "c. 112|figure 3|claim 9|claims 1-23|c. 103|claim 1|claims 12, 13 and 15|claim 2|claims 1 and 7|claim 8|claims 16-22|claim 7|claims 4-6|claim 5|claims 2-6, 8-11 and 14|c. 112|figure 3|claim 9|claims 1-23|c. 103|claim 12|claims 12, 13 and 15|claim 1|claims 1 and 7|claim 2|claims 16-22|claim 8|claims 4-6|claim 7|claims 2-6, 8-11 and 14|claim 5"
+        ],
+        "obsoleteDocumentIdentifier": "K1V5RMZ8RXEAPX0",
+        "id": "06cce55e4608f90c57ff7fdf2d6cc031",
+        "citationCategoryCode": "Y",
+        "examinerCitedReferenceIndicator": true,
+        "publicationNumber": "20030090348"
+      },
+      {
+        "relatedClaimNumberText": "2-6,8-15",
+        "officeActionDate": "2019-10-21T00:00:00",
+        "createUserIdentifier": "ETL_SYS",
+        "applicantCitedExaminerReferenceIndicator": false,
+        "kindCode": "",
+        "nplIndicator": false,
+        "workGroupNumber": "2830",
+        "patentApplicationNumber": "15739603",
+        "officeActionCategory": "CTNF",
+        "groupArtUnitNumber": "2837",
+        "qualitySummaryText": "AOK",
+        "createDateTime": "2026-03-02T21:36:52",
+        "techCenter": "2800",
+        "countryCode": "",
+        "passageLocationText": [
+          "c. 112|figure 3|claim 9|claims 1-23|c. 103|claim 1|claims 12, 13 and 15|claim 2|claims 1 and 7|claim 8|claims 16-22|claim 7|claims 4-6|claim 5|claims 2-6, 8-11 and 14|c. 112|figure 3|claim 9|claims 1-23|c. 103|claim 12|claims 12, 13 and 15|claim 1|claims 1 and 7|claim 2|claims 16-22|claim 8|claims 4-6|claim 7|claims 2-6, 8-11 and 14|claim 5"
+        ],
+        "obsoleteDocumentIdentifier": "K1V5RMZ8RXEAPX0",
+        "id": "fa9ab8672e7cdc4f08b3ae43f8dd794b",
+        "citationCategoryCode": "X",
+        "examinerCitedReferenceIndicator": false,
+        "publicationNumber": ""
+      }
+    ]
+  }
+}
