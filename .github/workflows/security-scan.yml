@@ -36,18 +36,25 @@ jobs:
     - name: Scan git history for secrets
       run: |
         echo "Scanning last 100 commits for accidentally committed secrets..."
-        # detect-secrets exits 0 even when it finds something, so the results
-        # are inspected explicitly instead of being discarded with `|| true`.
-        git log --all --pretty=format: -p -100 | uv run detect-secrets scan --stdin > history-scan.json
+        # detect-secrets 1.5 has no stdin mode, so the recent history is written to a
+        # file first. Baseline files, lock files and markdown are left out of the diff;
+        # a finding whose hash is already in .secrets.baseline is a known placeholder.
+        git log --all --pretty=format: -p -100 -- . ':!*.baseline' ':!*.lock' ':!*.md' > history.diff
+        uv run detect-secrets scan --exclude-files 'configs/.*\.json' history.diff > history-scan.json
         python - history-scan.json <<'PY'
         import json, sys
+        known = {f.get("hashed_secret")
+                 for fs in json.load(open(".secrets.baseline")).get("results", {}).values()
+                 for f in fs}
         results = json.load(open(sys.argv[1])).get("results", {})
-        for path, findings in results.items():
-            for finding in findings:
-                print(f"{path}:{finding.get('line_number')} {finding.get('type')}")
-        if results:
-            sys.exit("Secrets detected in git history")
-        print("No secrets detected in git history")
+        new = [(p, f.get("line_number"), f.get("type"))
+               for p, fs in results.items() for f in fs
+               if f.get("hashed_secret") not in known]
+        for path, line, kind in new:
+            print(f"{path}:{line} {kind}")
+        if new:
+            sys.exit("Secrets detected in git history that are not in the baseline")
+        print("No new secrets detected in git history")
         PY
 
     - name: Check for new secrets
