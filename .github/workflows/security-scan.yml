@@ -138,9 +138,9 @@ jobs:
         
     - name: Run dependency audit
       run: |
-        # Check for known vulnerable dependencies
-        uv add --dev safety
-        uv run safety check --json --output safety-report.json || true
+        # Check for known vulnerable dependencies. Run the tool isolated so its
+        # own dependencies never land in the project environment being audited.
+        uvx safety check --json --output safety-report.json || true
         
     - name: Check dependency vulnerabilities
       run: |
@@ -159,8 +159,9 @@ jobs:
 
     - name: Run pip-audit
       run: |
-        uv pip install pip-audit
-        uv run pip-audit --format=json --output=pip-audit.json || true
+        # Audit the project's resolved dependency set, not the runner's venv.
+        uv export --format requirements-txt --no-hashes --no-emit-project > requirements-audit.txt
+        uvx pip-audit -r requirements-audit.txt --format=json --output=pip-audit.json || true
 
     - name: Check pip-audit results
       run: |
