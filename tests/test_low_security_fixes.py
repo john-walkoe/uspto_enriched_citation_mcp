@@ -40,23 +40,32 @@ def make_provider(
 
 
 @pytest.mark.asyncio
-async def test_txns_capped_refuses_new_when_full(monkeypatch):
-    from mcp.server.auth.provider import AuthorizeError
+async def test_txns_capped_evicts_oldest_when_full(monkeypatch):
+    """The cap holds, and the OLDEST transaction is the one shed.
 
+    This assertion used to require `AuthorizeError("temporarily_unavailable")`
+    on the newest request, which encoded S-38: refusing new sign-ins locked
+    out every arriving legitimate user while a filler's own entries survived
+    for the full 15-minute TTL. Load is now shed from the correct side.
+    """
     import uspto_enriched_citation_mcp.auth.provider as provider_mod
 
     monkeypatch.setattr(provider_mod, "_MAX_TXNS", 3)
     provider, _ = make_provider()
 
+    first_three = []
     for _ in range(3):
-        await provider.authorize(make_client(), make_params())
+        url = await provider.authorize(make_client(), make_params())
+        first_three.append(url.split("txn=")[1])
     assert len(provider._txns) == 3
 
-    with pytest.raises(AuthorizeError) as exc_info:
-        await provider.authorize(make_client(), make_params())
-    assert exc_info.value.error == "temporarily_unavailable"
-    # Refused, not silently accepted — the dict did not grow past the cap.
+    newest = (await provider.authorize(make_client(), make_params())).split("txn=")[1]
+
+    # The cap held, the new sign-in was accepted, and the oldest was evicted.
     assert len(provider._txns) == 3
+    assert newest in provider._txns
+    assert first_three[0] not in provider._txns
+    assert first_three[-1] in provider._txns
 
 
 @pytest.mark.asyncio
@@ -288,7 +297,7 @@ async def test_callback_masks_email_in_log_not_registered(monkeypatch):
 
     from urllib.parse import parse_qs, urlparse
 
-    from .test_auth_provider import get_request
+    from .test_auth_provider import get_request, txn_cookie
 
     url = await provider.authorize(make_client(), make_params())
     txn = parse_qs(urlparse(url).query)["txn"][0]
@@ -298,7 +307,12 @@ async def test_callback_masks_email_in_log_not_registered(monkeypatch):
 
     monkeypatch.setattr(provider, "_exchange_and_verify", fake_exchange)
     resp = await provider._callback_endpoint(
-        get_request("/auth/callback/google", f"state={txn}&code=up", {"idp": "google"})
+        get_request(
+            "/auth/callback/google",
+            f"state={txn}&code=up",
+            {"idp": "google"},
+            cookies=txn_cookie(provider, txn),
+        )
     )
     assert resp.status_code == 403
     combined = " ".join(logged_messages)

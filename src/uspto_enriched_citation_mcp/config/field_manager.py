@@ -5,6 +5,7 @@ import re
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
+from ..shared.exceptions import APIResponseError
 from ..util.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,6 +23,13 @@ DEFAULT_MINIMAL_FIELDS = [
     "examinerCitedReferenceIndicator",
 ]
 
+# MUST stay identical to predefined_sets.citations_balanced in
+# field_configs.yaml, which is the set actually loaded; this list is only the
+# no-YAML fallback. The two had drifted to 20 vs 19 members, and four of the
+# extras (firstApplicantName, examinerNameText, decisionTypeCode,
+# decisionTypeCodeDescriptionText) are fields the balanced tool's own
+# docstring says do not exist on this API. Pinned by
+# tests/test_field_counts.py (D-11).
 DEFAULT_BALANCED_FIELDS = [
     "patentApplicationNumber",
     "publicationNumber",
@@ -39,10 +47,9 @@ DEFAULT_BALANCED_FIELDS = [
     "kindCode",
     "countryCode",
     "qualitySummaryText",
-    "firstApplicantName",
-    "examinerNameText",
-    "decisionTypeCode",
-    "decisionTypeCodeDescriptionText",
+    "inventorNameText",
+    "applicantCitedExaminerReferenceIndicator",
+    "createDateTime",
 ]
 
 
@@ -62,15 +69,18 @@ def _check_not_in_sensitive_dir(abs_path: Path) -> None:
     ]
 
     for sensitive_dir in sensitive_dirs:
-        if sensitive_dir.exists():
-            try:
-                abs_path.relative_to(sensitive_dir.resolve())
-                raise ValueError(
-                    f"Access to system directory denied: {sensitive_dir}"
-                )
-            except ValueError:
-                # Not under sensitive directory - this is good
-                pass
+        if not sensitive_dir.exists():
+            continue
+        try:
+            abs_path.relative_to(sensitive_dir.resolve())
+        except ValueError:
+            # Not under this sensitive directory - this is good.
+            continue
+        # The raise MUST stay outside the try: relative_to signals "not under
+        # this directory" with ValueError, so a deliberate raise inside the
+        # try would be swallowed by its own except and the guard would never
+        # fire.
+        raise ValueError(f"Access to system directory denied: {sensitive_dir}")
 
 
 class FieldManager:
@@ -115,33 +125,23 @@ class FieldManager:
             if ".." in config_path.parts:
                 raise ValueError(f"Path traversal detected: {config_path}")
 
-            # 2. Ensure the resolved path is within project directory or current working directory
-            cwd = Path.cwd().resolve()
-            is_in_project = False
+            # 2. Ensure the resolved path is within the project directory. The
+            #    process cwd is deliberately NOT an allowed root: under Docker
+            #    it is /app, the whole application tree, which is not a
+            #    meaningful boundary.
             try:
                 abs_path.relative_to(project_root)
-                is_in_project = True
             except ValueError:
-                pass
-
-            is_in_cwd = False
-            try:
-                abs_path.relative_to(cwd)
-                is_in_cwd = True
-            except ValueError:
-                pass
-
-            if not (is_in_project or is_in_cwd):
                 raise ValueError(
-                    f"Configuration file must be within project directory or current working directory. "
-                    f"Path: {abs_path}, Project: {project_root}, CWD: {cwd}"
+                    f"Configuration file must be within the project directory. "
+                    f"Path: {abs_path}, Project: {project_root}"
                 )
 
             # 3. Prevent access to system-sensitive directories (Windows and Unix)
             _check_not_in_sensitive_dir(abs_path)
 
             # 4. Validate file extension (must be .yaml or .yml)
-            if abs_path.suffix.lower() not in [".yaml", ".yml", ""]:
+            if abs_path.suffix.lower() not in [".yaml", ".yml"]:
                 raise ValueError(
                     f"Invalid file extension: {abs_path.suffix}. Must be .yaml or .yml"
                 )
@@ -149,7 +149,13 @@ class FieldManager:
             logger.debug(f"Path validation passed: {abs_path}")
             return abs_path
 
-        except Exception as e:
+        except ValueError:
+            # The four checks above raise ValueError deliberately and their
+            # messages name the rejected condition; let them through unwrapped.
+            raise
+        except (OSError, RuntimeError) as e:
+            # Environment faults (permissions, symlink loops) are not the same
+            # as a rejected path, but the caller can only act on one of them.
             logger.error(f"Path validation failed for {config_path}: {e}")
             raise ValueError(f"Invalid configuration path: {e}")
 
@@ -182,8 +188,16 @@ class FieldManager:
             }
         }
 
-    def get_fields(self, set_name: str) -> List[str]:
-        """Get field list for predefined set."""
+    def get_field_set(self, set_name: str) -> List[str]:
+        """Get the field-NAME list for a predefined set, from the local YAML.
+
+        Named `get_field_set`, not `get_fields`: `BaseCitationClient.get_fields`
+        returns the USPTO /fields catalog over the network and the two were
+        used within three lines of each other, so a reader had to know which
+        object was which to know whether a name list or an API catalog came
+        back (R-3). `get_fields` remains as a thin alias for existing callers
+        and tests (R-4).
+        """
         sets = self.config.get("predefined_sets", {})
         field_set = sets.get(set_name, {})
         fields = field_set.get("fields", [])
@@ -195,17 +209,10 @@ class FieldManager:
         logger.debug(f"Fields for '{set_name}': {len(fields)} fields")
         return fields
 
-    def get_field_set(self, set_name: str) -> List[str]:
-        """
-        Get field list for predefined set (alias for get_fields).
-
-        Args:
-            set_name: Name of predefined field set (e.g., 'citations_minimal', 'citations_balanced')
-
-        Returns:
-            List of field names in the set
-        """
-        return self.get_fields(set_name)
+    def get_fields(self, set_name: str) -> List[str]:
+        """Alias for get_field_set. Kept for existing callers; prefer
+        get_field_set, which says what it returns."""
+        return self.get_field_set(set_name)
 
     def _get_default_minimal_fields(self) -> List[str]:
         """Get default minimal fields."""
@@ -217,9 +224,14 @@ class FieldManager:
         Maintains response structure: {"response": {"start": X, "numFound": Y, "docs": [...]}}
         """
         try:
-            fields = self.get_fields(set_name)
+            fields = self.get_field_set(set_name)
             if not fields:
                 return response  # No filtering if no fields defined
+
+            if "response" not in response or "docs" not in response["response"]:
+                # Nothing to filter; the tier label cannot be over-claimed
+                # because there are no documents in this payload.
+                return response
 
             # Extract field set
             field_map = {f.lower(): f for f in fields}  # Case-insensitive matching
@@ -246,14 +258,21 @@ class FieldManager:
             )
             return filtered_response
 
-        except Exception as e:
-            logger.error(f"Response filtering failed for '{set_name}': {e}")
-            return response  # Return original on error
+        except Exception:
+            # Fail closed. Neither USPTO citations API honors `fl`, so this
+            # method is the ONLY thing enforcing the advertised field tier;
+            # returning the unfiltered upstream record here would make the
+            # tier label a lie and over-disclose every field of every doc.
+            logger.error("Response filtering failed for '%s'", set_name, exc_info=True)
+            raise APIResponseError(
+                "Could not apply the field tier to the upstream response",
+                details={"field_set": set_name},
+            )
 
     def validate_query_fields(self, query: str, field_set: str) -> Tuple[bool, str]:
         """Basic validation that query fields match available fields."""
         # This is a simple check - full Lucene validation in client
-        allowed_fields = set(self.get_fields(field_set))
+        allowed_fields = set(self.get_field_set(field_set))
         # Extract field names from query (basic parsing)
         potential_fields = re.findall(r"(\w+):", query)
         invalid_fields = [f for f in potential_fields if f not in allowed_fields]
@@ -356,9 +375,13 @@ class FieldManager:
             )
             return filtered
 
-        except Exception as e:
-            logger.error(f"Custom response filtering failed: {e}")
-            return response  # Return original on error
+        except Exception:
+            # Fail closed, same reasoning as filter_response.
+            logger.error("Custom response filtering failed", exc_info=True)
+            raise APIResponseError(
+                "Could not apply the requested field list to the upstream response",
+                details={"field_count": len(custom_fields)},
+            )
 
     def filter_response_smart(
         self,

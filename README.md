@@ -4,7 +4,7 @@ A high-performance Model Context Protocol (MCP) server providing access to **two
 
 [![Platform Support](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-blue.svg)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()
-[![FastMCP](https://img.shields.io/badge/FastMCP-3.0-orange.svg)]()
+[![FastMCP](https://img.shields.io/badge/FastMCP-4.0-orange.svg)]()
 [![APIs](https://img.shields.io/badge/APIs-Enriched%20v3%20%7C%20OA%20v2-green.svg)]()
 [![MCP Apps](https://img.shields.io/badge/MCP%20Apps-UI%20Views-blueviolet.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -105,8 +105,8 @@ The PowerShell script will:
 
 **User Requests the following:**
 
-- *"Find all citations for application 16751234 and analyze the citation patterns"*
-- *"Show me citations from Apple Inc in technology center 2100"*
+- *"Find all citations for application 18180061 and analyze the citation patterns"*
+- *"Show me citations in technology center 2100 for the applications this assignee owns"* (applicant names are not searchable on either citation API; resolve them in the PFW MCP first, then query citations by application number)
 - *"Research examiner citation patterns for art unit 2854"*
 - *"Analyze citation decision types for machine learning patents filed in 2023"*
 - *"Find citations that were CITED (not DISCARDED) in software classification 706"*
@@ -127,6 +127,8 @@ The field configuration supports an optimized research progression:
 
 The Citations MCP provides **5 guided workflow prompts** accessible directly in Claude Desktop UI. These templates automate complex multi-step citation analysis workflows and eliminate the need to memorize tool syntax.
 
+Prompts are **opt-in server-side**: set `CITATIONS_ENABLE_PROMPTS=true` to register them (default off — no prompts appear in the client until enabled).
+
 **For detailed prompt documentation, usage examples, and cross-MCP integration patterns, see [PROMPTS.md](PROMPTS.md).**
 
 ### Core Prompt Workflows
@@ -145,32 +147,32 @@ The Citations MCP provides **5 guided workflow prompts** accessible directly in 
 - **Smart Validation** - Automatic format detection and guidance
 - **Cross-MCP Integration** - Seamless workflows with PTAB, FPD, Citations, and Pinecone MCPs
 
-## 📊 Available Functions (10 Tools)
+## 📊 Available Functions (10 tools, plus 1 registration-gated admin tool)
 
 ### Enriched Citations v3 Tools (AI-extracted passage locations, claim mapping)
 
 | Tool | Use Case | Requirements |
 |------|----------|--------------|
-| `search_citations_minimal` | Ultra-fast citation discovery — 8 essential fields, 90-95% context reduction | USPTO_API_KEY |
-| `search_citations_balanced` | Comprehensive citation analysis — 19 fields, 80-85% context reduction | USPTO_API_KEY |
-| `get_citation_details` | Full single citation record by ID. **⚠️ Metadata only — use PFW for actual documents** | USPTO_API_KEY |
-| `get_citation_statistics` | Database statistics and aggregations for strategic planning | USPTO_API_KEY |
-| `get_available_fields` | Discover Enriched Citations field names and query syntax | None |
+| `Citations_search_citations_minimal` | Ultra-fast citation discovery — 8 essential fields, 90-95% context reduction | USPTO_API_KEY |
+| `Citations_search_citations_balanced` | Comprehensive citation analysis — 19 fields, 80-85% context reduction | USPTO_API_KEY |
+| `Citations_get_citation_details` | Full single citation record by ID. **⚠️ Metadata only — use PFW for actual documents** | USPTO_API_KEY |
+| `Citations_get_citation_statistics` | Database statistics and aggregations for strategic planning | USPTO_API_KEY |
+| `Citations_get_available_fields` | Discover Enriched Citations field names and query syntax (22 fields) | USPTO_API_KEY |
 
 ### Office Action Citations v2 Tools (raw Form 892/1449 data — broader coverage)
 
 | Tool | Use Case | Requirements |
 |------|----------|--------------|
-| `search_oa_citations_minimal` | High-volume OA citation discovery — 7 key fields | USPTO_API_KEY |
-| `search_oa_citations_balanced` | Detailed OA citation analysis — all 16 fields | USPTO_API_KEY |
-| `get_oa_citation_fields` | Discover OA Citations field names and query syntax | None |
+| `Citations_search_oa_citations_minimal` | High-volume OA citation discovery — 7 key fields | USPTO_API_KEY |
+| `Citations_search_oa_citations_balanced` | Detailed OA citation analysis — all 16 fields | USPTO_API_KEY |
+| `Citations_get_oa_citation_fields` | Discover OA Citations field names and query syntax (16 fields) | USPTO_API_KEY |
 
 ### Utility Tools
 
 | Tool | Purpose | Requirements |
 |------|---------|--------------|
-| `validate_query` | Validate Lucene syntax and get optimization suggestions | None |
-| `citations_get_guidance` | Context-efficient selective guidance sections | None |
+| `Citations_validate_query` | Validate Lucene syntax and get optimization suggestions | None |
+| `Citations_get_guidance` | Context-efficient selective guidance sections | None |
 
 ### Admin Tool (OAuth deployments only)
 
@@ -179,10 +181,10 @@ The Citations MCP provides **5 guided workflow prompts** accessible directly in 
 | `citations_manage_users` | Registered-user management with an MCP App panel | `CITATIONS_ENABLE_USER_MANAGEMENT=true`; visible only to identities with the `citations:admin` scope |
 
 **When to use each API:**
-- **Enriched Citations v3**: When you need passage locations, claim mapping, quality scores, or AI-extracted analysis. Coverage from 2017-10-01.
-- **OA Citations v2**: When you need broader coverage, raw Form 892/1449 data, or want to cross-check enriched results. Recommended as a secondary verification source.
+- **Enriched Citations v3**: When you need passage locations, claim mapping, quality scores, `nplIndicator`, or `officeActionDate` filtering. Documented coverage starts 2017-10-01, but the index returns substantially older records in practice, so do not add a blanket date clause.
+- **OA Citations v2**: When you need the raw Form 892/1449 lists, `legalSectionCode` (102/103/112 statutory basis), `actionTypeCategory`, or the broader applicant-IDS inventory. It has no date field at all, and `officeActionDate` returns HTTP 400 here. Neither lane is a superset of the other, so run both for completeness-sensitive questions.
 
-**Detailed Citation Tier (`get_citation_details`)**: Single citation deep dive
+**Detailed Citation Tier (`Citations_get_citation_details`)**: Single citation deep dive
 
 - **Complete record**: All available citation metadata with formatted presentation
 - **Optional context**: Include citing application details and passage-level analysis
@@ -192,17 +194,18 @@ The Citations MCP provides **5 guided workflow prompts** accessible directly in 
 
 | Function (Display Name) | Purpose | Requirements |
 |----------|---------|------------|
-| `citations_get_guidance` | Context-efficient selective guidance sections | None |
+| `Citations_get_guidance` | Context-efficient selective guidance sections | None |
 
 #### Context-Efficient Guidance System
 
-**`citations_get_guidance` Tool** - Solves MCP Resources visibility problem with selective guidance sections:
+**`Citations_get_guidance` Tool** - Solves MCP Resources visibility problem with selective guidance sections:
 
 🎯 **Quick Reference Chart** - Know exactly which section to call:
 
 - 🔍 "Find citations by examiner/application/tech" → fields
--  📄 "Understand citation categories (X/Y/NPL)" → citation_codes
--  🔖 "Citation data coverage (2017+)" → data_coverage
+-  🔀 "Which lane: OA citations or enriched citations?" → oa_citations
+-  📄 "Understand citation categories (X/Y/A + NPL via nplIndicator)" → citation_codes
+-  🔖 "Citation date coverage per lane" → data_coverage
 -  🤝 "PFW workflow for office action documents" → workflows_pfw
 -  🚩 "PTAB citation correlation" → workflows_ptab
 -  📊 "FPD petition citation patterns" → workflows_fpd
@@ -225,7 +228,7 @@ The Citations MCP provides **5 guided workflow prompts** accessible directly in 
 - **Complete Lifecycle Analysis**: PFW → Citations → PTAB → FPD integrated workflows
 - **Knowledge Base Research**: Integrate with Pinecone Assistant for MPEP guidance
 
-**Cost Optimization Guidance:**
+**Context Optimization Guidance:**
 - Start with minimal discovery to identify key citations
 - Progress to balanced analysis only for strategically important citations
 - Use ultra-minimal mode with custom fields parameter for 99% token reduction
@@ -286,7 +289,7 @@ predefined_sets:
 
       # === CITATION CORE FIELDS ===
       - citedDocumentIdentifier              # Citation reference
-      - citationCategoryCode                 # X=US patent, Y=foreign, NPL=non-patent literature
+      - citationCategoryCode                 # X=anticipates or obviates alone, Y=obviates when combined (only X and Y appear in this dataset)
       - techCenter                          # Technology classification
       - officeActionDate                    # Temporal analysis
       - examinerCitedReferenceIndicator      # Examiner vs Applicant
@@ -298,7 +301,7 @@ predefined_sets:
 
 **Field-Specific Searches:**
 ```sql
-patentApplicationNumber:18010777                    # Exact application match
+patentApplicationNumber:18180061                    # Exact application match
 groupArtUnitNumber:1759                               # Art unit search
 techCenter:2100                                       # Technology center match
 inventorNameText:Smith*                               # Inventor name prefix wildcard
@@ -370,7 +373,7 @@ The Enriched Citation API provides AI-extracted citation data (who cited what, w
 **Step 1: Get Document List (Always Required)**
 ```python
 # Use selective filtering to avoid context explosion
-docs = pfw_get_application_documents(
+docs = PFW_get_application_documents(
     app_number='17896175',  # from citation['patentApplicationNumber']
     document_code='CTFR',   # See decoder below
     limit=20
@@ -387,7 +390,7 @@ docs = pfw_get_application_documents(
 **Step 2a: LLM Analysis (Extract Text for Questions)**
 ```python
 # When user asks: "What did the examiner say about this citation?"
-content = pfw_get_document_content(
+content = PFW_get_document_content_with_ocr(
     app_number='17896175',
     document_identifier=docs['documents'][0]['documentIdentifier']
 )
@@ -397,7 +400,7 @@ content = pfw_get_document_content(
 **Step 2b: User Download (Provide PDF Link)**
 ```python
 # When user says: "Get me the office action" or "I want to review it"
-download = pfw_get_document_download(
+download = PFW_get_document_download(
     app_number='17896175',
     document_identifier=docs['documents'][0]['documentIdentifier']
 )
@@ -405,9 +408,9 @@ download = pfw_get_document_download(
 ```
 
 **When to Use Each:**
-- ✅ **Use `pfw_get_document_content`** when LLM needs to analyze content and answer questions
-- ✅ **Use `pfw_get_document_download`** when user explicitly requests document or needs proof
-- ❌ **DON'T skip Step 1** - `document_identifier` is always required from `pfw_get_application_documents`
+- ✅ **Use `PFW_get_document_content_with_ocr`** when LLM needs to analyze content and answer questions
+- ✅ **Use `PFW_get_document_download`** when user explicitly requests document or needs proof
+- ❌ **DON'T skip Step 1** - `document_identifier` is always required from `PFW_get_application_documents`
 
 ### Key Integration Patterns
 
@@ -424,7 +427,7 @@ download = pfw_get_document_download(
 1. **PFW MCP** - Get application numbers with ultra-minimal fields:
    ```python
    # ✅ CORRECT: Use _minimal tool with custom fields parameter
-   pfw_apps = pfw_search_applications_minimal(
+   pfw_apps = PFW_search_applications_minimal(
        query='examinerNameText:SMITH* AND filingDate:[2015-01-01 TO *]',
        fields=['applicationNumberText', 'applicationMetaData.examinerNameText'],
        limit=50
@@ -432,7 +435,7 @@ download = pfw_get_document_download(
    # Result: ~5KB for 50 apps (vs ~25KB preset minimal, ~500KB full data)
    
    # ❌ WRONG: Don't use convenience parameters (exact match often fails)
-   # pfw_apps = pfw_search_applications_minimal(examiner_name='SMITH, JOHN')
+   # pfw_apps = PFW_search_applications_minimal(examiner_name='SMITH, JOHN')
    
    # ❌ WRONG: Don't use short field names (causes API errors)
    # fields=['applicationNumber', 'examinerName']  # Missing 'applicationMetaData.' prefix
@@ -441,7 +444,7 @@ download = pfw_get_document_download(
 2. **Citation MCP** - Search citations by `patentApplicationNumber`:
    ```python
    for app in pfw_apps[:20]:  # Limit to 20 to prevent token explosion
-       citations = search_citations_minimal(
+       citations = Citations_search_citations_minimal(
            criteria=f'patentApplicationNumber:{app.applicationNumberText}',
            rows=50
        )
@@ -466,7 +469,7 @@ download = pfw_get_document_download(
 | **Art Unit Analysis** | Exact match + 15 fields | Wildcard + 2 fields | 87% + higher hit rate |
 
 **Best Practices:**
-- ✅ Use `pfw_search_applications_minimal` WITH custom `fields` parameter
+- ✅ Use `PFW_search_applications_minimal` WITH custom `fields` parameter
 - ✅ Use wildcard-first strategy: `examinerNameText:SMITH*` (not exact match)
 - ✅ Use FULL field paths: `applicationMetaData.examinerNameText` (not short names)
 - ✅ Filter by date in query: `filingDate:[2015-01-01 TO *]` (citation-eligible apps only)
@@ -493,9 +496,10 @@ FASTMCP_TRANSPORT=http uv run uspto-enriched-citation-mcp
 | `FASTMCP_TRANSPORT` | `stdio` | `stdio` for Claude Desktop, `http` for HTTP transport |
 | `FASTMCP_PORT` | `8000` | HTTP port |
 | `FASTMCP_HOST` | `0.0.0.0` | HTTP bind address |
+| `FASTMCP_STATELESS_HTTP` | `true` | Stateless streamable HTTP (no server-side session table) |
 | `CORS_EXTRA_ORIGIN` | *(none)* | Additional CORS origin for reverse proxy deployments |
 | `MCP_APP_EXTRA_DOMAINS` | *(none)* | Comma-separated additional domains added to the MCP Apps Content-Security-Policy (e.g. `https://your-proxy.example.com`). Needed when the client loads the iframe through a reverse proxy or Docker host. |
-| `INTERNAL_AUTH_SECRET` | *(none)* | Shared secret for endpoint authentication (`x-api-key` header). Opt-in: if unset, all requests pass through. When set, requests without the matching header are rejected with 401. Inject via reverse proxy so MCP clients do not need to configure it manually. |
+| `INTERNAL_AUTH_SECRET` | *(none)* | Shared secret for endpoint authentication (`x-api-key` header). **Required** when `FASTMCP_TRANSPORT=http` and `CITATIONS_AUTH_MODE` is not `oauth`: the server logs an error and exits rather than serve an unauthenticated HTTP surface. Requests without the matching header are rejected with 401. Inject via reverse proxy so MCP clients do not need to configure it manually. |
 | `CITATIONS_AUTH_MODE` | `none` | Set to `oauth` to enable OAuth 2.1 sign-in (HTTP mode only); default behavior unchanged. See [docs/SSO_SETUP.md](docs/SSO_SETUP.md). |
 | `CITATIONS_ENABLE_USER_MANAGEMENT` | `false` | Set to `true` to register the `citations_manage_users` admin tool (required for OAuth deployments). |
 | `LOG_LEVEL` | `INFO` | Logging verbosity (applies to stdio and HTTP transports). |
@@ -509,9 +513,9 @@ When run via an MCP Apps-capable client, three card-based UI panels render autom
 
 | Tool(s) | View | What You See |
 |---------|------|--------------|
-| `search_citations_minimal`, `search_citations_balanced` | Citation Results | Color-coded citation cards (X=red, Y=orange, A=green), examiner/applicant badges, "Open in Patent Center" (citing application) and "View cited patent or application on Google Patents" links, pipe-separated passage locations |
-| `search_oa_citations_minimal`, `search_oa_citations_balanced` | OA Citations | Office Action citation cards with 892/1449 source badges, legal section code badges, "Open in Patent Center" and "View cited patent or application on Google Patents" links |
-| `get_citation_statistics` | Statistics | Summary stat cards and horizontal bar chart breakdowns |
+| `Citations_search_citations_minimal`, `Citations_search_citations_balanced` | Citation Results | Color-coded citation cards (X=red, Y=orange, A=green), examiner/applicant badges, "Open in Patent Center" (citing application) and "View cited patent or application on Google Patents" links, pipe-separated passage locations |
+| `Citations_search_oa_citations_minimal`, `Citations_search_oa_citations_balanced` | OA Citations | Office Action citation cards with 892/1449 source badges, legal section code badges, "Open in Patent Center" and "View cited patent or application on Google Patents" links |
+| `Citations_get_citation_statistics` | Statistics | Summary stat cards and horizontal bar chart breakdowns |
 
 ### Testing MCP Apps (basic-host)
 
@@ -586,7 +590,7 @@ A `Dockerfile` is included at the repo root for containerized deployments. For a
 
 ### Manual MCP Tests — Claude Desktop (Recommended First Step)
 
-**[tests/TEST_SUITE.md](tests/TEST_SUITE.md)** contains 28 end-to-end tests with known-good inputs
+**[tests/TEST_SUITE.md](tests/TEST_SUITE.md)** contains 32 end-to-end tests with known-good inputs
 and verified expected outputs for every tool. Run these in Claude Desktop to confirm the MCP is
 working correctly against the live USPTO API.
 
@@ -597,7 +601,7 @@ The test suite uses pre-verified records and queries so you get reliable results
 **To run:** Open Claude Desktop, paste this prompt, then append the tests you want to run:
 > *"Please perform these MCP tests in order. For each test, call the tool with the parameters shown and tell me whether the result matches the expected output. Report PASS, PARTIAL, or FAIL for each."*
 
-**Last validated:** 2026-03-28 — 28/28 PASS (STDIO + HTTP)
+**Last validated:** 2026-07-09 (STDIO via Claude Code; MCP App iframe rendering requires Claude Desktop). Prior full run 2026-03-28, 29/29 PASS in both transports.
 
 ### Automated Tests — pytest
 
@@ -644,16 +648,18 @@ uspto_enriched_citation_mcp/
 │   └── uspto_enriched_citation_mcp/
 │       ├── __init__.py            # Package initialization
 │       ├── __main__.py            # Entry point for -m execution
-│       ├── main.py                # Composition root — FastMCP 3.0 server, MCP Apps resources, tool registration
+│       ├── main.py                # Composition root: FastMCP 4 server, MCP Apps resources, tool registration
 │       ├── runtime.py             # Service singletons + initialize_services()
 │       ├── server_bootstrap.py    # Transport startup (stdio / HTTP)
 │       ├── middleware.py          # HTTP middleware (auth header, size limits, security headers)
 │       ├── app_uris.py            # MCP Apps resource URIs
+│       ├── fastmcp_compat.py      # FastMCP 4 / MCP SDK 2.x compat shim (keeps defer_loading on the wire)
 │       ├── shared_secure_storage.py # Cross-MCP API key storage (Windows DPAPI / Linux 600)
 │       ├── api/                   # API client modules
 │       │   ├── base_citation_client.py # Shared transport, circuit breaker, retry, caching
 │       │   ├── enriched_client.py # Enriched Citations v3 (api.uspto.gov, X-API-KEY auth)
 │       │   ├── oa_citations_client.py # Office Action Citations v2 (api.uspto.gov)
+│       │   ├── applications_client.py # ODP applications search (granted-patent crosswalk)
 │       │   └── field_constants.py # Field name constants
 │       ├── auth/                  # Optional OAuth 2.1 sign-in (CITATIONS_AUTH_MODE=oauth)
 │       │   ├── provider.py        # Dual-IdP (Google + Entra ID) authorization server
@@ -668,20 +674,22 @@ uspto_enriched_citation_mcp/
 │       │   ├── citation_service.py # Enriched Citations operations
 │       │   └── oa_citation_service.py # OA Citations operations
 │       ├── tools/                 # MCP tool implementations
-│       │   ├── search.py          # search_citations_minimal / search_citations_balanced
-│       │   ├── details.py         # get_citation_details
-│       │   ├── oa.py              # search_oa_citations_* + get_oa_citation_fields
-│       │   ├── statistics.py      # get_citation_statistics
-│       │   ├── utility.py         # validate_query, get_available_fields, citations_get_guidance
+│       │   ├── search.py          # Citations_search_citations_minimal / Citations_search_citations_balanced
+│       │   ├── details.py         # Citations_get_citation_details
+│       │   ├── oa.py              # search_oa_citations_* + Citations_get_oa_citation_fields
+│       │   ├── statistics.py      # Citations_get_citation_statistics
+│       │   ├── utility.py         # Citations_validate_query, Citations_get_available_fields, Citations_get_guidance
 │       │   ├── admin.py           # citations_manage_users (registration-gated)
 │       │   └── _shared.py         # query_info envelope helper
 │       ├── ui/                    # MCP Apps HTML views (stdio + HTTP)
 │       │   └── views/
 │       │       ├── citation_results_view.py  # Enriched citation card UI (filter pills)
 │       │       ├── oa_citations_view.py      # OA citation card UI (filter pills)
+│       │       ├── _common.py                # Shared view scaffolding
 │       │       ├── statistics_view.py        # Statistics summary + bar chart
 │       │       └── user_management_view.py   # Admin user-management panel
-│       ├── prompts/               # Multi-step analysis workflow templates
+│       ├── prompts/               # Multi-step analysis workflow templates (registered only when CITATIONS_ENABLE_PROMPTS=true)
+│       │   ├── templates/         # Markdown bodies for the prompt templates
 │       │   ├── patent_citation_analysis.py
 │       │   ├── enhanced_examiner_behavior_intelligence_PFW_PTAB_FPD.py
 │       │   ├── litigation_citation_research_PFW_PTAB.py
@@ -691,11 +699,13 @@ uspto_enriched_citation_mcp/
 │       │   ├── circuit_breaker.py # Circuit breaker pattern
 │       │   ├── injection_scan.py  # Detection-only runtime injection scanner + provenance note
 │       │   ├── uspto_shared_rate_limiter.py # Cross-process USPTO rate limiter (multi-MCP hosts)
+│       │   ├── pfw_link.py        # PFW hand-off hint attached to OA responses
 │       │   ├── error_utils.py     # Standardized error handling
 │       │   ├── exceptions.py      # Custom exception classes
 │       │   └── enums.py           # Enum definitions
 │       └── util/                  # Utility modules
 │           ├── query_builder.py   # QueryParameters, build_query, validate_string_param
+│           ├── patent_crosswalk.py # patent_number normalization + granted-patent resolution
 │           ├── query_validator.py # Lucene syntax validation
 │           ├── rate_limiter.py    # Token bucket rate limiting
 │           ├── retry.py           # Exponential backoff retry logic
@@ -719,7 +729,7 @@ uspto_enriched_citation_mcp/
 │   └── graceful-degradation.md    # Circuit-breaker fallback + stale-cache design
 ├── tests/                         # Test suite (uv run pytest; see Testing section)
 │   ├── README.md                  # Test suite documentation
-│   ├── TEST_SUITE.md              # Manual test cases (28 tests, STDIO mode)
+│   ├── TEST_SUITE.md              # Manual test cases (32 tests, STDIO mode)
 │   ├── conftest.py                # Shared mock_runtime fixture (mocked clients, real services)
 │   ├── test_basic.py              # Core functionality (no API key required)
 │   ├── test_auth_provider.py      # OAuth provider + SQLite store + admin gating
@@ -732,9 +742,16 @@ uspto_enriched_citation_mcp/
 │   ├── test_resilience.py             # Circuit breaker and rate limiting tests
 │   ├── test_security.py               # Injection detection + input validation tests
 │   ├── test_shared_rate_limiter.py    # Cross-process shared rate limiter tests
-│   ├── test_statistics.py             # Citation statistics tests
+│   ├── test_statistics_tool.py        # Citation statistics tests
+│   ├── test_patent_crosswalk.py       # Granted-patent-number crosswalk (normalizer, client, tool wiring)
 │   ├── test_unified_key_management.py # API key storage tests (excluded by default, see below)
 │   └── ...                            # Additional tool/logging/query-validation tests
+├── scripts/                       # Operator utilities
+│   ├── manage_mcp_users.py        # Bootstrap and manage the OAuth mcp_users table
+│   └── rotate_internal_auth_secret.py # INTERNAL_AUTH_SECRET rotation with an overlap window
+├── Dockerfile                     # Container image (HTTP transport)
+├── docker-compose.yml             # Compose stack for the HTTP deployment
+├── .env.example                   # Environment template for the container
 ├── pyproject.toml                 # Package configuration
 ├── uv.lock                        # Dependency lockfile
 ├── README.md                      # This file
@@ -766,12 +783,12 @@ uspto_enriched_citation_mcp/
 
 #### Lucene Query Issues
 - **Cause:** Invalid Lucene syntax or field names
-- **Solution:** Use `validate_query` tool to check syntax and get suggestions
+- **Solution:** Use `Citations_validate_query` tool to check syntax and get suggestions
 - **Common**: Missing quotes, unbalanced parentheses, wrong field names
 
 #### Fields Not Returning Data
 - **Cause:** Field name not in API or configuration
-- **Solution:** Use `get_available_fields` to discover correct field names
+- **Solution:** Use `Citations_get_available_fields` to discover correct field names
 
 #### Authentication Errors
 - **Cause:** Missing or invalid API key
@@ -787,7 +804,7 @@ uspto_enriched_citation_mcp/
 1. Check the test scripts for working examples
 2. Review the field configuration in `field_configs.yaml`
 3. Verify your Claude Desktop configuration matches the provided templates
-4. Use `citations_get_guidance` for workflow-specific guidance
+4. Use `Citations_get_guidance` for workflow-specific guidance
 
 ## 🛡️ Security & Production Readiness
 
@@ -803,7 +820,7 @@ uspto_enriched_citation_mcp/
 
 Free-text citation fields (`passageLocationText`, `qualitySummaryText`) are AI-extracted by the USPTO from office-action documents, which quote arbitrary applicant- and examiner-drafted text. The server treats that text as **data, not instructions** — and never strips or rewrites it (verbatim fidelity is the product):
 
-- Every text-bearing tool (`search_citations_minimal`/`_balanced`, `get_citation_details`, `search_oa_citations_minimal`/`_balanced`) attaches a `provenance_note` envelope field labeling retrieved text as quoted document content.
+- Every text-bearing tool (`Citations_search_citations_minimal`/`_balanced`, `Citations_get_citation_details`, `Citations_search_oa_citations_minimal`/`_balanced`) attaches a `provenance_note` envelope field labeling retrieved text as quoted document content.
 - A detection-only runtime scanner (`src/uspto_enriched_citation_mcp/shared/injection_scan.py`) checks the free-text fields for instruction-override, prompt-extraction, and encoding-evasion language plus invisible-Unicode steganography. On a hit it attaches an `injection_scan` envelope key naming the flagged result with **kind labels only — never the matched text**; the key is absent entirely when results are clean.
 - The server instructions state the same posture so consuming models report instruction-like language found in retrieved text instead of acting on it.
 
@@ -824,17 +841,13 @@ Full write-up: [docs/CONTENT_PROVENANCE.md](docs/CONTENT_PROVENANCE.md). This ru
 - **Security guidelines** - Complete documentation for secure development practices
 - **Structured error responses** - No sensitive information leakage in error messages
 - **API key validation** - Format checking and presence validation
-- **HTTP transport authentication** - When running in HTTP mode (`FASTMCP_TRANSPORT=http`), the server optionally validates the `X-API-KEY` header. Set `INTERNAL_AUTH_SECRET` to enable enforcement; if unset, all requests are allowed through. The `/health` endpoint is always unauthenticated.
+- **HTTP transport authentication** - When running in HTTP mode (`FASTMCP_TRANSPORT=http`) without OAuth, the server validates the `X-API-KEY` header against `INTERNAL_AUTH_SECRET`. That secret is required in this mode: if it never resolves, the server logs an error and refuses to start rather than serve an open deployment. The `/health` endpoint is always unauthenticated and is exempt from the inbound rate limit.
 - **Security headers** - `X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, and `Content-Security-Policy` headers applied to all HTTP responses
 - **Rate limiting** - Token-bucket rate limiter (100 req/min default); in multi-replica deployments, enforce at the reverse proxy layer
 
 ### Request Tracking & Debugging
 
-All API requests include unique request IDs (8-char UUIDs) for correlation:
-```
-[a1b2c3d4] Starting POST request to enriched_cited_reference_metadata/v3/records
-[a1b2c3d4] Request successful on attempt 1
-```
+Every request is tagged with a UUID4 request ID, returned to the caller as `request_id` on the response envelope and carried on the server's log records for correlation. Log lines carry flow metadata only (tool, request id, status, counts): query text, request and response bodies, headers and URLs are never logged, and the `SanitizingFilter` on every handler enforces that.
 
 ### Documentation
 - `SECURITY_GUIDELINES.md` - Comprehensive security best practices
@@ -894,7 +907,7 @@ The author makes no representations or warranties, express or implied, including
 ## 🔗 Related Links
 
 - [USPTO Open Data Portal](https://data.uspto.gov/myodp)
-- [USPTO Enriched Citation API v3 Documentation](https://developer.uspto.gov/ds-api/#uspto-enriched-citation-api-v3)
+- [USPTO Open Data Portal API documentation](https://data.uspto.gov/apis/) (the enriched citation and office action citation APIs moved from `developer.uspto.gov/ds-api` to `api.uspto.gov`)
 - [Apache Lucene Query Parser Syntax](https://lucene.apache.org/core/3_6_2/queryparsersyntax.html)
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [Claude](https://claude.ai)

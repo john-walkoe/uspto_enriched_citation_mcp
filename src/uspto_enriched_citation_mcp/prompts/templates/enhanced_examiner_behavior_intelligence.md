@@ -56,7 +56,7 @@ print()
 
 # STEP 1: Get examiner's application portfolio (ULTRA-MINIMAL MODE)
 try:
-    results = pfw_search_applications_minimal(
+    results = PFW_search_applications_minimal(
         query=query,
         fields=['applicationNumberText', 'applicationMetaData.examinerNameText',
                 'applicationMetaData.groupArtUnitNumber', 'patentGrantDate',
@@ -179,14 +179,26 @@ print()
 
 ### 2.1 Citation Data Collection with Coverage Validation
 
-**⚠️ DATE CONSTRAINT:** Citation API has office action dates from 2017-10-01 forward only!
+**⚠️ RUN BOTH LANES, and mind the date-field asymmetry:**
+- Query **both** `Citations_search_oa_citations_minimal` and
+  `Citations_search_citations_minimal` per application and union the results.
+  Neither lane is a superset — OA is usually broader, but the enriched lane
+  returns more on some applications.
+- **OA lane** has **no date field** — passing `officeActionDate` is an HTTP 400,
+  so omit any date clause.
+- **Enriched lane** accepts date filtering. Do NOT bolt a 2017-10-01 clause onto
+  it by reflex — that discards ~44% of the records it actually serves.
+- **Coverage:** USPTO documents both APIs as office actions mailed 2017-10-01 to
+  ~30 days ago; older records have been observed in practice, so query rather
+  than assume.
+- Neither lane carries examiner names; examiner identity comes from PFW.
 
 ```python
 print("---")
 print()
 print("### Citation Behavior Analysis")
 print()
-print(f"📅 **Citation Data Coverage:** Oct 1, 2017+ office actions only")
+print(f"📅 **Citation Data Coverage:** both lanes documented Oct 1, 2017+ (older records seen in practice); both queried and unioned")
 print()
 
 # Filter applications likely to have citation data
@@ -237,7 +249,7 @@ for i, app in enumerate(sample_apps, 1):
 
     try:
         # Get citations (use application_number only - date filtering automatic)
-        citations = search_citations_minimal(
+        citations = Citations_search_citations_minimal(
             application_number=app_number,
             rows=100  # Increased to capture all citations
         )
@@ -542,7 +554,6 @@ else:
     print()
 
     noa_insights = []
-    total_noa_cost = 0.0
 
     for idx, patent in enumerate(representative_patents, 1):
         app_number = patent.get('applicationNumberText')
@@ -557,7 +568,7 @@ else:
 
         # Get NOA document
         try:
-            noa_docs = pfw_get_application_documents(
+            noa_docs = PFW_get_application_documents(
                 app_number=app_number,
                 document_code='NOA',
                 limit=1
@@ -570,20 +581,17 @@ else:
 
                 print(f"  - NOA Pages: {page_count}")
 
-                # Extract NOA content (auto-optimize: PyPDF2 first, Mistral fallback)
-                noa_content = pfw_get_document_content(
+                # Extract NOA content (auto-optimize: fast text extraction first, OCR only when needed)
+                noa_content = PFW_get_document_content_with_ocr(
                     app_number=app_number,
                     document_identifier=doc_id,
-                    auto_optimize=True  # 70% cost savings vs Mistral-only
+                    auto_optimize=True  # fast text extraction first, OCR only when needed
                 )
 
                 extracted_text = noa_content.get('extracted_content', '')
                 extraction_method = noa_content.get('extraction_method', 'Unknown')
-                cost = noa_content.get('processing_cost_usd', 0.0)
-                total_noa_cost += cost
 
                 print(f"  - Extracted: {len(extracted_text)} chars via {extraction_method}")
-                print(f"  - Cost: $${cost:.3f}")
 
                 # Store for cross-NOA pattern analysis
                 noa_insights.append({
@@ -602,9 +610,6 @@ else:
             print(f"  - ❌ Error extracting NOA: {str(e)[:100]}")
 
         print()
-
-    print(f"**Total NOA extraction cost:** $${total_noa_cost:.3f}")
-    print()
 
     # Cross-NOA pattern analysis
     if len(noa_insights) > 0:
@@ -717,7 +722,7 @@ for i, app in enumerate(prosecution_sample, 1):
 
     try:
         # Check for RCE filings (continuation after final rejection)
-        rce_docs = pfw_get_application_documents(
+        rce_docs = PFW_get_application_documents(
             app_number=app_number,
             document_code='RCEX',
             limit=10
@@ -729,7 +734,7 @@ for i, app in enumerate(prosecution_sample, 1):
                 apps_with_rce.append(app_number)
 
         # Check for amendments/responses (applicant activity)
-        amend_docs = pfw_get_application_documents(
+        amend_docs = PFW_get_application_documents(
             app_number=app_number,
             direction_category='INCOMING',  # Applicant submissions
             limit=20
@@ -744,7 +749,7 @@ for i, app in enumerate(prosecution_sample, 1):
             amendment_count += len(responses)
 
         # Check for non-final rejections (examiner activity)
-        oa_docs = pfw_get_application_documents(
+        oa_docs = PFW_get_application_documents(
             app_number=app_number,
             document_code='CTFR',  # Non-final rejection
             limit=10
@@ -756,7 +761,7 @@ for i, app in enumerate(prosecution_sample, 1):
                 total_oa_pages += doc.get('pageCount', 0)
 
         # Check for final rejections
-        final_docs = pfw_get_application_documents(
+        final_docs = PFW_get_application_documents(
             app_number=app_number,
             document_code='CTNF',  # Final rejection
             limit=5
@@ -874,7 +879,7 @@ for app in petition_sample:
     app_number = app.get('applicationNumberText')
 
     try:
-        petitions = fpd_search_petitions_by_application(
+        petitions = FPD_Search_petitions_by_application(
             application_number=app_number,
             include_documents=False  # Metadata only
         )
@@ -977,9 +982,9 @@ else:
 
 **PTAB MCP Tool Changes (as of 2026-01-17):**
 - OLD: ptab_search_proceedings_minimal/balanced
-- NEW: search_trials_minimal/balanced (for IPR/PGR/CBM)
-- NEW: search_appeals_minimal/balanced (for Ex Parte Appeals)
-- NEW: search_interferences_minimal/balanced (for Derivations)
+- NEW: PTAB_search_trials_minimal/balanced (for IPR/PGR/CBM)
+- NEW: PTAB_search_appeals_minimal/balanced (for Ex Parte Appeals)
+- NEW: PTAB_search_interferences_minimal/balanced (for Derivations)
 
 **Token Optimization:** Use fields parameter for ultra-minimal queries (99% reduction)
 For cross-MCP correlation, request only needed fields:
@@ -1019,7 +1024,7 @@ if ptab_sample:
 for patent_num in ptab_sample:
     try:
         # Use ultra-minimal mode with fields parameter for 99% reduction
-        proceedings = search_trials_minimal(
+        proceedings = PTAB_search_trials_minimal(
             patent_number=patent_num,
             fields=['trialNumber', 'trialMetaData.trialStatusCategory', 'petitionerData.petitionerName'],
             limit=10
@@ -1418,8 +1423,6 @@ print("**Report Generation Notes:**")
 print(f"  - Total Applications Retrieved: {len(applications)}")
 print(f"  - Citations Analyzed: {len(all_citations)}")
 print(f"  - NOAs Extracted: {len(noa_insights)}")
-if len(noa_insights) > 0:
-    print(f"  - Total Extraction Cost: $${total_noa_cost:.3f}")
 print()
 print("**Next Analysis:** Consider running this analysis periodically (every 6-12 months)")
 print("to track examiner behavior changes over time.")
@@ -1436,7 +1439,7 @@ print("to track examiner behavior changes over time.")
 - **PFW searches:** 8 custom fields (vs 15+ preset) = 47% reduction
 - **Citation searches:** 8 preset minimal fields = 90% reduction vs balanced
 - **Document retrieval:** Filtered by document_code = 70-90% reduction
-- **NOA extraction:** `auto_optimize=True` = 70% cost savings
+- **NOA extraction:** `auto_optimize=True` = fast text extraction first, OCR only for scanned pages
 
 **Expected Context Usage:**
 - 100 applications × 8 fields = ~10KB
@@ -1465,16 +1468,10 @@ Every API call wrapped in try-except with:
 - FPD unavailable → Skip petition analysis, note in limitations
 - PTAB unavailable → Skip post-grant risk, note in report
 
-### Cost Optimization
+### Extraction Efficiency
 
-**Estimated costs for typical analysis:**
-- PFW API calls: Free (public API)
-- Citations API calls: Free (public API)
-- FPD API calls: Free (public API)
-- PTAB API calls: Free (public API)
-- **NOA extraction (5 docs):** $$0.01-0.05 (auto-optimize mode with PyPDF2 first, Mistral fallback)
-
-**Total estimated cost:** < $$0.10 per examiner analysis
+**NOA extraction (5 docs):** use auto-optimize mode — fast text extraction
+first, OCR fallback only for scanned documents that need it.
 
 ---
 

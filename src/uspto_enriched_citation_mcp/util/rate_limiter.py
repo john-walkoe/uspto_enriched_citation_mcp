@@ -10,6 +10,22 @@ from typing import Optional, Dict
 from dataclasses import dataclass
 import threading
 
+from .logging import get_logger
+
+_module_logger = get_logger(__name__)
+
+
+# A single endpoint may draw this fraction of the global ceiling. The global
+# bucket must stay strictly larger than any one endpoint's share or the
+# per-endpoint buckets can never bind.
+ENDPOINT_SHARE_DIVISOR = 2.0
+
+
+def _finite_int(value: float) -> int:
+    """int() for a bucket reading that may be infinite (an intentionally
+    unbounded global bucket, as the inbound middleware builds)."""
+    return -1 if value == float("inf") else int(value)
+
 
 @dataclass
 class RateLimitConfig:
@@ -17,6 +33,10 @@ class RateLimitConfig:
 
     requests_per_minute: int = 100  # Default from settings
     burst_size: Optional[int] = None  # Max burst (defaults to requests_per_minute)
+    # Fraction of the global ceiling one endpoint may draw. 1.0 means the
+    # endpoint buckets ARE the control and the global bucket is expected to be
+    # opened wide by the caller (the inbound middleware does exactly that).
+    endpoint_share_divisor: float = ENDPOINT_SHARE_DIVISOR
 
 
 class TokenBucket:
@@ -65,6 +85,16 @@ class TokenBucket:
                 return True
             else:
                 return False
+
+    def refund(self, tokens: int = 1) -> None:
+        """Return tokens consumed for a request that was rejected elsewhere."""
+        with self.lock:
+            self.tokens = min(self.capacity, self.tokens + tokens)
+
+    def peek(self) -> float:
+        """Current token count, without consuming."""
+        with self.lock:
+            return self.tokens
 
     def get_wait_time(self, tokens: int = 1) -> float:
         """
@@ -128,15 +158,27 @@ class RateLimiter:
         # Burst size (max tokens in bucket)
         self.burst_size = config.burst_size or config.requests_per_minute
 
-        # Token buckets per endpoint
+        # Token buckets per endpoint. Each endpoint gets a SHARE of the global
+        # ceiling, not a copy of it: when both were built at the same rate and
+        # capacity, endpoint_tokens >= global_tokens always held, so the
+        # endpoint check could never fail unless the global one already had,
+        # and per-endpoint limiting was dead code while one hot lane starved
+        # every other lane through the global bucket (R-3).
+        divisor = config.endpoint_share_divisor or ENDPOINT_SHARE_DIVISOR
+        self.endpoint_rate = self.tokens_per_second / divisor
+        self.endpoint_burst = max(1.0, self.burst_size / divisor)
         self.buckets: Dict[str, TokenBucket] = {}
         self.global_bucket = TokenBucket(
             rate=self.tokens_per_second, capacity=self.burst_size
         )
 
-        # Statistics
+        # Statistics. Guarded by the same lock as bucket creation; they used
+        # to be incremented outside any lock while the class docstring
+        # claimed thread safety (S-39).
+        self._lock = threading.Lock()
         self.total_requests = 0
         self.rejected_requests = 0
+        self._log_failure_reported = False
 
     def get_or_create_bucket(self, endpoint: str) -> TokenBucket:
         """
@@ -148,11 +190,12 @@ class RateLimiter:
         Returns:
             Token bucket for the endpoint
         """
-        if endpoint not in self.buckets:
-            self.buckets[endpoint] = TokenBucket(
-                rate=self.tokens_per_second, capacity=self.burst_size
-            )
-        return self.buckets[endpoint]
+        with self._lock:
+            if endpoint not in self.buckets:
+                self.buckets[endpoint] = TokenBucket(
+                    rate=self.endpoint_rate, capacity=self.endpoint_burst
+                )
+            return self.buckets[endpoint]
 
     async def acquire(self, endpoint: str = "default", tokens: int = 1) -> bool:
         """
@@ -165,19 +208,25 @@ class RateLimiter:
         Returns:
             True if acquired, False if rate limit exceeded
         """
-        self.total_requests += 1
+        with self._lock:
+            self.total_requests += 1
 
-        # Check global rate limit
-        if not self.global_bucket.consume(tokens):
-            self.rejected_requests += 1
-            await self._log_rate_limit_exceeded("global", endpoint)
-            return False
-
-        # Check endpoint-specific rate limit
+        # Endpoint bucket FIRST, and refund it if the global ceiling then
+        # rejects: the global token used to be consumed before the endpoint
+        # check, so a rejected request still drained the shared budget it was
+        # never granted (S-39).
         bucket = self.get_or_create_bucket(endpoint)
         if not bucket.consume(tokens):
-            self.rejected_requests += 1
+            with self._lock:
+                self.rejected_requests += 1
             await self._log_rate_limit_exceeded("endpoint", endpoint)
+            return False
+
+        if not self.global_bucket.consume(tokens):
+            bucket.refund(tokens)
+            with self._lock:
+                self.rejected_requests += 1
+            await self._log_rate_limit_exceeded("global", endpoint)
             return False
 
         return True
@@ -208,8 +257,15 @@ class RateLimiter:
             endpoint: Endpoint that exceeded limit
         """
         try:
+            from .metrics import get_metrics_collector
             from .security_logger import get_security_logger
 
+            get_metrics_collector().record_rate_limit_event(
+                endpoint=endpoint,
+                tokens_requested=1,
+                tokens_available=_finite_int(self.global_bucket.peek()),
+                blocked=True,
+            )
             logger = get_security_logger()
             logger.rate_limit_exceeded(
                 limit=self.config.requests_per_minute,
@@ -218,7 +274,17 @@ class RateLimiter:
                 limit_type=limit_type,
             )
         except Exception:
-            pass  # Don't fail on logging errors
+            # A security-log failure must not fail the request. Say so once,
+            # though: the whole body used to be inside this try, so a
+            # permanently broken logger produced zero rate-limit events and
+            # zero indication that it was broken (X-5).
+            if not self._log_failure_reported:
+                self._log_failure_reported = True
+                _module_logger.warning(
+                    "Rate-limit event logging failed; further failures will "
+                    "be silent for the life of this process",
+                    exc_info=True,
+                )
 
     def get_statistics(self) -> dict:
         """

@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from uspto_enriched_citation_mcp.api.oa_citations_client import (
     OACitationsClient,
     OA_CITATIONS_MINIMAL_FIELDS,
-    OA_CITATIONS_ALL_FIELDS,
 )
 from uspto_enriched_citation_mcp.shared.exceptions import (
     RateLimitError,
@@ -23,7 +22,6 @@ from uspto_enriched_citation_mcp.shared.exceptions import (
 )
 from uspto_enriched_citation_mcp.shared.circuit_breaker import (
     CircuitBreakerError,
-    CircuitBreaker,
     CircuitState,
 )
 
@@ -158,36 +156,33 @@ class TestOACitationsClientErrors:
         )
 
     @pytest.mark.asyncio
-    async def test_oa_client_timeout(self, client):
-        """Test 3: httpx TimeoutException raises APITimeoutError."""
+    async def test_oa_client_timeout(self, client, no_backoff):
+        """Test 3: httpx TimeoutException raises APITimeoutError.
+
+        The side effect goes on `_send`, the documented single choke point,
+        not on `response.json()`: a real timeout is raised by the send, and
+        setting it on the parse kept passing even if the send moved out of
+        the try (Q-4). Mocking `_send` also keeps the test independent of the
+        fact that `_send` happens to use `self.client.get` (Q-3).
+        """
         import httpx
 
-        mock_response = make_mock_response(
-            status_code=200,
-            json_data={},
-            headers={"content-type": "application/json"},
-        )
-        mock_response.json.side_effect = httpx.TimeoutException("timed out")
-
-        with patch.object(client.client, "get", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = mock_response
+        with patch.object(
+            client, "_send", new_callable=AsyncMock,
+            side_effect=httpx.TimeoutException("timed out"),
+        ):
             with pytest.raises(APITimeoutError):
                 await client.get_fields()
 
     @pytest.mark.asyncio
-    async def test_oa_client_connect_error(self, client):
+    async def test_oa_client_connect_error(self, client, no_backoff):
         """Test 4: httpx ConnectError raises APIConnectionError."""
         import httpx
 
-        mock_response = make_mock_response(
-            status_code=200,
-            json_data={},
-            headers={"content-type": "application/json"},
-        )
-        mock_response.json.side_effect = httpx.ConnectError("connection refused")
-
-        with patch.object(client.client, "get", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = mock_response
+        with patch.object(
+            client, "_send", new_callable=AsyncMock,
+            side_effect=httpx.ConnectError("connection refused"),
+        ):
             with pytest.raises(APIConnectionError):
                 await client.get_fields()
 
@@ -199,7 +194,9 @@ class TestOACitationsClientErrors:
             (500, APIResponseError),
         ],
     )
-    async def test_oa_client_http_error(self, client, status_code, expected_exception):
+    async def test_oa_client_http_error(
+        self, client, no_backoff, status_code, expected_exception
+    ):
         """Test 5: HTTP errors raise appropriate exceptions (parametrized)."""
         mock_response = make_mock_response(
             status_code=status_code,
@@ -208,8 +205,8 @@ class TestOACitationsClientErrors:
             content=b'{"error":"error"}',
         )
 
-        with patch.object(client.client, "get", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = mock_response
+        with patch.object(client, "_send", new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = mock_response
             with pytest.raises(expected_exception):
                 await client.get_fields()
 

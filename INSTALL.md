@@ -189,29 +189,31 @@ Security Features:
   [*] Secure password input (API keys hidden during entry)
   [*] Memory cleanup after key entry (prevents leaks)
 
-Available Tools (10):
-  Enriched Citations v3 (always-loaded):
-  - search_citations_minimal (ultra-fast discovery — 8 fields)
-  - citations_get_guidance (workflow help, section parameter)
+Available Tools (10, plus a registration-gated admin tool):
+  Always-loaded:
+  - Citations_search_citations_minimal (ultra-fast enriched discovery, 8 fields)
+  - Citations_search_oa_citations_minimal (high-volume OA discovery, 7 fields)
+  - Citations_get_guidance (workflow help, section parameter)
   Enriched Citations v3 (deferred):
-  - search_citations_balanced (comprehensive analysis — 19 fields)
-  - get_citation_details (full single citation record)
-  - get_citation_statistics (aggregations and trend analysis)
-  - get_available_fields (field name and query syntax reference)
+  - Citations_search_citations_balanced (comprehensive analysis, 19 fields)
+  - Citations_get_citation_details (full single citation record)
+  - Citations_get_citation_statistics (aggregations and trend analysis)
+  - Citations_get_available_fields (field name and query syntax reference)
   Office Action Citations v2 (deferred):
-  - search_oa_citations_minimal (high-volume OA discovery)
-  - search_oa_citations_balanced (detailed OA analysis)
-  - get_oa_citation_fields (OA field names and syntax)
+  - Citations_search_oa_citations_balanced (detailed OA analysis, 16 fields)
+  - Citations_get_oa_citation_fields (OA field names and syntax)
   Utility (deferred):
-  - validate_query (Lucene syntax validation)
+  - Citations_validate_query (Lucene syntax validation)
+  Admin (deferred; registered only when CITATIONS_ENABLE_USER_MANAGEMENT=true):
+  - citations_manage_users (registered-user management)
 
 Key Management:
   Manage keys: ./deploy/manage_api_keys.ps1
   Test keys:   uv run python tests/test_unified_key_management.py
   Cross-MCP:   Keys shared with FPD, PFW, and PTAB MCPs
 
-Test with: search_citations_minimal
-Learn workflows: citations_get_guidance
+Test with: Citations_search_citations_minimal
+Learn workflows: Citations_get_guidance
 PS C:\Users\YOUR_USERNAME\uspto_enriched_citation_mcp>
 ```
 
@@ -431,9 +433,9 @@ OK: Secured file permissions: /USER/.claude.json (600)
   uv run uspto-enriched-citation-mcp --help
 
 [INFO] Test with Claude Code:
-  Ask Claude: 'Use search_citations_minimal to find citations for art unit 2854'
-  Ask Claude: 'Use get_available_fields to explore citation data fields'
-  Ask Claude: 'Use validate_query to check Lucene syntax for patent searches'
+  Ask Claude: 'Use Citations_search_citations_minimal to find citations for art unit 2854'
+  Ask Claude: 'Use Citations_get_available_fields to explore citation data fields'
+  Ask Claude: 'Use Citations_validate_query to check Lucene syntax for patent searches'
 
 [INFO] Verify MCP is running:
   claude mcp list
@@ -494,8 +496,10 @@ HTTP mode is suitable for n8n, remote clients, reverse proxies, or multi-user de
    # .env
    USPTO_API_KEY=your_30_char_lowercase_key_here
 
-   # Optional — set to enforce x-api-key header auth on the /mcp endpoint
-   # INTERNAL_AUTH_SECRET=your_shared_secret_here
+   # Required in this configuration (http transport, CITATIONS_AUTH_MODE unset):
+   # the x-api-key header guard on the /mcp endpoint. The server refuses to
+   # start without it rather than serve an unauthenticated HTTP surface.
+   INTERNAL_AUTH_SECRET=your_shared_secret_here
 
    # Optional — add when exposing directly to claude.ai
    # CORS_EXTRA_ORIGIN=https://claude.ai
@@ -510,7 +514,7 @@ HTTP mode is suitable for n8n, remote clients, reverse proxies, or multi-user de
    ```bash
    curl http://localhost:8000/health
    ```
-   Expected: `{"status": "ok"}`
+   Expected: the plain-text body `OK` (not JSON)
 
 ### MCP Endpoint
 
@@ -526,8 +530,9 @@ http://localhost:8000/mcp
 | `FASTMCP_TRANSPORT` | No | `http` | Transport mode (`http` set in Dockerfile) |
 | `FASTMCP_HOST` | No | `0.0.0.0` | HTTP bind address |
 | `FASTMCP_PORT` | No | `8000` | HTTP port |
+| `FASTMCP_STATELESS_HTTP` | No | `true` | Stateless streamable HTTP (no server-side session table) |
 | `LOG_LEVEL` | No | `INFO` | Logging verbosity |
-| `INTERNAL_AUTH_SECRET` | No | *(none)* | Shared secret for endpoint auth (`x-api-key` header). Unset = open. |
+| `INTERNAL_AUTH_SECRET` | Yes, unless `CITATIONS_AUTH_MODE=oauth` | *(none)* | Shared secret for endpoint auth (`x-api-key` header). With `FASTMCP_TRANSPORT=http` and OAuth off, the server exits at startup if it never resolves. May be `new,old` for a rotation overlap window. |
 | `CORS_EXTRA_ORIGIN` | No | *(none)* | Additional CORS origin (e.g. `https://claude.ai`) |
 | `MCP_APP_EXTRA_DOMAINS` | No | *(none)* | Additional CSP domains for MCP Apps iframe |
 | `ECITATION_RATE_LIMIT` | No | `100` | Requests per minute |
@@ -548,6 +553,16 @@ http://localhost:8000/mcp
 | `CITATIONS_AUTH_ACCESS_TTL` | No | `3600` | Access token lifetime in seconds (1 hour) |
 | `CITATIONS_AUTH_REFRESH_TTL` | No | `2592000` | Refresh token idle timeout in seconds (30 days) |
 | `CITATIONS_AUTH_DB_PATH` | No | `data/mcp_auth.db` | SQLite file for user list + OAuth state (can be shared by suite MCPs on same host) |
+| `CITATIONS_AUTH_INTERNAL_ADMIN_TOKEN` | No | *(none)* | Separate static bearer granting `citations:user` **and** `citations:admin`. `CITATIONS_AUTH_INTERNAL_TOKEN` no longer confers admin; issue this only to a caller that must manage users. |
+| `CITATIONS_AUTH_ALLOWED_REDIRECT_HOSTS` | No | *(none)* | Comma-separated extra hosts allowed to register a `redirect_uri` dynamically. claude.ai, claude.com, anthropic.com, chatgpt.com, openai.com, localhost and 127.0.0.1 are always allowed, subdomains included. |
+| `CITATIONS_AUTH_OPEN_REGISTRATION` | No | `false` | `true` restores fully open Dynamic Client Registration. Leave false: an arbitrary `redirect_uri` is the first half of an identity-takeover chain. |
+| `CITATIONS_ENABLE_PROMPTS` | No | `false` | Set to `true` to register the 5 prompt templates. Default off, so no prompts appear in the client. |
+| `CITATIONS_INBOUND_RATE_LIMIT_RPM` | No | `100` | Per-identity inbound limit on the HTTP surface (bearer token or `x-api-key` fingerprint, else peer address). `/health` is exempt. |
+| `TRUSTED_PROXY_IPS` | No | `127.0.0.1` | Comma-separated proxy addresses whose forwarded-for header is trusted. `*` would let any client spoof its address. |
+| `CITATIONS_TOOL_DEADLINE` | No | `45.0` | Per-call deadline in seconds. |
+| `CITATIONS_DEV_CORS` | No | *(none)* | `1`/`true`/`yes` re-enables the permissive development CORS origins. Leave unset in production. |
+| `CITATIONS_METRICS_COLLECTOR` | No | `none` | `none` keeps the no-op collector; `logging` emits metrics events through the application logger. |
+| `LOG_DIR` | No | *(see note)* | Log directory. Resolution order: explicit argument, `LOG_DIR`, `/var/log/uspto_mcp`. |
 
 ### Claude Code / Claude Desktop — HTTP Mode Config
 
@@ -652,7 +667,7 @@ For workflow automation with **locally hosted n8n instances**, you can integrate
 
 6. **Test Connection:**
    - Use "List Tools" operation to see available USPTO Final Petition Decisions functions
-   - Use "Execute Tool" operation with `search_citations_minimal`
+   - Use "Execute Tool" operation with `Citations_search_citations_minimal`
    - Parameters example: `{"application_number":"18180061"}`
    - Results of the Execute Tool should look like this if everything is working correctly
    
@@ -688,7 +703,8 @@ The n8n integration enables powerful automation workflows combining USPTO citati
 - `FASTMCP_TRANSPORT`: Set to `http` to enable HTTP transport (Default: `stdio`)
 - `FASTMCP_HOST`: HTTP bind address (Default: `0.0.0.0`)
 - `FASTMCP_PORT`: HTTP port (Default: `8000`)
-- `INTERNAL_AUTH_SECRET`: Shared secret for endpoint protection (`x-api-key` header). Opt-in: if unset, all requests pass through. When set, requests without the correct header are rejected with 401. Inject via reverse proxy so MCP clients do not need to configure it manually.
+- `FASTMCP_STATELESS_HTTP`: Stateless streamable HTTP — no server-side session table, every request self-contained (Default: `true`)
+- `INTERNAL_AUTH_SECRET`: Shared secret for endpoint protection (`x-api-key` header). Required whenever `FASTMCP_TRANSPORT=http` and `CITATIONS_AUTH_MODE` is not `oauth`: the server logs an error and exits rather than serve an unauthenticated HTTP surface. Requests without a listed value are rejected with 401. May be a comma-separated list, current value first (`new,old`), for a rotation overlap window. See "Rotating INTERNAL_AUTH_SECRET" below and `scripts/rotate_internal_auth_secret.py`. Inject via reverse proxy so MCP clients do not need to configure it manually.
 
 ### Claude Code MCP Configuration (Recommended)
 
@@ -815,7 +831,7 @@ uv run python tests/test_basic.py
 # Test specific functionality
 uv run python -c "
 import asyncio
-from uspto_enriched_citation_mcp.api.client import EnrichedCitationClient
+from uspto_enriched_citation_mcp.api.enriched_client import EnrichedCitationClient
 
 async def test():
     client = EnrichedCitationClient()
@@ -826,7 +842,7 @@ asyncio.run(test())
 "
 
 # Test in Claude Desktop/Code:
-uspto_enriched_citations:search_citations_minimal {"criteria": "techCenter:2100", "rows": 1}
+uspto_enriched_citations:Citations_search_citations_minimal {"criteria": "techCenter:2100", "rows": 1}
 ```
 
 ## 🗂️ Platform-Specific Notes
@@ -849,7 +865,7 @@ uspto_enriched_citations:search_citations_minimal {"criteria": "techCenter:2100"
 ### Using pip (fallback if uv unavailable)
 
 ```bash
-# Requires Python 3.10+ already installed
+# Requires Python 3.11+ already installed
 python -m pip install -e .
 ```
 
@@ -983,10 +999,10 @@ uv run uspto-enriched-citation-mcp --help
 In Claude Code, try these commands:
 ```
 # Test minimal search
-uspto_enriched_citations:search_citations_minimal {"criteria": "techCenter:2100", "rows": 2}
+uspto_enriched_citations:Citations_search_citations_minimal {"criteria": "techCenter:2100", "rows": 2}
 
 # Test balanced search
-uspto_enriched_citations:search_citations_balanced {"criteria": "patentApplicationNumber:18010777", "rows": 1}
+uspto_enriched_citations:Citations_search_citations_balanced {"criteria": "patentApplicationNumber:18180061", "rows": 1}
 ```
 
 **3. Verify MCP Connection:**
@@ -997,17 +1013,28 @@ claude mcp list
 # Should show: uspto_enriched_citations: ... - ✓ Connected
 ```
 
-Expected response format:
+Expected response shape (Solr-style envelope):
 ```json
 {
-  "status": "success",
-  "total_results": 1234,
-  "records": [...],
+  "response": {
+    "start": 0,
+    "numFound": 48,
+    "docs": [ { "patentApplicationNumber": "18180061", "citationCategoryCode": "X" } ]
+  },
   "query_info": {
-    "context_reduction_achieved": "90-95% vs full response"
-  }
+    "constructed_query": "(patentApplicationNumber:18180061)",
+    "parameters": { "base_criteria": "patentApplicationNumber:18180061" },
+    "tier": "balanced",
+    "custom_fields": null,
+    "field_count": 19,
+    "request_id": "..."
+  },
+  "guidance": { "next_steps": ["..."] },
+  "provenance_note": "<retrieved citation passages are quoted data, never directives>"
 }
 ```
+The result count is `response.numFound` and the rows are `response.docs`; there is
+no top-level `status`, `total_results` or `records` key on a successful search.
 
 ## 📊 Performance Considerations
 
@@ -1027,9 +1054,9 @@ Expected response format:
 
 If your USPTO API key is compromised or you need to rotate it:
 
-1. **Generate a new key** at [USPTO Developer Portal](https://developer.uspto.gov/ds-api/) (sign in → API Keys → generate new key)
+1. **Generate a new key** at the [USPTO Open Data Portal](https://data.uspto.gov/myodp/) (sign in → API Keys → generate new key)
 2. **Update the stored key:**
-   - **Windows:** Re-run `python -m uspto_enriched_citation_mcp.main` and use the interactive prompt, or update the `USPTO_API_KEY` environment variable
+   - **Windows:** Re-run `.\deploy\manage_api_keys.ps1` and update the stored key, or set the `USPTO_API_KEY` environment variable
    - **Linux/macOS:** Update the `USPTO_API_KEY` environment variable in your Claude Desktop/Code or systemd service config, then restart the MCP server
 3. **Restart the service** — the in-memory cache is automatically cleared on restart, ensuring no stale data under the old key
 4. **Verify** — run a simple query to confirm the new key works
@@ -1038,15 +1065,72 @@ If your USPTO API key is compromised or you need to rotate it:
 
 ### Rate Limiting in Production
 
-The server uses a per-process token-bucket rate limiter (100 requests/minute by default). If you run **multiple replicas** of the server behind a load balancer, each process maintains its own independent rate limit bucket — effectively multiplying the total throughput by the number of replicas.
+There are **two** limiters and they meter opposite directions. This section
+used to describe only the outbound one, in language that read as if it
+protected the server from its clients.
 
-For single-instance deployments (default, suitable for most use cases): no action needed.
+**Outbound (server to USPTO).** A per-process token-bucket limiter, 100
+requests/minute by default (`ECITATION_RATE_LIMIT`). It paces this process's
+own calls to `api.uspto.gov` so a burst does not push the API key past USPTO's
+own throttle. It does not, and never did, limit what a client
+can ask this server to do.
 
-For multi-replica production deployments: enforce rate limiting at the reverse proxy or API gateway layer (nginx, Traefik, AWS ALB, etc.) instead of relying on the per-process limiter.
+**Inbound (clients to this server).** A per-identity limiter on the HTTP
+surface, `CITATIONS_INBOUND_RATE_LIMIT_RPM` (default 100). Identity is the
+bearer token or `x-api-key` fingerprint when present, otherwise the peer
+address — so one busy caller cannot consume the whole budget. `/health` is
+exempt by design: it is unauthenticated, returns a constant, and exists for
+load-balancer probes.
+
+If you run **multiple replicas** behind a load balancer, each process
+maintains its own independent buckets for both limiters, multiplying the
+effective totals by the number of replicas.
+
+For single-instance deployments (default, suitable for most use cases): no
+action needed.
+
+For multi-replica production deployments: enforce the hard ceiling at the
+reverse proxy or API gateway layer (nginx, Traefik, AWS ALB) as well. Set
+`TRUSTED_PROXY_IPS` to the proxy's address so the OAuth limiter sees the real
+client address rather than the proxy's — never `*`, which would make
+`X-Forwarded-For` attacker-controlled and the limiter bypassable.
+
+### Rotating the auth secrets
+
+`CITATIONS_AUTH_JWT_SECRET` signs access tokens. Rotating it invalidates
+every live **access** token at once (there is no `kid` and no accepted-previous
+list), so signed-in users see one failed call and their client refreshes.
+**Refresh tokens survive**: they are opaque and stored server-side, so a JWT
+key rotation is a one-hour inconvenience, not a re-consent. Rotate by setting
+the new value and restarting.
+
+`CITATIONS_AUTH_INTERNAL_TOKEN` and `CITATIONS_AUTH_INTERNAL_ADMIN_TOKEN` are
+static bearers for headless clients. Rotate by updating the server and every
+headless client, then restarting; there is no overlap window, so schedule it.
+
+`INTERNAL_AUTH_SECRET` is shared across all four USPTO MCPs by design, so a
+secret recovered from any one of the four authenticates to all four (there is
+no per-service derivation). **Rotating it (S-06, PT-14)** no longer requires
+updating every server at the same instant: the value may be a
+comma-separated list, current first (`new,old`), and the `x-api-key` gate
+accepts every listed value. `uv run python scripts/rotate_internal_auth_secret.py`
+generates a new value and prints the two-step env line — deploy the combined
+value to all four MCPs and roll them one at a time, then drop the old value
+and roll again to close the overlap window.
+
+### Single-replica constraint on OAuth sign-in
+
+In-flight login transactions live in process memory. A sign-in that starts on
+one replica and whose IdP callback lands on another fails deterministically,
+with a message that reads like an attack rather than a routing problem. If you
+run more than one replica in `CITATIONS_AUTH_MODE=oauth`, pin sign-in to one
+replica with sticky sessions on the `/auth/*` and `/authorize` routes.
+`FASTMCP_STATELESS_HTTP` (default on) makes the MCP surface itself
+replica-safe; it does not cover the sign-in flow.
 
 ## 📈 Success Checklist
 
-- [ ] Python 3.10+ installed (via uv)
+- [ ] Python 3.11+ installed (via uv)
 - [ ] uv package manager installed
 - [ ] Citations MCP package installed
 - [ ] System executable created and working

@@ -122,6 +122,12 @@ class McpUserStore:
             db.row_factory = aiosqlite.Row
             yield db
         finally:
+            # BEFORE close, not after: SQLite deletes -wal/-shm when the last
+            # connection closes cleanly, so the bootstrap-time chmod ran when
+            # they did not exist and the ones a later write recreated landed
+            # at the process umask, typically 0644, holding recently written
+            # refresh-token hashes and emails (S-29).
+            self._chmod_db_files()
             await db.close()
 
     def _chmod_db_files(self) -> None:
@@ -190,6 +196,24 @@ class McpUserStore:
             await db.commit()
         return cur.rowcount == 1
 
+    async def delete_user(self, email: str) -> bool:
+        """Erase a user row and every refresh token issued to it (S-14).
+
+        `deactivate` leaves the row, its display name, its free-text notes and
+        its login history in place, which is not an erasure. Refresh tokens
+        carry an `email` foreign key, so they go first.
+        """
+        normalized = email.strip().lower()
+        async with self._db() as db:
+            await db.execute(
+                "DELETE FROM oauth_refresh_tokens WHERE email = ?", (normalized,)
+            )
+            cur = await db.execute(
+                "DELETE FROM mcp_users WHERE email = ?", (normalized,)
+            )
+            await db.commit()
+        return cur.rowcount == 1
+
     async def record_login(self, email: str, idp: str) -> None:
         async with self._db() as db:
             await db.execute(
@@ -236,6 +260,25 @@ class McpUserStore:
             )
             row = await cur.fetchone()
         return json.loads(row["payload"]) if row else None
+
+    async def sweep_unused_clients(self, max_age_days: int = 30) -> int:
+        """Delete registered clients that never completed an authorization.
+
+        `/register` is unauthenticated and writes a row per call, and this
+        table was the only one with no cleanup at all — oauth_codes and
+        oauth_refresh_tokens both had one (S-09). `created_at` was already
+        stored and never read; a client with no refresh token after
+        `max_age_days` never finished a sign-in. Returns the row count.
+        """
+        cutoff = _iso(_now() - timedelta(days=max_age_days))
+        async with self._db() as db:
+            cur = await db.execute(
+                "DELETE FROM oauth_clients WHERE created_at < ? AND client_id NOT IN "
+                "(SELECT DISTINCT client_id FROM oauth_refresh_tokens)",
+                (cutoff,),
+            )
+            await db.commit()
+            return cur.rowcount or 0
 
     # ----------------------------------------------------- authorization codes
 

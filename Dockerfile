@@ -27,6 +27,21 @@ ENV FASTMCP_TRANSPORT=http
 ENV FASTMCP_HOST=0.0.0.0
 ENV FASTMCP_PORT=8000
 
+# LOG_DIR is explicit because util/logging.py picks /var/log/uspto_mcp only
+# when /var/log is writable, which is true for root and false for the service
+# user below — without this the log path silently changes to a home
+# directory the moment the container stops running as root (S-20).
+ENV LOG_DIR=/app/logs
+ENV CITATIONS_AUTH_DB_PATH=/app/data/mcp_auth.db
+
+# Run as a non-root service user. Any path-write or RCE bug in this process,
+# or in FastMCP/uvicorn/httpx, used to execute as uid 0 — which also owned
+# the 0600 secret files, the auth SQLite DB and the log directory.
+RUN useradd -r -u 10001 -m -d /home/app app \
+    && mkdir -p /app/logs /app/data \
+    && chown -R app:app /app /home/app
+USER app
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=15s \

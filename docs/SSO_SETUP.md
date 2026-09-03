@@ -115,8 +115,8 @@ servers **on the same host** (the store enables WAL + busy_timeout). One
 `mcp_users` row then grants access to every server mounting that file. Do not
 share the file across hosts or network filesystems.
 
-(This server is typically deployed with its OWN user file — the free tier
-of the USPTO suite — while PFW/PTAB/FPD share one.)
+(This server is typically deployed with its OWN user file, while PFW/PTAB/FPD
+share one, so its access list can be managed independently of theirs.)
 
 ## 7. Verify
 

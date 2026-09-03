@@ -18,7 +18,7 @@ from uspto_enriched_citation_mcp.config.field_manager import FieldManager
 
 # Test configuration
 EXPECTED_MINIMAL_FIELDS = 8
-EXPECTED_BALANCED_FIELDS = 18
+EXPECTED_BALANCED_FIELDS = 19
 EXPECTED_TOTAL_FIELDS = 22
 
 # Known test data (applications with citations)

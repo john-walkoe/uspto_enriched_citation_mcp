@@ -82,8 +82,9 @@ def test_main_starts_http_with_secret(monkeypatch):
 
     called = {}
 
-    def fake_run(app, host, port, access_log):
+    def fake_run(app, host, port, **kwargs):
         called["ran"] = True
+        called["kwargs"] = kwargs
 
     import uvicorn
 
@@ -112,8 +113,9 @@ def test_main_oauth_mode_exempt_from_secret_gate(monkeypatch):
 
     called = {}
 
-    def fake_run(app, host, port, access_log):
+    def fake_run(app, host, port, **kwargs):
         called["ran"] = True
+        called["kwargs"] = kwargs
 
     import uvicorn
 

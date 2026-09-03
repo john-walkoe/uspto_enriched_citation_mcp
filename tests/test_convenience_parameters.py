@@ -258,3 +258,44 @@ class TestParameterEdgeCases:
             assert len(result.warnings) > 0 or "invalid-date" not in result.query
         except ValueError:
             pass  # Expected behavior
+
+
+class TestPre2017DateCoverage:
+    """A pre-2017 date_start must be SERVED, not refused.
+
+    The old build_query emitted "Office action dates before 2017-10-01 not
+    available in API. Using <date> may return no results." for any date below
+    the hard-coded API_DATA_START_DATE, while the same index returns 1.25M+
+    TC2100 records in the 2010-2015 band. That warning told an agent mid-task
+    that the data it was about to receive did not exist.
+    """
+
+    def test_pre_2017_date_start_emits_no_warning(self):
+        result = build_query(QueryParameters(
+            application_number="16816197",
+            date_start="2010-01-01",
+        ))
+
+        assert result.warnings == []
+        assert "officeActionDate:[2010-01-01 TO *]" in result.query
+
+    def test_pre_2017_date_start_emits_a_soft_coverage_note(self):
+        result = build_query(QueryParameters(
+            application_number="16816197",
+            date_start="2010-01-01",
+        ))
+
+        assert len(result.coverage_notes) == 1
+        note = result.coverage_notes[0]
+        assert "not available in API" not in note
+        assert "undocumented" in note
+        assert "2017-10-01" in note
+
+    def test_post_2017_date_start_emits_nothing(self):
+        result = build_query(QueryParameters(
+            application_number="16816197",
+            date_start="2018-01-01",
+        ))
+
+        assert result.warnings == []
+        assert result.coverage_notes == []

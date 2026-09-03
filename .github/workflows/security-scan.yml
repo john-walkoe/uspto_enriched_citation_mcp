@@ -2,9 +2,9 @@ name: Secret Scanning and Security Checks
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, master, develop ]
 
 jobs:
   secret-scan:
@@ -36,7 +36,19 @@ jobs:
     - name: Scan git history for secrets
       run: |
         echo "Scanning last 100 commits for accidentally committed secrets..."
-        git log --all --pretty=format: -p -100 | uv run detect-secrets scan --stdin || true
+        # detect-secrets exits 0 even when it finds something, so the results
+        # are inspected explicitly instead of being discarded with `|| true`.
+        git log --all --pretty=format: -p -100 | uv run detect-secrets scan --stdin > history-scan.json
+        python - history-scan.json <<'PY'
+        import json, sys
+        results = json.load(open(sys.argv[1])).get("results", {})
+        for path, findings in results.items():
+            for finding in findings:
+                print(f"{path}:{finding.get('line_number')} {finding.get('type')}")
+        if results:
+            sys.exit("Secrets detected in git history")
+        print("No secrets detected in git history")
+        PY
 
     - name: Check for new secrets
       run: |

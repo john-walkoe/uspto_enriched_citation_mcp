@@ -9,11 +9,17 @@ import asyncio
 import time
 from enum import Enum
 from typing import Callable, Dict, Optional, TypeVar
-from functools import wraps
 
 import httpx
 
 from ..util.logging import get_logger
+
+# There is ONE CircuitBreakerError. This module used to define a second,
+# unrelated plain-Exception class of the same name and raise THAT one, so an
+# open circuit reached the caller carrying no status code and was reported as
+# a 500 — the class an agent retries — instead of the 503 the exception
+# hierarchy already declared for it.
+from .exceptions import CircuitBreakerError  # noqa: F401  (re-exported)
 
 logger = get_logger(__name__)
 
@@ -26,12 +32,6 @@ class CircuitState(Enum):
     CLOSED = "closed"  # Normal operation
     OPEN = "open"  # Circuit is open, calls fail fast
     HALF_OPEN = "half_open"  # Testing if service has recovered
-
-
-class CircuitBreakerError(Exception):
-    """Circuit breaker is open."""
-
-    pass
 
 
 def is_counted_failure(exc: BaseException) -> bool:
@@ -90,6 +90,7 @@ class CircuitBreaker:
         failure_threshold: int = 5,
         recovery_timeout: float = 60.0,
         success_threshold: int = 3,
+        name: str = "uspto_api",
     ):
         """
         Initialize circuit breaker.
@@ -102,6 +103,7 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.success_threshold = success_threshold
+        self.name = name
 
         # State tracking
         self._state = CircuitState.CLOSED
@@ -120,6 +122,23 @@ class CircuitBreaker:
         """Get current failure count."""
         return self._failure_count
 
+    def _emit_state_change(self, event_type: str) -> None:
+        """Report a transition to the metrics collector.
+
+        record_circuit_breaker_event was defined on the collector interface,
+        implemented twice, and never invoked from production code, so there
+        was no breaker history to look at during an incident (S-17).
+        """
+        try:
+            from ..util.metrics import get_metrics_collector
+
+            get_metrics_collector().record_circuit_breaker_event(
+                service=self.name, event_type=event_type, state=self._state.value
+            )
+        except Exception:
+            # Instrumentation must never fail a request.
+            pass
+
     def _should_attempt_reset(self) -> bool:
         """Check if enough time has passed to try half-open state."""
         if self._last_failure_time is None:
@@ -137,6 +156,7 @@ class CircuitBreaker:
                 f"Circuit breaker reverting to OPEN (failure in half-open): {e}"
             )
             self._state = CircuitState.OPEN
+            self._emit_state_change("opened")
         elif (
             self._state == CircuitState.CLOSED
             and self._failure_count >= self.failure_threshold
@@ -145,6 +165,12 @@ class CircuitBreaker:
                 f"Circuit breaker transitioning to OPEN (threshold reached): {e}"
             )
             self._state = CircuitState.OPEN
+            self._emit_state_change("opened")
+
+    # There is no decorator form. One existed (`__call__`) with no callers,
+    # whose sync branch ran `loop.run_until_complete` — which raises from
+    # inside a running loop, the only context this server has. Use call()
+    # (D-5).
 
     async def call(self, func: Callable[..., T], *args, **kwargs) -> T:
         """
@@ -162,75 +188,67 @@ class CircuitBreaker:
             CircuitBreakerError: If circuit is open
             Exception: Original exception from function call
         """
+        # The lock guards STATE TRANSITIONS only. It used to be held across
+        # the awaited call, which serialized every request through this
+        # breaker: measured concurrency 1 on every lane, whatever the
+        # rate limiter and connection pool allowed.
         async with self._lock:
-            # Check if circuit is open
-            if self._state == CircuitState.OPEN:
-                if self._should_attempt_reset():
-                    logger.info("Circuit breaker transitioning to HALF_OPEN")
-                    self._state = CircuitState.HALF_OPEN
-                    self._success_count = 0
-                else:
-                    raise CircuitBreakerError("Circuit breaker is OPEN")
+            self._admit()
 
-            # Check if we're in half-open and have exceeded success threshold
-            if (
-                self._state == CircuitState.HALF_OPEN
-                and self._success_count >= self.success_threshold
-            ):
+        try:
+            # Execute function (handle both sync and async)
+            if asyncio.iscoroutinefunction(func):
+                result = await func(*args, **kwargs)
+            else:
+                result = func(*args, **kwargs)
+        except Exception as e:
+            if is_counted_failure(e):
+                async with self._lock:
+                    self._record_failure(e)
+            # Otherwise an expected outcome (4xx / 429 backpressure) — not a
+            # service-health signal, propagate without affecting breaker
+            # state so it can't block unrelated callers.
+            raise  # Re-raise original exception
+
+        async with self._lock:
+            self._record_success()
+
+        return result
+
+    def _admit(self) -> None:
+        """Decide whether this call may proceed. Caller holds the lock."""
+        if self._state == CircuitState.OPEN:
+            if self._should_attempt_reset():
+                logger.info("Circuit breaker transitioning to HALF_OPEN")
+                self._state = CircuitState.HALF_OPEN
+                self._success_count = 0
+                self._emit_state_change("half_open")
+            else:
+                raise CircuitBreakerError("Circuit breaker is OPEN")
+
+        # Check if we're in half-open and have exceeded success threshold
+        if (
+            self._state == CircuitState.HALF_OPEN
+            and self._success_count >= self.success_threshold
+        ):
+            logger.info("Circuit breaker transitioning to CLOSED")
+            self._state = CircuitState.CLOSED
+            self._failure_count = 0
+
+    def _record_success(self) -> None:
+        """Update state for a successful call. Caller holds the lock."""
+        if self._state == CircuitState.HALF_OPEN:
+            self._success_count += 1
+            logger.debug(
+                f"Circuit breaker half-open success count: {self._success_count}"
+            )
+            if self._success_count >= self.success_threshold:
                 logger.info("Circuit breaker transitioning to CLOSED")
                 self._state = CircuitState.CLOSED
                 self._failure_count = 0
-
-            try:
-                # Execute function (handle both sync and async)
-                if asyncio.iscoroutinefunction(func):
-                    result = await func(*args, **kwargs)
-                else:
-                    result = func(*args, **kwargs)
-            except Exception as e:
-                if not is_counted_failure(e):
-                    # Expected outcome (4xx / 429 backpressure) — not a
-                    # service-health signal, propagate without affecting
-                    # breaker state so it can't block unrelated callers.
-                    raise
-                self._record_failure(e)
-                raise  # Re-raise original exception
-
-            # Success - update state
-            if self._state == CircuitState.HALF_OPEN:
-                self._success_count += 1
-                logger.debug(
-                    f"Circuit breaker half-open success count: {self._success_count}"
-                )
-            elif self._state == CircuitState.CLOSED:
-                self._failure_count = 0  # Reset failure count on success
-
-            return result
-
-    def __call__(self, func: Callable[..., T]) -> Callable[..., T]:
-        """Decorator for use with @circuit_breaker."""
-
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            return await self.call(func, *args, **kwargs)
-
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            # For sync functions, we need to run the async call in an event loop
-            try:
-                loop = asyncio.get_event_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-            return loop.run_until_complete(self.call(func, *args, **kwargs))
-
-        # Return appropriate wrapper based on function type
-        if asyncio.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
-
+                self._emit_state_change("closed")
+        elif self._state == CircuitState.CLOSED:
+            self._failure_count = 0  # Reset failure count on success
 
 def circuit_breaker(
     failure_threshold: int = 5,
@@ -295,6 +313,7 @@ def get_circuit_breaker(
             failure_threshold=failure_threshold,
             recovery_timeout=recovery_timeout,
             success_threshold=success_threshold,
+            name=name,
         )
     return _circuit_breakers[name]
 

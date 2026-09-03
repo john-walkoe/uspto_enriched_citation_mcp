@@ -27,11 +27,12 @@ are in-memory (a restart mid-login just means one retried sign-in).
 from __future__ import annotations
 
 import hmac
+import os
 import secrets
 import threading
 import time
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from fastmcp.server.auth.auth import AccessToken, OAuthProvider
@@ -42,7 +43,6 @@ from joserfc.errors import JoseError
 from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
-    AuthorizeError,
     RefreshToken,
     RegistrationError,
     TokenError,
@@ -54,6 +54,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
 
+from ..util.cache import LRUCache
 from ..util.logging import get_logger
 from ..util.security_logger import get_security_logger
 from . import pages
@@ -75,6 +76,34 @@ SCOPE_ADMIN = "citations:admin"
 _JWT_KEY_SALT = "citations-mcp-oauth-v1"
 
 _TXN_TTL_SECONDS = 15 * 60
+
+# H-1 / open Dynamic Client Registration: DCR has to stay on (claude.ai and
+# every other MCP client self-registers), but an arbitrary redirect_uri on a
+# registered client is the first half of an identity-takeover chain — the
+# attacker registers a client pointing at their own host, sends the victim a
+# crafted sign-in link, and receives an authorization code for the victim's
+# identity. Registration is therefore allowed only for hosts a real MCP client
+# actually redirects to. Subdomains of a listed host are accepted. Extend with
+# CITATIONS_AUTH_ALLOWED_REDIRECT_HOSTS (comma-separated); set
+# CITATIONS_AUTH_OPEN_REGISTRATION=true to restore the previous open behavior.
+# Clients already in oauth_clients are unaffected; this gates new registrations
+# only, so no connector in use today is disturbed.
+_DEFAULT_REDIRECT_HOSTS = frozenset(
+    {
+        "claude.ai",
+        "claude.com",
+        "anthropic.com",
+        "chatgpt.com",
+        "openai.com",
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
+)
+
+# Cookie binding the in-flight login transaction to the browser that is
+# actually signing in, checked at the IdP callback.
+_TXN_COOKIE = "citations_txn"
 _CODE_TTL_SECONDS = 5 * 60
 _JWKS_TTL_SECONDS = 6 * 60 * 60
 _HTTP_TIMEOUT = 15.0
@@ -91,6 +120,13 @@ _MAX_TXNS = 1000
 # local by design (single-container deployment, see SECURITY_GUIDELINES.md).
 _OAUTH_RATE_LIMIT_MAX_REQUESTS = 30
 _OAUTH_RATE_LIMIT_WINDOW_SECONDS = 60.0
+# /register and /revoke are unauthenticated write paths; a legitimate client
+# registers once, so their budget is much tighter than the interactive routes.
+_REGISTRATION_RATE_LIMIT_MAX_REQUESTS = 5
+# Registered clients cached in memory in front of the oauth_clients table.
+_CLIENT_CACHE_SIZE = 512
+# At most one oauth_clients sweep per this many seconds.
+_CLIENT_SWEEP_INTERVAL_SECONDS = 3600.0
 
 
 def _mask_email(email: str) -> str:
@@ -112,6 +148,9 @@ class _FixedWindowRateLimiter:
     self-contained limiter scoped to the OAuth HTTP surface only.
     """
 
+    #: Distinct keys tracked at once before expired windows are swept.
+    _MAX_TRACKED_KEYS = 4096
+
     def __init__(
         self,
         max_requests: int = _OAUTH_RATE_LIMIT_MAX_REQUESTS,
@@ -125,12 +164,35 @@ class _FixedWindowRateLimiter:
     def allow(self, key: str) -> bool:
         now = time.time()
         with self._lock:
+            self._prune(now)
             window_start, count = self._buckets.get(key, (now, 0))
             if now - window_start >= self._window_seconds:
                 window_start, count = now, 0
             count += 1
             self._buckets[key] = (window_start, count)
             return count <= self._max_requests
+
+    def _prune(self, now: float) -> None:
+        """Drop windows that have expired. Caller holds the lock.
+
+        The table had no eviction at all: one entry per distinct key, kept
+        for the process lifetime. That was harmless only while every request
+        collapsed to one key behind the proxy, which is exactly what the
+        proxy_headers fix changes, so the two ship together (S-08 + S-27).
+        """
+        if len(self._buckets) < self._MAX_TRACKED_KEYS:
+            return
+        expired = [
+            key
+            for key, (window_start, _) in self._buckets.items()
+            if now - window_start >= self._window_seconds
+        ]
+        for key in expired:
+            del self._buckets[key]
+        if len(self._buckets) >= self._MAX_TRACKED_KEYS:
+            # Every tracked key is mid-window. Start fresh rather than grow
+            # without bound; the cost is one forgiven window per attacker.
+            self._buckets.clear()
 
 
 class _RateLimitedASGIApp:
@@ -207,7 +269,20 @@ class CitationsAuthProvider(OAuthProvider):
         self._settings = settings
         self._users = users
         self._internal_token = settings.auth_internal_token
+        # Admin over the static bearer is a SEPARATE, optional secret so the
+        # search credential and the administration credential rotate apart.
+        self._internal_admin_token = settings.auth_internal_admin_token
         self._register_url = settings.auth_register_url
+        self._open_registration = (
+            os.getenv("CITATIONS_AUTH_OPEN_REGISTRATION", "false").lower() == "true"
+        )
+        self._allowed_redirect_hosts = _DEFAULT_REDIRECT_HOSTS | {
+            host.strip().lower()
+            for host in os.getenv(
+                "CITATIONS_AUTH_ALLOWED_REDIRECT_HOSTS", ""
+            ).split(",")
+            if host.strip()
+        }
         self._access_ttl = settings.auth_access_ttl
         self._refresh_ttl = settings.auth_refresh_ttl
         # Tokens are audience-bound to the MCP resource URL; the transport
@@ -223,13 +298,23 @@ class CitationsAuthProvider(OAuthProvider):
         )
         # In-flight login transactions (txn_id -> parked client request).
         self._txns: dict[str, dict[str, Any]] = {}
-        # Registered-client cache in front of the oauth_clients table.
-        self._client_cache: dict[str, OAuthClientInformationFull] = {}
+        # Registered-client cache in front of the oauth_clients table. Bounded
+        # (S-09): /register is an unauthenticated write path, and this used to
+        # be a plain dict with no eviction, so a registration flood grew it
+        # for the process lifetime.
+        self._client_cache: LRUCache = LRUCache(max_size=_CLIENT_CACHE_SIZE)
         # Cached upstream JWKS: idp -> (fetched_at, KeySet).
         self._jwks: dict[str, tuple[float, jwk.KeySet]] = {}
         # M2: per-IP rate limiter shared by /authorize, /token, and
         # /auth/callback/{idp}.
         self._oauth_rate_limiter = _FixedWindowRateLimiter()
+        # S-09: /register and /revoke get their own, tighter, budget. A
+        # legitimate client registers once; the interactive routes see many
+        # more hits per user.
+        self._registration_rate_limiter = _FixedWindowRateLimiter(
+            max_requests=_REGISTRATION_RATE_LIMIT_MAX_REQUESTS
+        )
+        self._last_client_sweep = 0.0
 
         tenant = settings.auth_ms_tenant
         self._idps: dict[str, dict[str, str]] = {}
@@ -272,11 +357,84 @@ class CitationsAuthProvider(OAuthProvider):
         if payload is None:
             return None
         client = OAuthClientInformationFull.model_validate(payload)
-        self._client_cache[client_id] = client
+        self._client_cache.set(client_id, client)
         return client
+
+    def _redirect_host_allowed(self, uri: str) -> bool:
+        host = (urlparse(uri).hostname or "").lower()
+        if not host:
+            return False
+        return any(
+            host == allowed or host.endswith("." + allowed)
+            for allowed in self._allowed_redirect_hosts
+        )
+
+    def _reject_unapproved_redirect_uris(
+        self, client_info: OAuthClientInformationFull
+    ) -> None:
+        """Refuse DCR for a client whose redirect_uri host is not approved."""
+        if self._open_registration:
+            return
+        for uri in client_info.redirect_uris or []:
+            if not self._redirect_host_allowed(str(uri)):
+                log.warning(
+                    "OAuth client registration refused: redirect_uri host is not "
+                    "in the allowlist (client_name=%s)",
+                    client_info.client_name,
+                )
+                raise RegistrationError(
+                    error="invalid_redirect_uri",
+                    error_description=(
+                        "redirect_uri host is not permitted by this server"
+                    ),
+                )
+
+    def _bind_txn(self, response: Response, txn_id: str) -> Response:
+        """Bind an in-flight login transaction to this browser.
+
+        The IdP callback refuses a transaction whose cookie is absent or does
+        not match, so a captured txn id cannot be redeemed from a different
+        browser. SameSite=Lax still travels on the top-level GET navigation
+        back from Google or Entra.
+        """
+        txn = self._txns.get(txn_id)
+        if txn is None:
+            return response
+        response.set_cookie(
+            _TXN_COOKIE,
+            txn["binding"],
+            max_age=_TXN_TTL_SECONDS,
+            path="/auth",
+            httponly=True,
+            secure=str(self.base_url).startswith("https"),
+            samesite="lax",
+        )
+        return response
+
+    async def _sweep_stale_clients(self) -> None:
+        """Opportunistically delete never-used registrations.
+
+        Runs on the same schedule as the growth it counters (one sweep per
+        registration), which is the same shape as _prune_txns running inside
+        authorize(). Never raises: a housekeeping failure must not refuse a
+        legitimate registration.
+        """
+        now = time.time()
+        if now - self._last_client_sweep < _CLIENT_SWEEP_INTERVAL_SECONDS:
+            return
+        self._last_client_sweep = now
+        try:
+            removed = await self._users.sweep_unused_clients()
+        except Exception as exc:
+            log.warning("oauth_clients sweep failed: %s", type(exc).__name__)
+            return
+        if removed:
+            log.info("Swept %d unused OAuth client registration(s)", removed)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         assert client_info.client_id is not None
+        self._reject_unapproved_redirect_uris(client_info)
+        await self._sweep_stale_clients()
         try:
             await self._users.put_client(
                 client_info.client_id, client_info.model_dump(mode="json")
@@ -294,7 +452,13 @@ class CitationsAuthProvider(OAuthProvider):
                 error="invalid_client_metadata",
                 error_description="Registration temporarily unavailable, please retry",
             ) from exc
-        self._client_cache[client_info.client_id] = client_info
+        self._client_cache.set(client_info.client_id, client_info)
+        # Every dynamic registration leaves a record; there was none before.
+        log.info(
+            "OAuth client registered: %s (%d redirect uri(s))",
+            client_info.client_id,
+            len(client_info.redirect_uris or []),
+        )
 
     # ------------------------------------------------------- authorize (step 1)
 
@@ -306,12 +470,11 @@ class CitationsAuthProvider(OAuthProvider):
         if len(self._txns) >= _MAX_TXNS:
             # L1: pruning is opportunistic (only runs here), so a burst of
             # concurrent authorize() calls could otherwise grow self._txns
-            # without bound. Refuse new transactions past a hard cap rather
-            # than accept unbounded memory growth.
-            raise AuthorizeError(
-                error="temporarily_unavailable",
-                error_description="Too many in-flight sign-in attempts; try again shortly.",
-            )
+            # without bound. The cap stays; what changed is WHICH side sheds
+            # load. Refusing the newest transaction locked out every arriving
+            # legitimate user while the filler's own entries sat in the table
+            # for the full TTL, so the oldest are evicted instead (S-38).
+            self._evict_oldest_txns(len(self._txns) - _MAX_TXNS + 1)
         txn_id = secrets.token_urlsafe(32)
         self._txns[txn_id] = {
             "client_id": client.client_id,
@@ -322,11 +485,16 @@ class CitationsAuthProvider(OAuthProvider):
             "resource": getattr(params, "resource", None),
             "created_at": time.time(),
             "nonce": secrets.token_urlsafe(16),
+            "binding": secrets.token_urlsafe(16),
         }
         if len(self._idps) == 1:
-            # Single configured IdP: skip the chooser.
+            # Single configured IdP: skip the chooser, but still route through
+            # /auth/start so the transaction can be bound to this browser
+            # before the hop to the IdP. One extra 302, no UX change.
             only = next(iter(self._idps))
-            return self._upstream_authorize_url(only, txn_id)
+            return (
+                f"{self.base_url}".rstrip("/") + f"/auth/start/{only}?txn={txn_id}"
+            )
         return f"{self.base_url}".rstrip("/") + f"/auth/select?txn={txn_id}"
 
     def _prune_txns(self) -> None:
@@ -334,6 +502,22 @@ class CitationsAuthProvider(OAuthProvider):
         stale = [k for k, v in self._txns.items() if v["created_at"] < cutoff]
         for k in stale:
             del self._txns[k]
+
+    def _evict_oldest_txns(self, count: int) -> None:
+        """Drop the `count` oldest in-flight transactions.
+
+        An evicted transaction fails at its callback with the same message a
+        timed-out one gets, which is the correct outcome: the alternative was
+        refusing every NEW sign-in while the filler's entries survived.
+        """
+        if count <= 0:
+            return
+        oldest = sorted(self._txns.items(), key=lambda kv: kv[1]["created_at"])
+        for key, _ in oldest[:count]:
+            del self._txns[key]
+        log.warning(
+            "In-flight sign-in table full; evicted %d oldest transaction(s)", count
+        )
 
     def _upstream_authorize_url(self, idp: str, txn_id: str) -> str:
         conf = self._idps[idp]
@@ -359,8 +543,16 @@ class CitationsAuthProvider(OAuthProvider):
         # by wrapping their ASGI app in place — we don't own their handlers
         # (they come from the MCP SDK's create_auth_routes()).
         for route in routes:
-            if getattr(route, "path", None) in ("/authorize", "/token"):
+            path = getattr(route, "path", None)
+            if path in ("/authorize", "/token"):
                 route.app = _RateLimitedASGIApp(route.app, self._oauth_rate_limiter)
+            elif path in ("/register", "/revoke"):
+                # S-09: /register writes a row per unauthenticated call and
+                # /revoke was equally bare. Both get a tighter budget than
+                # the interactive routes: a legitimate client registers once.
+                route.app = _RateLimitedASGIApp(
+                    route.app, self._registration_rate_limiter
+                )
         routes.extend(
             [
                 Route("/auth/select", self._select_endpoint, methods=["GET"]),
@@ -383,7 +575,7 @@ class CitationsAuthProvider(OAuthProvider):
                 ),
                 status_code=400,
             )
-        return HTMLResponse(pages.select_page(txn_id))
+        return self._bind_txn(HTMLResponse(pages.select_page(txn_id)), txn_id)
 
     async def _start_endpoint(self, request: Request) -> Response:
         idp = request.path_params["idp"]
@@ -397,7 +589,10 @@ class CitationsAuthProvider(OAuthProvider):
                 ),
                 status_code=400,
             )
-        return RedirectResponse(self._upstream_authorize_url(idp, txn_id), 302)
+        return self._bind_txn(
+            RedirectResponse(self._upstream_authorize_url(idp, txn_id), 302),
+            txn_id,
+        )
 
     async def _callback_endpoint(self, request: Request) -> Response:
         # M2: per-IP rate limit — this route does an outbound token exchange
@@ -421,6 +616,22 @@ class CitationsAuthProvider(OAuthProvider):
                 pages.error_page(
                     "Sign-in expired",
                     "This sign-in attempt is no longer valid. Start again "
+                    "from your MCP client.",
+                ),
+                status_code=400,
+            )
+        if request.cookies.get(_TXN_COOKIE) != txn.get("binding"):
+            # The transaction was started in a different browser, so this
+            # callback is not the sign-in it claims to be. Fail closed.
+            log.warning(
+                "OAuth callback rejected: login transaction is not bound to "
+                "this browser (idp=%s)",
+                idp,
+            )
+            return HTMLResponse(
+                pages.error_page(
+                    "Sign-in expired",
+                    "This sign-in did not start in this browser. Start again "
                     "from your MCP client.",
                 ),
                 status_code=400,
@@ -524,12 +735,14 @@ class CitationsAuthProvider(OAuthProvider):
             idp,
             scopes,
         )
-        return RedirectResponse(
+        response = RedirectResponse(
             construct_redirect_uri(
                 txn["redirect_uri"], code=our_code, state=txn["client_state"] or None
             ),
             302,
         )
+        response.delete_cookie(_TXN_COOKIE, path="/auth")
+        return response
 
     async def _exchange_and_verify(
         self, idp: str, code: str, nonce: str
@@ -805,16 +1018,31 @@ class CitationsAuthProvider(OAuthProvider):
     # -------------------------------------------------------- bearer validation
 
     async def load_access_token(self, token: str) -> AccessToken | None:
+        # The admin-scoped internal bearer is a SEPARATE, optional secret: only
+        # holders of CITATIONS_AUTH_INTERNAL_ADMIN_TOKEN get citations:admin.
+        # Checked first since it is the more privileged match.
+        if self._internal_admin_token and hmac.compare_digest(
+            token, self._internal_admin_token
+        ):
+            return AccessToken(
+                token=token,
+                client_id="internal-admin",
+                scopes=[SCOPE_USER, SCOPE_ADMIN],
+                expires_at=int(time.time()) + self._access_ttl,
+                subject="internal-admin",
+            )
         # Static internal bearer for headless clients (internal gateways/Claude
-        # Code). Full scopes; constant-time compare.
+        # Code). citations:user only — it exists so a gateway can search, and a
+        # leaked search credential must not convert into a durable admin
+        # identity in the user table. Constant-time compare.
         if self._internal_token and hmac.compare_digest(
             token, self._internal_token
         ):
             return AccessToken(
                 token=token,
                 client_id="internal",
-                scopes=[SCOPE_USER, SCOPE_ADMIN],
-                expires_at=None,
+                scopes=[SCOPE_USER],
+                expires_at=int(time.time()) + self._access_ttl,
                 subject="internal",
             )
         try:

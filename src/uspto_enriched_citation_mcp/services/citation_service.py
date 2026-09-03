@@ -2,12 +2,29 @@
 Citation service for USPTO Enriched Citation MCP.
 """
 
-from typing import Dict, Any
+import asyncio
+from typing import Dict, Any, List, Optional, Tuple, Union
 import structlog
 from ..api.enriched_client import EnrichedCitationClient
 from ..config.field_manager import FieldManager
+from ..shared.enums import ContextLevel
+from ..shared.error_utils import get_safe_error_message
+from ..util.rate_limiter import get_rate_limiter
 
 logger = structlog.get_logger(__name__)
+
+# The breakdown fan-out, as data. `total` is the unscoped base query; the rest
+# are scoped to it.
+_BREAKDOWN_QUERIES: Tuple[Tuple[str, str], ...] = (
+    ("x_count", "citationCategoryCode:X"),
+    ("y_count", "citationCategoryCode:Y"),
+    ("a_count", "citationCategoryCode:A"),
+    ("examiner", "examinerCitedReferenceIndicator:true"),
+    ("applicant", "applicantCitedExaminerReferenceIndicator:true"),
+)
+
+# One token per query in the fan-out, charged once up front.
+_STATISTICS_QUOTA_COST = 1 + len(_BREAKDOWN_QUERIES)
 
 
 class CitationService:
@@ -18,31 +35,21 @@ class CitationService:
         self.field_manager = field_manager
         self.logger = logger
 
-    async def search_minimal(self, criteria: str, rows: int = 100) -> Dict[str, Any]:
-        """Search citations with minimal field set."""
-        fields = self.field_manager.get_field_set("citations_minimal")
-        return await self.client.search_citations(
-            criteria=criteria, fields=fields, rows=rows
-        )
-
-    async def search_balanced(self, criteria: str, rows: int = 20) -> Dict[str, Any]:
-        """Search citations with balanced field set."""
-        fields = self.field_manager.get_field_set("citations_balanced")
-        return await self.client.search_citations(
-            criteria=criteria, fields=fields, rows=rows
-        )
-
     async def get_details(
-        self, citation_id: str, include_context: bool = False
+        self,
+        citation_id: str,
+        include_context: Union[bool, ContextLevel] = ContextLevel.FULL,
     ) -> Dict[str, Any]:
-        """Get detailed citation information."""
+        """Get detailed citation information.
+
+        The default is ContextLevel.FULL, matching both the tool above
+        (tools/details.py passes include_context=True) and the client below
+        (EnrichedCitationClient.get_citation_details); this layer used to
+        default to the opposite of both (R-8).
+        """
         return await self.client.get_citation_details(
             citation_id=citation_id, include_context=include_context
         )
-
-    async def get_available_fields(self) -> Dict[str, Any]:
-        """Get available fields from API."""
-        return await self.client.get_available_fields()
 
     async def validate_query(self, query: str) -> Dict[str, Any]:
         """Validate a Lucene query."""
@@ -66,9 +73,10 @@ class CitationService:
 
             fields = self.field_manager.get_field_set(field_set)
 
-            return {
+            is_valid = validation_result.get("valid", True)
+            response: Dict[str, Any] = {
                 "status": "success",
-                "valid": validation_result.get("valid", True),
+                "valid": is_valid,
                 "query": query,
                 "field_set": field_set,
                 "available_fields": len(fields),
@@ -80,9 +88,23 @@ class CitationService:
                     "Use brackets for date ranges [start TO end]",
                 ],
             }
-        except Exception as e:
-            from ..shared.error_utils import get_safe_error_message
 
+            # The whole point of this tool is explaining WHY a query is wrong.
+            # The client already computed the reason; the rebuilt envelope used
+            # to keep only the boolean and drop it, reporting "success" on a
+            # query the search tools reject outright. Carry the reason through.
+            if not is_valid:
+                reason = (
+                    validation_result.get("error")
+                    or validation_result.get("message")
+                    or "Query failed validation"
+                )
+                response["status"] = "error"
+                response["error"] = reason
+                response["message"] = reason
+
+            return response
+        except Exception as e:
             safe_message = get_safe_error_message(e, "Query validation failed")
             return {
                 "status": "error",
@@ -91,100 +113,108 @@ class CitationService:
                 "error": safe_message,
             }
 
-    async def get_statistics(self, criteria: str = "") -> Dict[str, Any]:
-        """Get database statistics with breakdowns via parallel count queries."""
-        import asyncio
-        from ..util.rate_limiter import get_rate_limiter
+    async def _fan_out_counts(self, criteria: str) -> Tuple[Dict[str, int], int]:
+        """Run the base query plus every breakdown query concurrently.
 
+        Returns (counts keyed by _BREAKDOWN_QUERIES name plus "total", number
+        of sub-queries that failed). A failed sub-query counts as 0 so one
+        upstream hiccup does not blank the whole response; the caller reports
+        how many failed so a zero-because-failed is distinguishable from a
+        zero-because-empty.
+        """
+
+        def scoped(extra: str) -> str:
+            return f"({criteria}) AND ({extra})" if criteria else extra
+
+        # rows=0 fetches no docs, just numFound. charge_quota=False because
+        # get_statistics already charged the limiter for the whole fan-out.
+        queries = [criteria or "*:*"] + [scoped(q) for _, q in _BREAKDOWN_QUERIES]
+        results = await asyncio.gather(
+            *(
+                self.client.search_citations(criteria=q, rows=0, charge_quota=False)
+                for q in queries
+            ),
+            return_exceptions=True,
+        )
+
+        def count(r: Any) -> int:
+            if isinstance(r, Exception):
+                return 0
+            return r.get("response", {}).get("numFound", 0)
+
+        counts = {"total": count(results[0])}
+        for (name, _), result in zip(_BREAKDOWN_QUERIES, results[1:]):
+            counts[name] = count(result)
+        queries_failed = sum(1 for r in results if isinstance(r, Exception))
+        return counts, queries_failed
+
+    def _shape_statistics(
+        self, counts: Dict[str, int], criteria: str, queries_failed: int
+    ) -> Dict[str, Any]:
+        """Build the statistics response envelope from the raw counts."""
+        response: Dict[str, Any] = {
+            "status": "success",
+            "total_citations": counts["total"],
+            "query": criteria or "all records",
+            "examiner_cited_count": counts["examiner"],
+            "applicant_cited_count": counts["applicant"],
+            "breakdowns": {
+                "Citation Category": {
+                    "X — Novel (§102)": counts["x_count"],
+                    "Y — Inventive Step (§103)": counts["y_count"],
+                    "A — Background Art": counts["a_count"],
+                },
+                "Cited By": {
+                    "Examiner (Form 892)": counts["examiner"],
+                    "Applicant (Form 1449)": counts["applicant"],
+                },
+            },
+        }
+        if queries_failed:
+            self.logger.warning(
+                "get_statistics: %d/%d count queries failed, "
+                "affected breakdowns report as 0",
+                queries_failed,
+                len(_BREAKDOWN_QUERIES) + 1,
+            )
+            response["queries_failed"] = queries_failed
+        return response
+
+    async def get_statistics(
+        self, criteria: str = "", stats_fields: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Get database statistics with breakdowns via parallel count queries.
+
+        `stats_fields` is accepted and currently unused: the breakdowns are
+        fixed. It exists so the tool signature above can keep documenting the
+        parameter; see tools/statistics.py.
+        """
         try:
-            # M2 (business-logic-vulnerabilities.md): this call fans out 6
-            # parallel upstream queries per invocation — charge the rate
-            # limiter for the full amplification cost up front (rather than
-            # letting each of the 6 sub-calls acquire independently) so a
-            # burst of statistics calls degrades the bucket proportionally to
-            # its real cost, and rejects before any network round-trip.
+            # This call fans out one query per breakdown plus the base query.
+            # Charge the limiter for the full amplification cost up front and
+            # pass charge_quota=False to the sub-calls, so the real cost is
+            # what the comment says rather than double it.
             if not await get_rate_limiter().acquire(
-                endpoint="get_citation_statistics", tokens=6
+                endpoint="get_citation_statistics", tokens=_STATISTICS_QUOTA_COST
             ):
                 return {
                     "status": "error",
-                    "error": "Rate limit exceeded for statistics request (6x query amplification)",
+                    "error": (
+                        f"Rate limit exceeded for statistics request "
+                        f"({_STATISTICS_QUOTA_COST}x query amplification)"
+                    ),
                 }
 
-            base = criteria or "*:*"
-
-            def scoped(extra: str) -> str:
-                if criteria:
-                    return f"({criteria}) AND ({extra})"
-                return extra
-
-            # Run all count queries in parallel (rows=0 fetches no docs, just numFound)
-            results = await asyncio.gather(
-                self.client.search_citations(criteria=base, rows=0),
-                self.client.search_citations(criteria=scoped("citationCategoryCode:X"), rows=0),
-                self.client.search_citations(criteria=scoped("citationCategoryCode:Y"), rows=0),
-                self.client.search_citations(criteria=scoped("citationCategoryCode:A"), rows=0),
-                self.client.search_citations(criteria=scoped("examinerCitedReferenceIndicator:true"), rows=0),
-                self.client.search_citations(criteria=scoped("applicantCitedExaminerReferenceIndicator:true"), rows=0),
-                return_exceptions=True,
-            )
-
-            def count(r: Any) -> int:
-                if isinstance(r, Exception):
-                    return 0
-                return r.get("response", {}).get("numFound", 0)
-
-            total      = count(results[0])
-            x_count    = count(results[1])
-            y_count    = count(results[2])
-            a_count    = count(results[3])
-            examiner   = count(results[4])
-            applicant  = count(results[5])
-
-            # 3.1: a failed sub-query silently degrades to a zero count above
-            # (so a single upstream hiccup doesn't blank the whole response),
-            # but reporting overall "success" with no signal that some counts
-            # are zero-because-failed (not zero-because-empty) is misleading.
-            # Surface the failure count additively; the zero counts stay.
-            queries_failed = sum(1 for r in results if isinstance(r, Exception))
-
-            response: Dict[str, Any] = {
-                "status": "success",
-                "total_citations": total,
-                "query": criteria or "all records",
-                "examiner_cited_count": examiner,
-                "applicant_cited_count": applicant,
-                "breakdowns": {
-                    "Citation Category": {
-                        "X — Novel (§102)": x_count,
-                        "Y — Inventive Step (§103)": y_count,
-                        "A — Background Art": a_count,
-                    },
-                    "Cited By": {
-                        "Examiner (Form 892)": examiner,
-                        "Applicant (Form 1449)": applicant,
-                    },
-                },
-            }
-            if queries_failed:
-                self.logger.warning(
-                    "get_statistics: %d/%d count queries failed, "
-                    "affected breakdowns report as 0",
-                    queries_failed,
-                    len(results),
-                )
-                response["queries_failed"] = queries_failed
-            return response
+            counts, queries_failed = await self._fan_out_counts(criteria)
+            return self._shape_statistics(counts, criteria, queries_failed)
         except Exception as e:
-            from ..shared.error_utils import get_safe_error_message
-
             safe_message = get_safe_error_message(e, "Statistics retrieval failed")
             return {
                 "status": "error",
                 "error": safe_message,
             }
 
-    def _get_cross_mcp_links(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
+    def get_cross_mcp_links(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
         """Extract cross-MCP linking fields from search results."""
         try:
             docs = search_result.get("response", {}).get("docs", [])
@@ -205,8 +235,8 @@ class CitationService:
                     patent_numbers.add(str(pub_num))
                 if art_unit := doc.get("groupArtUnitNumber"):
                     art_units.add(str(art_unit))
-                if tc := doc.get("techCenter"):
-                    tech_centers.add(str(tc))
+                if tech_center := doc.get("techCenter"):
+                    tech_centers.add(str(tech_center))
 
             return {
                 "available_links": {
@@ -235,16 +265,14 @@ class CitationService:
                 },
                 "integration_ready": len(application_numbers) > 0
                 or len(patent_numbers) > 0,
-                "guidance": "Use these identifiers to query PFW (pfw_search_applications_*) or PTAB (search_trials_*) MCPs",
+                "guidance": "Use these identifiers to query PFW (PFW_search_applications_*) or PTAB (PTAB_search_trials_*) MCPs",
                 "ptab_tools": {
-                    "trials": "search_trials_minimal/balanced/complete",
-                    "documents": "ptab_get_documents",
-                    "example": "search_trials_minimal(patent_number='10701173')"
+                    "trials": "PTAB_search_trials_minimal/balanced/complete",
+                    "documents": "PTAB_get_documents",
+                    "example": "PTAB_search_trials_minimal(patent_number='10701173')"
                 }
             }
         except Exception as e:
-            from ..shared.error_utils import get_safe_error_message
-
             safe_message = get_safe_error_message(e, "Cross-MCP link extraction failed")
             return {
                 "available_links": {},

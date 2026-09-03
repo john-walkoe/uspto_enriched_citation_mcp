@@ -1,6 +1,6 @@
 """Enriched Citations (v3) search tools — minimal/balanced tiers."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastmcp.apps import AppConfig
 
@@ -17,9 +17,193 @@ from ..util.query_builder import QueryParameters, build_query
 from ..util.query_validator import validate_lucene_syntax
 from ..util.request_context import RequestContext
 from ..util.security_logger import get_security_logger
-from ._shared import _build_query_info
+from ._shared import (
+    _apply_resolution,
+    _attach_patent_number_resolution,
+    _attach_query_advisories,
+    _build_query_info,
+    _resolve_patent_number,
+    run_with_deadline,
+    validate_pagination,
+)
 
 security_logger = get_security_logger()
+
+
+def _validate_search_input(
+    criteria: str,
+    rows: int,
+    start: int,
+    max_rows: int,
+    max_rows_message: str,
+) -> Optional[Dict[str, Any]]:
+    """Pre-network guards shared by both enriched tiers. Returns an error
+    response, or None when the arguments are acceptable. Extracted to keep
+    _run_enriched_search under the C901 ceiling, the same reason
+    _attach_query_advisories exists."""
+    if criteria and len(criteria) > MAX_QUERY_LENGTH:
+        return format_error_response(
+            f"Query too long (max {MAX_QUERY_LENGTH} characters)", 400
+        )
+    if criteria:
+        is_valid, validation_msg = validate_lucene_syntax(criteria)
+        if not is_valid:
+            return format_error_response(validation_msg, 400)
+    return validate_pagination(rows, start, max_rows, max_rows_message)
+
+
+async def _run_enriched_search(**kwargs) -> Dict[str, Any]:
+    """Public entry: the shared body under the whole-tool deadline."""
+    return await run_with_deadline(
+        lambda: _run_enriched_search_body(**kwargs), "Search"
+    )
+
+
+async def _run_enriched_search_body(
+    *,
+    tool_name: str,
+    tier: str,
+    field_set: str,
+    max_rows: int,
+    max_rows_message: str,
+    criteria: str,
+    rows: int,
+    start: int,
+    fields: Optional[List[str]],
+    patent_number: Optional[str],
+    application_number: Optional[str],
+    make_params: Callable[[Optional[str], Optional[str]], QueryParameters],
+    guidance: Callable[[Dict[str, Any]], Dict[str, Any]],
+    include_cross_mcp: bool,
+) -> Dict[str, Any]:
+    """Everything the two enriched tiers do identically.
+
+    The tiers were two copies of this body and had drifted: only the minimal
+    one opened a `RequestContext` (so half the enriched surface produced no
+    `request_id`) and only the minimal one emitted security events. Running
+    both through one implementation is what keeps that from happening again;
+    the per-tier parts are the row cap, the field set, the QueryParameters
+    fields and the guidance block, all passed in.
+    """
+    with RequestContext() as request_id:
+        query = ""
+        try:
+            runtime.initialize_services()
+            input_error = _validate_search_input(
+                criteria, rows, start, max_rows, max_rows_message
+            )
+            if input_error is not None:
+                return input_error
+
+            # A granted patent number becomes an application-number clause; an
+            # 11-digit publication number stays on publicationNumber.
+            resolution, resolution_error = await _resolve_patent_number(
+                patent_number, application_number
+            )
+            if resolution_error is not None:
+                return resolution_error
+            patent_number, application_number = _apply_resolution(
+                resolution, patent_number, application_number
+            )
+
+            # Build query using parameter object
+            built = build_query(make_params(patent_number, application_number))
+            query, params = built.query, built.params_used
+            warnings, coverage_notes = built.warnings, built.coverage_notes
+
+            # Use custom fields if provided, otherwise use the tier's preset
+            use_fields = (
+                fields
+                if fields is not None
+                else runtime.field_manager.get_field_set(field_set)
+            )
+            result = await runtime.api_client.search_records(
+                query, start, rows, use_fields
+            )
+
+            if "error" in result:
+                # E-5: the upstream payload is USPTO's shape, not this
+                # server's — no status, no code, no request_id — and it used
+                # to be returned to the caller verbatim. Re-envelope it so
+                # every failure the caller sees has one shape. The upstream
+                # text is carried through as the message.
+                return format_error_response(
+                    str(result.get("error")) or "Upstream API error", 502
+                )
+
+            # Apply field filtering using centralized smart filter
+            filtered = runtime.field_manager.filter_response_smart(
+                result,
+                field_set_name=field_set if fields is None else None,
+                custom_fields=fields,
+            )
+            extra: Dict[str, Any] = {}
+            if include_cross_mcp:
+                extra["cross_mcp"] = runtime.citation_service.get_cross_mcp_links(
+                    filtered
+                )
+            extra["request_id"] = request_id  # Include request ID for tracking
+            filtered["query_info"] = _build_query_info(
+                query,
+                tier=tier if fields is None else "ultra-minimal",
+                parameters=params,
+                custom_fields=fields,
+                field_count=len(use_fields),
+                extra=extra,
+            )
+            _attach_patent_number_resolution(filtered, resolution)
+            _attach_query_advisories(filtered, warnings, coverage_notes)
+            filtered["guidance"] = guidance(filtered)
+            # Provenance labeling + detection-only injection scan (kind labels
+            # only, key ABSENT when clean; text is never modified).
+            filtered["provenance_note"] = RETRIEVED_TEXT_NOTE
+            injection = scan_hits(filtered.get("response", {}).get("docs", []))
+            if injection:
+                filtered["injection_scan"] = injection
+
+            return filtered
+        except ValueError as e:
+            # Log validation failure for security monitoring
+            security_logger.query_validation_failure(
+                query=query or criteria,
+                reason=str(e),
+                severity="medium",
+            )
+            return format_error_response("Invalid search parameters", 400, exception=e)
+        except Exception as e:
+            # Log API error for monitoring
+            security_logger.api_error(
+                endpoint=tool_name,
+                error_code=500,
+                error_type=type(e).__name__,
+            )
+            return format_error_response("Search failed", 500, exception=e)
+
+
+def _minimal_guidance(_filtered: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "next_steps": [
+            "Filter results and use Citations_search_citations_balanced for 10-20 important citations",
+            "Extract IDs for cross-MCP integration (PFW/PTAB)",
+        ]
+    }
+
+
+def _balanced_guidance(filtered: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "analysis_ready": True,
+        "passage_analysis": len(
+            [
+                d
+                for d in filtered.get("response", {}).get("docs", [])
+                if d.get("passageLocationText")
+            ]
+        ),
+        "next_steps": [
+            "Use Citations_get_citation_details for 1-5 important citations",
+            "Cross-reference with PFW using patentApplicationNumber",
+        ],
+    }
 
 
 async def search_citations_minimal(
@@ -51,108 +235,62 @@ async def search_citations_minimal(
     Ultra-minimal mode: Pass custom fields list for 99% token reduction (2-3 fields only).
     Example: fields=['citedDocumentIdentifier', 'patentApplicationNumber'] for PFW integration.
 
-    Date handling: Office action dates available from 2017-10-01 forward. For application-based searches,
-    use date_start='2015-01-01' to account for 1-2 year lag between filing and first office action.
-    Example: date_start='2015-01-01', date_end='2024-12-31' covers all available office actions.
+    Date handling: USPTO documents this API as office actions mailed 2017-10-01 to
+    ~30 days ago. In practice ~44% of TC2100 records carry an earlier officeActionDate
+    (verified against PFW document dates back to 2010-2012). Do NOT add a blanket
+    officeActionDate:[2017-10-01 TO *] clause unless you specifically want the
+    documented window — it discards records the index actually serves.
 
-    Note: Returns citation metadata only. For actual office action documents, use get_citation_details
-    (for specific citation) then PFW MCP 2-step workflow (see get_citation_details docstring).
+    Lane routing — TRY BOTH: this is the ENRICHED lane (passage locations, claim
+    mapping, quality scores, NPL flag, date filtering). For completeness-sensitive
+    questions also run Citations_search_oa_citations_minimal (raw 892/1449 lists,
+    statutory basis, broader applicant-IDS coverage) and union the results — neither
+    lane is a superset of the other.
+    See Citations_get_guidance(section='oa_citations').
 
-    For complex workflows and cross-MCP integration, use citations_get_guidance(section).
+    IDENTIFIERS: `patent_number` takes either a GRANTED patent number (7-8 digits;
+    commas, spaces and a `US` prefix are accepted) or an 11-digit pre-grant publication
+    number. A granted patent number is crosswalked to its application serial with one
+    USPTO ODP applications-search call and queried as `patentApplicationNumber`; an
+    11-digit value queries `publicationNumber` directly. The response reports which
+    reading was used in `patent_number_resolution` {input, interpreted_as,
+    resolved_application_number when crosswalked, source}. A number that resolves to no
+    application is a 400 naming the accepted forms, not a zero-result. `application_number`
+    remains the application serial; passing one that disagrees with the crosswalked patent
+    number is also a 400.
+
+    Note: Returns citation metadata only. For the office action text itself, use the PFW
+    MCP's PFW_get_oa_text / PFW_get_oa_rejections (direct, no document-bag + OCR round trip).
+
+    For complex workflows and cross-MCP integration, use Citations_get_guidance(section).
     Quick reference: 'fields' section for Solr syntax, 'workflows_pfw' for PFW integration.
     """
-    # Set request context for tracking
-    with RequestContext() as request_id:
-        try:
-            runtime.initialize_services()
-            if criteria and len(criteria) > MAX_QUERY_LENGTH:
-                return format_error_response(
-                    f"Query too long (max {MAX_QUERY_LENGTH} characters)", 400
-                )
-            if criteria:
-                is_valid, validation_msg = validate_lucene_syntax(criteria)
-                if not is_valid:
-                    return format_error_response(validation_msg, 400)
-            if rows > MAX_MINIMAL_SEARCH_ROWS:
-                return format_error_response(
-                    f"Max {MAX_MINIMAL_SEARCH_ROWS} rows for minimal search", 400
-                )
-
-            # Build query using parameter object
-            query_params = QueryParameters(
-                criteria=criteria,
-                applicant_name=applicant_name,
-                application_number=application_number,
-                patent_number=patent_number,
-                tech_center=tech_center,
-                date_start=date_start,
-                date_end=date_end,
-                examiner_cited=examiner_cited,
-                art_unit=art_unit,
-            )
-            result = build_query(query_params)
-            query, params, warnings = result.query, result.params_used, result.warnings
-
-            # Use custom fields if provided, otherwise use preset minimal fields
-            use_fields = (
-                fields
-                if fields is not None
-                else runtime.field_manager.get_fields("citations_minimal")
-            )
-            result = await runtime.api_client.search_records(query, start, rows, use_fields)
-
-            if "error" in result:
-                return result
-
-            # Apply field filtering using centralized smart filter
-            filtered = runtime.field_manager.filter_response_smart(
-                result,
-                field_set_name="citations_minimal" if fields is None else None,
-                custom_fields=fields,
-            )
-            filtered["query_info"] = _build_query_info(
-                query,
-                tier="minimal" if fields is None else "ultra-minimal",
-                parameters=params,
-                custom_fields=fields,
-                field_count=len(use_fields),
-                extra={
-                    "cross_mcp": runtime.citation_service._get_cross_mcp_links(filtered),
-                    "request_id": request_id,  # Include request ID for tracking
-                },
-            )
-            if warnings:
-                filtered["warnings"] = warnings
-            filtered["guidance"] = {
-                "next_steps": [
-                    "Filter results and use search_citations_balanced for 10-20 important citations",
-                    "Extract IDs for cross-MCP integration (PFW/PTAB)",
-                ]
-            }
-            # Provenance labeling + detection-only injection scan (kind labels
-            # only, key ABSENT when clean; text is never modified).
-            filtered["provenance_note"] = RETRIEVED_TEXT_NOTE
-            injection = scan_hits(filtered.get("response", {}).get("docs", []))
-            if injection:
-                filtered["injection_scan"] = injection
-
-            return filtered
-        except ValueError as e:
-            # Log validation failure for security monitoring
-            security_logger.query_validation_failure(
-                query=query if 'query' in locals() else criteria,
-                reason=str(e),
-                severity="medium"
-            )
-            return format_error_response("Invalid search parameters", 400, exception=e)
-        except Exception as e:
-            # Log API error for monitoring
-            security_logger.api_error(
-                endpoint="search_citations_minimal",
-                error_code=500,
-                error_type=type(e).__name__
-            )
-            return format_error_response("Search failed", 500, exception=e)
+    return await _run_enriched_search(
+        tool_name="search_citations_minimal",
+        tier="minimal",
+        field_set="citations_minimal",
+        max_rows=MAX_MINIMAL_SEARCH_ROWS,
+        max_rows_message=f"Max {MAX_MINIMAL_SEARCH_ROWS} rows for minimal search",
+        criteria=criteria,
+        rows=rows,
+        start=start,
+        fields=fields,
+        patent_number=patent_number,
+        application_number=application_number,
+        make_params=lambda pat, app: QueryParameters(
+            criteria=criteria,
+            applicant_name=applicant_name,
+            application_number=app,
+            patent_number=pat,
+            tech_center=tech_center,
+            date_start=date_start,
+            date_end=date_end,
+            examiner_cited=examiner_cited,
+            art_unit=art_unit,
+        ),
+        guidance=_minimal_guidance,
+        include_cross_mcp=True,
+    )
 
 
 async def search_citations_balanced(
@@ -172,23 +310,29 @@ async def search_citations_balanced(
     fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Balanced citation search for analysis (80-85% context reduction).
+    Prior art references cited by an examiner, cited passage, column and line locator, figure, mapped claim, art unit, tech center, examiner vs applicant citation.
 
     Use after minimal search for detailed study of selected citations (10-20 results).
-    18 fields including passages, claims, office action category.
+    19 fields including passages, claims, office action category.
 
     Solr/Lucene Query Examples:
-    - Field search: criteria='examinerNameText:"Smith, John"'
+    - Field search: criteria='groupArtUnitNumber:2854'
     - Date range: criteria='officeActionDate:[2023-01-01 TO 2023-12-31]'
     - Boolean: criteria='(citationCategoryCode:X OR citationCategoryCode:Y) AND techCenter:2100'
-    - Phrase: criteria='firstApplicantNameText:"Tesla Motors"'
+    - NPL only: criteria='nplIndicator:true AND techCenter:2100'
     - Complex: criteria='groupArtUnitNumber:2854 AND citationCategoryCode:X AND officeActionDate:[2020-01-01 TO *]'
+
+    NOT searchable: examinerNameText and firstApplicantNameText do NOT exist on this API.
+    Examiner queries 400; applicant queries silently return 0. Resolve examiners and
+    applicants through the PFW MCP, then query citations by application number.
 
     Ultra-minimal mode: Pass custom fields list for 99% token reduction (2-3 fields only).
     Example: fields=['citedDocumentIdentifier', 'citationCategoryCode', 'passageLocationText']
 
-    Date handling: Office action dates available from 2017-10-01 forward. For application-based searches,
-    use date_start='2015-01-01' to account for 1-2 year lag between filing and first office action.
-    Example: date_start='2015-01-01', date_end='2024-12-31' covers all available office actions.
+    Date handling: documented window is office actions mailed 2017-10-01 to ~30 days
+    ago, but ~44% of TC2100 records carry an earlier officeActionDate in practice. Add
+    an officeActionDate:[2017-10-01 TO *] clause only when you want the documented
+    window specifically. For completeness, also query the OA lane and union.
 
     Convenience parameters (balanced mode only):
     - decision_type: Office action type — use "CTNF" (non-final rejection) or "CTFR" (final rejection)
@@ -196,33 +340,41 @@ async def search_citations_balanced(
     - examiner_cited: Boolean filter for examiner-cited references (true/false)
     - art_unit: Group art unit number (e.g., '2128', '3600')
 
-    Note: Returns citation metadata only. For actual office action documents, use get_citation_details
-    (for specific citation) then PFW MCP 2-step workflow (see get_citation_details docstring).
+    IDENTIFIERS: `patent_number` takes either a GRANTED patent number (7-8 digits;
+    commas, spaces and a `US` prefix are accepted) or an 11-digit pre-grant publication
+    number. A granted patent number is crosswalked to its application serial with one
+    USPTO ODP applications-search call and queried as `patentApplicationNumber`; an
+    11-digit value queries `publicationNumber` directly. The response reports which
+    reading was used in `patent_number_resolution` {input, interpreted_as,
+    resolved_application_number when crosswalked, source}. A number that resolves to no
+    application is a 400 naming the accepted forms, not a zero-result. `application_number`
+    remains the application serial; passing one that disagrees with the crosswalked patent
+    number is also a 400.
 
-    For complex workflows and cross-MCP integration, use citations_get_guidance(section).
-    Quick reference: 'fields' section for Solr syntax, 'workflows_pfw'/'workflows_ptab'/'workflows_fpd' for integration patterns.
+    Note: Returns citation metadata only. For the office action text itself, use the PFW
+    MCP's PFW_get_oa_text / PFW_get_oa_rejections (direct, no document-bag + OCR round trip).
+
+    For complex workflows and cross-MCP integration, use Citations_get_guidance(section).
+    Quick reference: 'oa_citations' for OA-vs-enriched routing, 'fields' for Solr syntax,
+    'workflows_pfw'/'workflows_ptab'/'workflows_fpd' for integration patterns.
     """
-    try:
-        runtime.initialize_services()
-        if criteria and len(criteria) > MAX_QUERY_LENGTH:
-            return format_error_response(
-                f"Query too long (max {MAX_QUERY_LENGTH} characters)", 400
-            )
-        if criteria:
-            is_valid, validation_msg = validate_lucene_syntax(criteria)
-            if not is_valid:
-                return format_error_response(validation_msg, 400)
-        if rows > MAX_BALANCED_SEARCH_ROWS:
-            return format_error_response(
-                f"Max {MAX_BALANCED_SEARCH_ROWS} rows for balanced search", 400
-            )
-
-        # Build query using parameter object
-        query_params = QueryParameters(
+    return await _run_enriched_search(
+        tool_name="search_citations_balanced",
+        tier="balanced",
+        field_set="citations_balanced",
+        max_rows=MAX_BALANCED_SEARCH_ROWS,
+        max_rows_message=f"Max {MAX_BALANCED_SEARCH_ROWS} rows for balanced search",
+        criteria=criteria,
+        rows=rows,
+        start=start,
+        fields=fields,
+        patent_number=patent_number,
+        application_number=application_number,
+        make_params=lambda pat, app: QueryParameters(
             criteria=criteria,
             applicant_name=applicant_name,
-            application_number=application_number,
-            patent_number=patent_number,
+            application_number=app,
+            patent_number=pat,
             tech_center=tech_center,
             date_start=date_start,
             date_end=date_end,
@@ -230,71 +382,22 @@ async def search_citations_balanced(
             category_code=category_code,
             examiner_cited=examiner_cited,
             art_unit=art_unit,
-        )
-        result = build_query(query_params)
-        query, params, warnings = result.query, result.params_used, result.warnings
-
-        # Use custom fields if provided, otherwise use preset balanced fields
-        use_fields = (
-            fields
-            if fields is not None
-            else runtime.field_manager.get_fields("citations_balanced")
-        )
-        result = await runtime.api_client.search_records(query, start, rows, use_fields)
-
-        if "error" in result:
-            return result
-
-        # Apply field filtering using centralized smart filter
-        filtered = runtime.field_manager.filter_response_smart(
-            result,
-            field_set_name="citations_balanced" if fields is None else None,
-            custom_fields=fields,
-        )
-        filtered["query_info"] = _build_query_info(
-            query,
-            tier="balanced" if fields is None else "ultra-minimal",
-            parameters=params,
-            custom_fields=fields,
-            field_count=len(use_fields),
-        )
-        if warnings:
-            filtered["warnings"] = warnings
-        filtered["guidance"] = {
-            "analysis_ready": True,
-            "passage_analysis": len(
-                [
-                    d
-                    for d in filtered.get("response", {}).get("docs", [])
-                    if d.get("passageLocationText")
-                ]
-            ),
-            "next_steps": [
-                "Use get_citation_details for 1-5 important citations",
-                "Cross-reference with PFW using patentApplicationNumber",
-            ],
-        }
-        # Provenance labeling + detection-only injection scan (kind labels
-        # only, key ABSENT when clean; text is never modified).
-        filtered["provenance_note"] = RETRIEVED_TEXT_NOTE
-        injection = scan_hits(filtered.get("response", {}).get("docs", []))
-        if injection:
-            filtered["injection_scan"] = injection
-
-        return filtered
-    except ValueError as e:
-        return format_error_response("Invalid search parameters", 400, exception=e)
-    except Exception as e:
-        return format_error_response("Search failed", 500, exception=e)
+        ),
+        guidance=_balanced_guidance,
+        include_cross_mcp=False,
+    )
 
 
 def register(mcp) -> None:
-    """Register the two enriched-citation search tools (names/schemas unchanged)."""
+    """Register the two enriched-citation search tools (Citations_-prefixed
+    display names; function names/schemas unchanged)."""
     mcp.tool(
+        name="Citations_search_citations_minimal",
         app=AppConfig(resource_uri=CITATION_RESULTS_URI),
         annotations={"defer_loading": False, "readOnlyHint": True},
     )(search_citations_minimal)
     mcp.tool(
+        name="Citations_search_citations_balanced",
         app=AppConfig(resource_uri=CITATION_RESULTS_URI),
         annotations={"defer_loading": True, "readOnlyHint": True},
     )(search_citations_balanced)

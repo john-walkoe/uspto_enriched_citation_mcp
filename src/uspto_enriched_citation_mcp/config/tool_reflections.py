@@ -37,6 +37,30 @@ try:
         section_body = match.group(2)
         _SECTION_MAP[section_name] = section_body
 
+    # Log-only injection scan over the loaded guidance (S-42). This is a
+    # deliberate content-team seam and the trust assumption is correct as
+    # designed — but it is a DIRECT model-instruction channel with no runtime
+    # check, while a lower-privilege channel (quoted USPTO text) has one.
+    # `.security/check_prompt_injections.py` covers it at commit time; this
+    # catches content that reaches the image without passing through a commit.
+    # Nothing is stripped or rewritten: a hit is a signal to a human.
+    try:
+        from ..shared.injection_scan import scan_text
+
+        for section_name, section_body in _SECTION_MAP.items():
+            kinds = scan_text(section_body)
+            if kinds:
+                _logger.warning(
+                    "Guidance section '%s' matched injection patterns %s; "
+                    "content served unchanged, review reference/tool_guidance.md",
+                    section_name,
+                    sorted(kinds),
+                )
+    except Exception as scan_error:  # pragma: no cover - scanning is advisory
+        _logger.debug(
+            "Guidance injection scan unavailable: %s", type(scan_error).__name__
+        )
+
 except Exception as exc:
     _logger.warning(
         "Could not load tool_guidance.md (%s): guidance strings unavailable", exc
@@ -79,6 +103,10 @@ def _get_data_coverage_section() -> str:
     return _SECTION_MAP.get("data_coverage", "")
 
 
+def _get_oa_citations_section() -> str:
+    return _SECTION_MAP.get("oa_citations", "")
+
+
 def _get_fields_section() -> str:
     return _SECTION_MAP.get("fields", "")
 
@@ -96,33 +124,7 @@ def get_all_reflections() -> str:
     return (
         "# USPTO Enriched Citation API v3 - Complete Tool Guidance\n\n"
         "⚠️ **DEPRECATION NOTICE**: This function returns all guidance at once (~62KB).\n"
-        "For 90-95% token reduction, use `citations_get_guidance(section)` instead.\n\n"
-        "Use `citations_get_guidance(\"overview\")` to see available sections and quick reference chart.\n\n"
+        "For 90-95% token reduction, use `Citations_get_guidance(section)` instead.\n\n"
+        "Use `Citations_get_guidance(\"overview\")` to see available sections and quick reference chart.\n\n"
         + _get_overview_section()
-    )
-
-
-def get_tool_reflections(workflow_type: str = "general") -> str:
-    """
-    Legacy function for backward compatibility.
-
-    ⚠️ **DEPRECATED**: Use citations_get_guidance(section) instead.
-
-    This function provides workflow-based guidance but is less efficient than
-    the sectioned approach. New code should use citations_get_guidance().
-    """
-    workflow_map = {
-        "cross_mcp":   "workflows_complete",
-        "litigation":  "workflows_complete",
-        "prosecution": "workflows_pfw",
-        "portfolio":    "workflows_complete",
-        "general":      "overview",
-    }
-    section = workflow_map.get(workflow_type, "overview")
-
-    return (
-        "# USPTO Enriched Citation MCP - Workflow Guidance\n\n"
-        "⚠️ **DEPRECATION NOTICE**: get_tool_reflections() is deprecated.\n"
-        f'Use `citations_get_guidance("{section}")` for better context efficiency.\n\n'
-        f"{_get_overview_section()}"
     )

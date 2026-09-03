@@ -38,11 +38,35 @@ def calculate_backoff(
     # Calculate exponential delay
     delay = min(base_delay * (exponential_base**attempt), max_delay)
 
-    # Add jitter (randomize between 0 and calculated delay)
+    # Equal jitter, not full jitter: randomize between half and all of the
+    # calculated delay. Full jitter drew from [0, delay], so the first retry
+    # after a 429 could land at effectively zero seconds, which is the
+    # behavior most likely to turn a soft upstream throttle into a hard one
+    # on a key shared by four MCPs (R-4).
     if jitter:
-        delay = random.uniform(0, delay)
+        delay = random.uniform(delay / 2, delay)
 
     return delay
+
+
+def retry_after_seconds(exception: Exception) -> Optional[float]:
+    """The upstream's own Retry-After, if this exception carries one.
+
+    raise_http_exception parses the header onto RateLimitError.details, and
+    retry_async then ignored it and slept its own backoff instead, so a 429
+    saying "wait 60 seconds" was retried in under a second, three times.
+    """
+    details = getattr(exception, "details", None)
+    if not isinstance(details, dict):
+        return None
+    value = details.get("retry_after")
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds > 0 else None
 
 
 def is_retryable_error(
@@ -135,14 +159,19 @@ def retry_async(
                         )
                         raise
 
-                    # Calculate backoff delay
-                    delay = calculate_backoff(
-                        attempt=attempt,
-                        base_delay=base_delay,
-                        max_delay=max_delay,
-                        exponential_base=exponential_base,
-                        jitter=jitter,
-                    )
+                    # Honor the upstream's own Retry-After when it gave one;
+                    # our backoff is only a guess about when it will be ready.
+                    upstream_delay = retry_after_seconds(e)
+                    if upstream_delay is not None:
+                        delay = min(upstream_delay, max_delay)
+                    else:
+                        delay = calculate_backoff(
+                            attempt=attempt,
+                            base_delay=base_delay,
+                            max_delay=max_delay,
+                            exponential_base=exponential_base,
+                            jitter=jitter,
+                        )
 
                     logger.info(
                         f"Retrying {func.__name__} after {type(e).__name__} "

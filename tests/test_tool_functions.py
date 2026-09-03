@@ -15,7 +15,6 @@ import json
 
 import pytest
 
-from uspto_enriched_citation_mcp import runtime
 from uspto_enriched_citation_mcp.tools.details import get_citation_details
 from uspto_enriched_citation_mcp.tools.oa import (
     get_oa_citation_fields,
@@ -35,6 +34,8 @@ from uspto_enriched_citation_mcp.tools.utility import (
 
 # --------------------------------------------------------------------- data
 
+# Synthetic fixture data, not a live record: application 16751234 returns zero
+# rows on both citation lanes, so do not lift these values into documentation.
 _MINIMAL_DOC = {
     "id": "0de7ea10c59e03dab218a40dece9dffd",
     "patentApplicationNumber": "16751234",
@@ -125,6 +126,33 @@ class TestValidateQuery:
         assert result["query"] == query
         assert result["field_set"] == "citations_minimal"
         mock_runtime.api_client.validate_query.assert_awaited_once_with(query)
+
+    @pytest.mark.asyncio
+    async def test_invalid_query_surfaces_the_reason(self, mock_runtime):
+        """validate_and_optimize_query used to rebuild the client's envelope
+        as {"status": "success", "valid": False} — keeping the boolean and
+        DISCARDING the reason, so the tool whose whole job is explaining why
+        a query is wrong said nothing about the field name."""
+        query = "legalSectionCode:103"
+        mock_runtime.api_client.validate_query.return_value = {
+            "status": "error",
+            "valid": False,
+            "query": query,
+            "error": (
+                "Invalid field name: legalSectionCode. Use "
+                "Citations_get_available_fields tool for valid fields."
+            ),
+        }
+
+        result = await validate_query(query, field_set="citations_minimal")
+
+        assert result["valid"] is False
+        assert result["status"] == "error"
+        assert "legalSectionCode" in result["error"]
+        assert result["message"] == result["error"]
+        # The advisory payload is still there — the reason is additive.
+        assert result["field_set"] == "citations_minimal"
+        assert "query_tips" in result
 
 
 class TestCitationsGetGuidance:
@@ -247,6 +275,30 @@ class TestGetCitationDetails:
         mock_runtime.api_client.get_citation_details.assert_not_awaited()
 
 
+class TestSearchCitationsMinimalCallerError:
+    @pytest.mark.asyncio
+    async def test_no_criterion_is_a_400_not_a_500(self, mock_runtime):
+        """build_query raises ValueError("At least one search criterion
+        required"); the tool asks for a 400. format_error_response used to
+        discard that code whenever an exception was supplied, because
+        exception_to_response stamps a plain ValueError as 500 — so the same
+        caller error was a 400 on the OA lane and a 500 (the class an agent
+        retries) on the enriched lane."""
+        result = await search_citations_minimal(rows=3)
+
+        assert result["status"] == "error"
+        assert result["code"] == 400
+        assert "At least one search criterion required" in result["message"]
+        mock_runtime.api_client.search_records.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_oa_lane_reports_the_same_message_and_code(self, mock_runtime):
+        oa = await search_oa_citations_minimal(rows=3)
+
+        assert oa["code"] == 400
+        assert "At least one search criterion required" in oa["message"]
+
+
 # ----------------------------------------------------------- statistics.py
 
 
@@ -278,7 +330,9 @@ class TestSearchOACitationsMinimal:
         )
 
         assert "response" in result
-        assert result["response"]["docs"][0]["_pfw_link"]
+        # The PFW hand-off is stated once on the envelope, not on every row.
+        assert "_pfw_link" not in result["response"]["docs"][0]
+        assert "PFW_get_application_documents" in result["pfw_link"]
         assert result["query_info"]["api"] == "oa_citations_v2"
         assert result["query_info"]["tier"] == "minimal"
         assert "guidance" in result

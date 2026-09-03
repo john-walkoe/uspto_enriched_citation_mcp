@@ -15,7 +15,16 @@ if TYPE_CHECKING:
     from ..util.rate_limiter import RateLimiter
 
 from ..config.constants import (
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+    CIRCUIT_BREAKER_SUCCESS_THRESHOLD,
+    DEFAULT_MAX_RETRY_ATTEMPTS,
+    DEFAULT_RETRY_BASE_DELAY,
+    DEFAULT_RETRY_MAX_DELAY,
+    MAX_KEEPALIVE_CONNECTIONS,
     MAX_RESPONSE_SIZE_BYTES,
+    MAX_ROWS_PER_REQUEST,
+    MAX_TOTAL_CONNECTIONS,
     WARNING_RESPONSE_SIZE_BYTES,
 )
 from ..util.rate_limiter import get_rate_limiter, RateLimitConfig
@@ -46,7 +55,7 @@ class BaseCitationClient:
         _CACHE_KEY_PREFIX — prefix used in generate_cache_key() calls
 
     Subclasses may override __init__ to add API-specific parameters,
-    but should call super().__init__() to initialise transport, metrics,
+    but should call super().__init__() to initialize transport, metrics,
     caching, and rate-limiting.
     """
 
@@ -60,6 +69,7 @@ class BaseCitationClient:
         base_url: str = "https://api.uspto.gov",
         rate_limit: int = 100,
         timeout: float = 30.0,
+        connect_timeout: Optional[float] = None,
         metrics_collector: Optional[MetricsCollector] = None,
         enable_cache: bool = True,
         fields_cache_ttl: int = 3600,
@@ -75,14 +85,20 @@ class BaseCitationClient:
 
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
+        # Kept so APITimeoutError can report the timeout this client actually
+        # waited, rather than a hardcoded 30.0 (R-7).
+        self.timeout = timeout
 
         self.client = httpx.AsyncClient(
             headers={
                 "X-API-KEY": api_key,
                 "Accept": "application/json",
             },
-            timeout=timeout,
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            timeout=httpx.Timeout(timeout, connect=connect_timeout or timeout),
+            limits=httpx.Limits(
+                max_keepalive_connections=MAX_KEEPALIVE_CONNECTIONS,
+                max_connections=MAX_TOTAL_CONNECTIONS,
+            ),
             verify=True,
         )
 
@@ -117,9 +133,9 @@ class BaseCitationClient:
         # circuit for an unrelated API sharing this base class.
         self._circuit_breaker = circuit_breaker or get_circuit_breaker(
             self._CACHE_KEY_PREFIX or self.__class__.__name__,
-            failure_threshold=3,
-            recovery_timeout=30.0,
-            success_threshold=2,
+            failure_threshold=CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+            recovery_timeout=CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+            success_threshold=CIRCUIT_BREAKER_SUCCESS_THRESHOLD,
         )
 
     # ------------------------------------------------------------------
@@ -147,11 +163,10 @@ class BaseCitationClient:
                 "Response missing Content-Type header",
                 details={"status_code": response.status_code},
             )
-        is_valid = any(
-            content_type == e.lower()
-            or content_type.startswith(e.lower().split(";")[0])
-            for e in expected_types
-        )
+        # Compare on the media type alone; the charset parameter, if any, is
+        # not part of the allowlist decision.
+        allowed_bases = {t.lower().split(";")[0].strip() for t in expected_types}
+        is_valid = content_type.split(";")[0].strip() in allowed_bases
         if not is_valid:
             raise APIResponseError(
                 f"Unexpected Content-Type: {content_type}",
@@ -174,15 +189,16 @@ class BaseCitationClient:
         reaching here) — when both are enabled the shared limiter dominates
         since it is the stricter, cross-process ceiling.
         """
-        if method.upper() == "POST":
-            send = self.client.post(url, **kwargs)
-        else:
-            send = self.client.get(url, **kwargs)
+        # The coroutine is built AFTER the limiter is acquired: if
+        # limiter.__aenter__ raises (flock dir removed, state file corrupt) an
+        # already-constructed coroutine would be dropped un-awaited and
+        # surface as a bare RuntimeWarning with no link to this request.
+        send = self.client.post if method.upper() == "POST" else self.client.get
         limiter = get_shared_limiter()
         if limiter is not None:
             async with limiter:
-                return await send
-        return await send
+                return await send(url, **kwargs)
+        return await send(url, **kwargs)
 
     def _validate_response_size(self, response: httpx.Response) -> None:
         content_length_header = response.headers.get("content-length")
@@ -202,6 +218,10 @@ class BaseCitationClient:
                 pass
 
         actual_size = len(response.content)
+        self.metrics_collector.record_response_size(
+            endpoint=self._CACHE_KEY_PREFIX or self.__class__.__name__,
+            size_bytes=actual_size,
+        )
         if actual_size > MAX_RESPONSE_SIZE_BYTES:
             raise APIResponseError(
                 f"Response too large: {actual_size / (1024*1024):.2f} MB",
@@ -222,19 +242,82 @@ class BaseCitationClient:
     # max_attempts retries against an already-open circuit.
     # ------------------------------------------------------------------
 
+    def _local_retry_after(self, endpoint: str) -> int:
+        """Seconds until this process's own bucket has a token again.
+
+        A locally generated RateLimitError used to carry no interval at all,
+        so the caller was told to back off with no idea for how long and
+        retry_async slept a random sub-second backoff against the very bucket
+        that had just rejected it (R-4).
+        """
+        try:
+            wait = self.rate_limiter.get_or_create_bucket(endpoint).get_wait_time(1)
+        except Exception:
+            return 1
+        return max(1, int(wait + 0.999))
+
+    def _record_failure_metric(
+        self, endpoint: str, method: str, error: str, start_time: float
+    ) -> None:
+        """Instrument an error path. Only success paths were recorded before,
+        so any collector would have reported a 100% success rate (S-18)."""
+        self.metrics_collector.record_request(
+            endpoint=endpoint,
+            method=method,
+            duration_seconds=time.time() - start_time,
+            error=error,
+        )
+
+    def _map_transport_exception(
+        self, exc: Exception, timeout_message: str
+    ) -> Exception:
+        """Translate an httpx transport failure into this package's exception
+        vocabulary. Returns `exc` unchanged when it is already typed."""
+        if isinstance(exc, httpx.TimeoutException):
+            return APITimeoutError(timeout_message, timeout_seconds=self.timeout)
+        if isinstance(exc, httpx.ConnectError):
+            return APIConnectionError("Failed to connect to USPTO API")
+        if isinstance(exc, httpx.HTTPError):
+            return APIResponseError(f"HTTP error: {str(exc)}")
+        return exc
+
+    def _fail(
+        self,
+        exc: Exception,
+        timeout_message: str,
+        endpoint: str,
+        method: str,
+        start_time: float,
+    ) -> Exception:
+        """Record the failure metric and return the exception to raise."""
+        mapped = self._map_transport_exception(exc, timeout_message)
+        self._record_failure_metric(
+            endpoint, method, type(mapped).__name__, start_time
+        )
+        return mapped
+
     async def _get_fields_raw(self) -> Dict:
         cache_key = generate_cache_key(
             f"{self._CACHE_KEY_PREFIX}_fields", self.base_url
         )
+        endpoint = f"{self._CACHE_KEY_PREFIX}_get_fields"
         if self.enable_cache and self.fields_cache:
             cached = self.fields_cache.get(cache_key)
             if cached is not None:
+                self.metrics_collector.increment_counter(
+                    "cache_hits", tags={"endpoint": endpoint}
+                )
                 return cached
 
         start_time = time.time()
-        endpoint = f"{self._CACHE_KEY_PREFIX}_get_fields"
         if not await self.rate_limiter.acquire(endpoint=endpoint):
-            raise RateLimitError("Rate limit exceeded.")
+            self._record_failure_metric(
+                endpoint, "GET", "RateLimitError", start_time
+            )
+            raise RateLimitError(
+                "Rate limit exceeded.",
+                retry_after=self._local_retry_after(endpoint),
+            )
 
         try:
             url = f"{self.base_url}{self._FIELDS_PATH}"
@@ -252,16 +335,23 @@ class BaseCitationClient:
                 duration_seconds=time.time() - start_time,
             )
             return result
-        except httpx.TimeoutException:
-            raise APITimeoutError(
-                "Request timed out while fetching fields", timeout_seconds=30.0
-            )
-        except httpx.ConnectError:
-            raise APIConnectionError("Failed to connect to USPTO API")
-        except httpx.HTTPError as e:
-            raise APIResponseError(f"HTTP error: {str(e)}")
+        except Exception as e:
+            # Covers the httpx transport failures AND the typed exceptions
+            # _handle_http_error raises for a 4xx/5xx, so the metric is
+            # recorded on every error path rather than none of them.
+            raise self._fail(
+                e,
+                "Request timed out while fetching fields",
+                endpoint,
+                "GET",
+                start_time,
+            ) from e
 
-    @retry_async(max_attempts=3, base_delay=1.0, max_delay=30.0)
+    @retry_async(
+        max_attempts=DEFAULT_MAX_RETRY_ATTEMPTS,
+        base_delay=DEFAULT_RETRY_BASE_DELAY,
+        max_delay=DEFAULT_RETRY_MAX_DELAY,
+    )
     async def _get_fields_impl(self) -> Dict:
         return await self._circuit_breaker.call(self._get_fields_raw)
 
@@ -283,6 +373,52 @@ class BaseCitationClient:
         }
         return result
 
+    @staticmethod
+    async def _with_cache_fallback(impl, lookup, label: str, source: str, noun: str):
+        """Run `impl()`; on a degradation-eligible failure serve `lookup(status)`
+        if it has an entry, else re-raise.
+
+        `get_fields` and `search_records` carried this three-branch ladder
+        verbatim; only the lookup helper, the label and the wording differed.
+        The two `source` values ("stale_cache" / "cache") are pinned by tests,
+        so they stay parameterized rather than unified.
+        """
+        try:
+            return await impl()
+        except CircuitBreakerError:
+            logger.warning(
+                "Circuit breaker open for %s, attempting cache fallback", label
+            )
+            hit = lookup(
+                {
+                    "source": source,
+                    "message": f"Service temporarily unavailable — using cached {noun}",
+                    "circuit_breaker": "open",
+                }
+            )
+            if hit is not None:
+                return hit
+            raise
+        except (APITimeoutError, APIConnectionError) as e:
+            logger.warning(
+                "Transient error in %s (%s), attempting cache fallback",
+                label,
+                type(e).__name__,
+            )
+            hit = lookup(
+                {
+                    "source": source,
+                    "message": (
+                        f"API temporarily unavailable ({type(e).__name__}) "
+                        f"— using cached {noun}"
+                    ),
+                    "error_type": type(e).__name__,
+                }
+            )
+            if hit is not None:
+                return hit
+            raise
+
     async def get_fields(self) -> Dict:
         """
         GET fields list with circuit breaker + stale-cache fallback.
@@ -291,37 +427,13 @@ class BaseCitationClient:
         on individual transient errors (timeouts, connection failures), so a
         single flaky request degrades gracefully instead of failing outright.
         """
-        try:
-            return await self._get_fields_impl()
-        except CircuitBreakerError:
-            logger.warning(
-                "Circuit breaker open for get_fields, attempting stale cache fallback"
-            )
-            stale = self._stale_fields_cache_entry(
-                {
-                    "source": "stale_cache",
-                    "message": "Service temporarily unavailable — using cached data",
-                    "circuit_breaker": "open",
-                }
-            )
-            if stale is not None:
-                return stale
-            raise
-        except (APITimeoutError, APIConnectionError) as e:
-            logger.warning(
-                f"Transient error in get_fields ({type(e).__name__}), "
-                "attempting stale cache fallback"
-            )
-            stale = self._stale_fields_cache_entry(
-                {
-                    "source": "stale_cache",
-                    "message": f"API temporarily unavailable ({type(e).__name__}) — using cached data",
-                    "error_type": type(e).__name__,
-                }
-            )
-            if stale is not None:
-                return stale
-            raise
+        return await self._with_cache_fallback(
+            self._get_fields_impl,
+            self._stale_fields_cache_entry,
+            "get_fields",
+            "stale_cache",
+            "data",
+        )
 
     # ------------------------------------------------------------------
     # Shared _search_records_impl (subclass controls endpoint via
@@ -349,25 +461,41 @@ class BaseCitationClient:
         start: int = 0,
         rows: int = 50,
         selected_fields: Optional[List[str]] = None,
+        charge_quota: bool = True,
     ) -> Dict:
         cache_key = generate_cache_key(
             f"{self._CACHE_KEY_PREFIX}_search",
             criteria, start, rows,
             selected_fields=selected_fields,
         )
+        endpoint = f"{self._CACHE_KEY_PREFIX}_search_records"
         cached = self._get_cached_search_result(cache_key)
         if cached is not None:
+            self.metrics_collector.increment_counter(
+                "cache_hits", tags={"endpoint": endpoint}
+            )
             return cached
 
         start_time = time.time()
-        endpoint = f"{self._CACHE_KEY_PREFIX}_search_records"
-        if not await self.rate_limiter.acquire(endpoint=endpoint):
-            raise RateLimitError("Rate limit exceeded.")
+        # charge_quota=False for a caller that already charged the limiter for
+        # the whole fan-out up front (CitationService.get_statistics); without
+        # it every sub-call charged a second token and the tool cost twice
+        # what its own comment claimed.
+        if charge_quota and not await self.rate_limiter.acquire(endpoint=endpoint):
+            self._record_failure_metric(
+                endpoint, "POST", "RateLimitError", start_time
+            )
+            raise RateLimitError(
+                "Rate limit exceeded.",
+                retry_after=self._local_retry_after(endpoint),
+            )
 
         if not criteria.strip():
             raise ValidationError("Criteria cannot be empty", field="criteria")
-        if rows > 1000:
-            raise ValidationError("Maximum rows is 1000 per request", field="rows")
+        if rows > MAX_ROWS_PER_REQUEST:
+            raise ValidationError(
+                f"Maximum rows is {MAX_ROWS_PER_REQUEST} per request", field="rows"
+            )
 
         try:
             url = f"{self.base_url}{self._RECORDS_PATH}"
@@ -400,23 +528,31 @@ class BaseCitationClient:
             )
             return result
 
-        except httpx.TimeoutException:
-            raise APITimeoutError("Search request timed out", timeout_seconds=30.0)
-        except httpx.ConnectError:
-            raise APIConnectionError("Failed to connect to USPTO API")
-        except httpx.HTTPError as e:
-            raise APIResponseError(f"HTTP error: {str(e)}")
+        except Exception as e:
+            raise self._fail(
+                e, "Search request timed out", endpoint, "POST", start_time
+            ) from e
 
-    @retry_async(max_attempts=3, base_delay=1.0, max_delay=30.0)
+    @retry_async(
+        max_attempts=DEFAULT_MAX_RETRY_ATTEMPTS,
+        base_delay=DEFAULT_RETRY_BASE_DELAY,
+        max_delay=DEFAULT_RETRY_MAX_DELAY,
+    )
     async def _search_records_impl(
         self,
         criteria: str,
         start: int = 0,
         rows: int = 50,
         selected_fields: Optional[List[str]] = None,
+        charge_quota: bool = True,
     ) -> Dict:
         return await self._circuit_breaker.call(
-            self._search_records_raw, criteria, start, rows, selected_fields
+            self._search_records_raw,
+            criteria,
+            start,
+            rows,
+            selected_fields,
+            charge_quota,
         )
 
     def _stale_search_cache_entry(
@@ -447,6 +583,7 @@ class BaseCitationClient:
         start: int = 0,
         rows: int = 50,
         selected_fields: Optional[List[str]] = None,
+        charge_quota: bool = True,
     ) -> Dict:
         """
         Search with circuit breaker + cache fallback.
@@ -456,41 +593,17 @@ class BaseCitationClient:
         so a single flaky request degrades gracefully instead of failing
         outright.
         """
-        try:
-            return await self._search_records_impl(
-                criteria, start, rows, selected_fields
-            )
-        except CircuitBreakerError:
-            logger.warning(
-                "Circuit breaker open for search, attempting cache fallback"
-            )
-            cached = self._stale_search_cache_entry(
-                criteria, start, rows, selected_fields,
-                {
-                    "source": "cache",
-                    "message": "Service temporarily unavailable — using cached results",
-                    "circuit_breaker": "open",
-                },
-            )
-            if cached is not None:
-                return cached
-            raise
-        except (APITimeoutError, APIConnectionError) as e:
-            logger.warning(
-                f"Transient error in search ({type(e).__name__}), "
-                "attempting stale cache fallback"
-            )
-            cached = self._stale_search_cache_entry(
-                criteria, start, rows, selected_fields,
-                {
-                    "source": "cache",
-                    "message": f"API temporarily unavailable ({type(e).__name__}) — using cached results",
-                    "error_type": type(e).__name__,
-                },
-            )
-            if cached is not None:
-                return cached
-            raise
+        return await self._with_cache_fallback(
+            lambda: self._search_records_impl(
+                criteria, start, rows, selected_fields, charge_quota
+            ),
+            lambda status: self._stale_search_cache_entry(
+                criteria, start, rows, selected_fields, status
+            ),
+            "search",
+            "cache",
+            "results",
+        )
 
     # ------------------------------------------------------------------
     # Utilities (shared verbatim)

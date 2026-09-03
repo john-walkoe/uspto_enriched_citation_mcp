@@ -101,4 +101,11 @@ audits/
 data/
 *.db-wal
 *.db-shm
+# The default auth DB lives under data/, which is ignored, but a deployment
+# pointing CITATIONS_AUTH_DB_PATH elsewhere produces a committable file of
+# subscriber emails and refresh-token hashes, and this repo has a public
+# GitHub mirror. detect-secrets would not flag either (S-36).
+*.db
+*.sqlite
+*.sqlite3
 CLAUDE.md

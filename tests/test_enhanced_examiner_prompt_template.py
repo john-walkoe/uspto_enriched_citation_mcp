@@ -21,10 +21,35 @@ from uspto_enriched_citation_mcp import prompts
 # for three fixed argument sets. Do not update these unless the intentional
 # prompt CONTENT is changing — a mismatch here means the refactor altered
 # what the LLM sees, which is exactly what this test guards against.
+# Anchors re-baselined 2026-07-19: OCR dollar-cost disclosure was deliberately
+# removed from the template (subscription pricing must not be relayed to users).
+# Anchors re-baselined 2026-08-16: fleet-wide MCP tool DISPLAY-NAME migration —
+# the template's tool references were reprefixed (Citations_/PFW_/PTAB_/FPD_).
+# The "empty" case renders a branch with no tool names, so its anchor is
+# unchanged.
+# Anchors re-baselined 2026-08-17: Phase 2's date-constraint block was rewritten
+# as a RUN-BOTH-LANES instruction. USPTO's published docs give both citation APIs
+# the same window (office actions mailed 2017-10-01 to ~30 days prior), but
+# measurement shows both lanes serving older records — enriched officeActionDate
+# values were verified as true OA mail dates against PFW document dates (app
+# 12849948 -> 2012-06-07 CTNF, app 11802002 -> 2010-02-01 CTNF, both exact), and
+# app 12849948's Form 892 (the OA v2 source doc) is likewise dated 2012-06-07.
+# Neither lane is a superset of the other, so the template now instructs querying
+# both and unioning, and flags that the OA lane has no date field at all (an
+# officeActionDate clause 400s). The "empty" case renders a branch without this
+# block, so its anchor is unchanged.
+# Anchors re-baselined 2026-09-02: finished the OCR-cost scrub in the template's
+# NOA-extraction phase — the per-NOA and total dollar-cost tracking
+# (processing_cost_usd, "Total NOA extraction cost", "Total Extraction Cost",
+# "70% cost savings") was removed and the auto_optimize framing reworded to the
+# speed/quality tradeoff, and the stale bare PFW_get_document_content reference
+# was updated to the current PFW_get_document_content_with_ocr tool name. The
+# "empty" case renders a branch without the NOA-extraction block, so its anchor
+# is unchanged.
 _EXPECTED_SHA256 = {
-    "full": "557a102795ed2def01d4e44d936be9fc738b0ab2bd8a0e718231efe32e840eb6",
+    "full": "6f378004214a9453a5df43ff19685c9e8fec96833db368c89298f67a4fa1ecca",
     "empty": "5483d7b477e5081a5b84c0ab1ce4370cd9ae14e200eb607baad415b097a2c10f",
-    "examiner_only": "cc8df79ba13d9c2c7dab47fe3accda6186300bc89125df4b57bd844a964c9fa3",
+    "examiner_only": "1e41253f304379772a408793916d3a432a2c9acaa3f688419f82729f55201d61",
 }
 
 _CASES = {
@@ -36,14 +61,26 @@ _CASES = {
 }
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _enable_prompt_registration():
+    """Prompts are registration-gated by CITATIONS_ENABLE_PROMPTS (default
+    off), so importing `main` no longer registers them. Force the gate and
+    register once for this module; the submodule import inside
+    register_prompts is idempotent (sys.modules cache), so this is safe even
+    if the env var was already set.
+    """
+    prompts.PROMPTS_ENABLED = True
+    prompts.register_prompts(main_module.mcp)
+
+
 @pytest.fixture(scope="module")
 def prompt_fn():
     """The underlying (undecorated) async prompt function.
 
-    Importing `main` (above) already triggers register_prompts(main.mcp) —
-    the @mcp.prompt(...) decorator only runs on first import of this
-    submodule (Python caches modules in sys.modules), so we deliberately
-    don't create a second throwaway FastMCP instance and re-register here;
+    The _enable_prompt_registration fixture (above) already triggered
+    register_prompts(main.mcp) — the @mcp.prompt(...) decorator only runs on
+    first import of this submodule (Python caches modules in sys.modules), so
+    we deliberately don't create a second throwaway FastMCP instance here;
     that would silently no-op if another test module already imported
     `main` first, and only the original registration's function object
     would be reachable anyway.

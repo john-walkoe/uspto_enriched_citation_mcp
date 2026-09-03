@@ -102,20 +102,20 @@ While the Citations MCP itself does **NOT download documents** (it returns citat
 **Usage in Citations → PFW Workflow:**
 ```python
 # STEP 1: Citations - Get citation metadata
-citations = search_citations_balanced(
+citations = Citations_search_citations_balanced(
     criteria='patentApplicationNumber:17896175',
     rows=20
 )
 
 # STEP 2: PFW - Get office action documents (where citations appear)
-docs = pfw_get_application_documents(
+docs = PFW_get_application_documents(
     app_number='17896175',
     document_code='CTFR',  # From Document_Descriptions_List.csv
     limit=10
 )
 
 # STEP 3: PFW - Extract citation context
-content = pfw_get_document_content(
+content = PFW_get_document_content_with_ocr(
     app_number='17896175',
     document_identifier=docs['documents'][0]['documentIdentifier']
 )
@@ -127,7 +127,7 @@ content = pfw_get_document_content(
 3. Document codes (especially 892, CTFR, NOA) are **referenced in citation workflows**
 4. Essential for two-step **Citations → PFW integration** patterns
 
-See `citations_get_guidance('workflows_pfw')` for complete integration workflows.
+See `Citations_get_guidance('workflows_pfw')` for complete integration workflows.
 
 ---
 
@@ -157,7 +157,7 @@ See `citations_get_guidance('workflows_pfw')` for complete integration workflows
 This two-step pattern is documented extensively in:
 - `USAGE_EXAMPLES.md` - Example 3, Example 7
 - `PROMPTS.md` - All prompt templates
-- `citations_get_guidance('workflows_pfw')` - Workflow section
+- `Citations_get_guidance('workflows_pfw')` - Workflow section
 
 ### Cross-MCP Integration Fields
 
@@ -186,14 +186,14 @@ This two-step pattern is documented extensively in:
 The Citations APIs are documented on the USPTO Open Data Portal:
 - **Enriched Citations v3**: [data.uspto.gov/apis/enriched-citations/search](https://data.uspto.gov/apis/enriched-citations/search) — Swagger available
 - **OA Citations v2**: [data.uspto.gov/apis/office-action-citations/search](https://data.uspto.gov/apis/office-action-citations/search) — Swagger available
-- **Field discovery**: Use `get_available_fields()` tool at runtime
+- **Field discovery**: Use `Citations_get_available_fields()` tool at runtime
 - **~22 total fields** for enriched citations, **~16 fields** for OA citations — much smaller API surface than PFW/FPD/PTAB
 
 ### Field Discovery and Validation
 
 The MCP includes runtime field discovery:
-- `get_available_fields()` - Returns current API field list
-- `validate_query()` - Validates Lucene syntax before execution
+- `Citations_get_available_fields()` - Returns current API field list
+- `Citations_validate_query()` - Validates Lucene syntax before execution
 - `field_configs.yaml` - User-configurable field sets (minimal/balanced)
 
 ### AI/ML Data Extraction
@@ -223,7 +223,7 @@ To update:
 # Save as reference/USPTO Enriched Citation API v3.md
 
 # Verify available fields via API
-uv run python -c "from uspto_enriched_citation_mcp.main import get_available_fields; import asyncio; asyncio.run(get_available_fields())"
+uv run python -c "from uspto_enriched_citation_mcp.main import Citations_get_available_fields; import asyncio; asyncio.run(Citations_get_available_fields())"
 
 # Update document codes from USPTO EFS page (for PFW integration)
 # Download from: https://www.uspto.gov/patents/apply/filing-online/efs-info-document-description
@@ -240,7 +240,7 @@ uv run python -c "from uspto_enriched_citation_mcp.main import get_available_fie
 - **Tool Documentation:** See tool docstrings in `src/uspto_enriched_citation_mcp/main.py`
 - **Field Configs:** See `field_configs.yaml` for progressive disclosure field sets
 - **API Client:** See `src/uspto_enriched_citation_mcp/api/enriched_client.py` for implementation
-- **Cross-MCP Workflows:** Use `citations_get_guidance('workflows_pfw')` for integration patterns
+- **Cross-MCP Workflows:** Use `Citations_get_guidance('workflows_pfw')` for integration patterns
 - **Usage Examples:** See `USAGE_EXAMPLES.md` for complete workflow examples
 - **Prompt Templates:** See `PROMPTS.md` for guided workflow prompts
 
@@ -279,7 +279,7 @@ uv run python -c "from uspto_enriched_citation_mcp.main import get_available_fie
 - Office action PDFs (CTFR, CTNF, NOA)
 - Examiner citation lists (892)
 - Applicant IDS documents (IDS, 1449)
-- Text extraction with OCR (via `pfw_get_document_content`)
+- Text extraction with OCR (via `PFW_get_document_content_with_ocr`)
 
 See `USAGE_EXAMPLES.md#example-7-cross-mcp-integration-with-pfw` for complete workflow.
 

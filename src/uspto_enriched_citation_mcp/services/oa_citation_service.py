@@ -3,6 +3,7 @@
 from typing import Dict, List, Optional
 
 from ..api.oa_citations_client import OACitationsClient, OA_CITATIONS_MINIMAL_FIELDS, OA_CITATIONS_ALL_FIELDS
+from ..shared.pfw_link import pfw_link_for
 from ..util.logging import get_logger
 
 logger = get_logger(__name__)
@@ -35,19 +36,33 @@ class OACitationService:
 
         docs = result.get("response", {}).get("docs", [])
 
-        # OA Citations API ignores fl — filter fields client-side when custom set requested
-        if custom_fields is not None:
-            field_set = set(custom_fields)
-            result["response"]["docs"] = [
-                {k: v for k, v in doc.items() if k in field_set}
-                for doc in docs
-            ]
-            docs = result["response"]["docs"]
+        # The OA Citations API ignores `fl` and returns every field whatever
+        # is asked for, so the tier's field set only means anything if it is
+        # applied here. This used to run for a CUSTOM list only, which left
+        # the minimal tier's 7-field default unenforced: minimal served all
+        # 16 fields — the same docs as balanced, plus a guidance block, so
+        # the "high-volume discovery" tier cost MORE context than the detail
+        # tier (measured 13,020 vs 12,754 chars on app 16816197). Filter on
+        # both paths, then annotate.
+        field_set = set(fields)
+        result["response"]["docs"] = [
+            {k: v for k, v in doc.items() if k in field_set}
+            for doc in docs
+        ]
+        docs = result["response"]["docs"]
 
-        for doc in docs:
-            app_num = doc.get("patentApplicationNumber", "")
-            if app_num:
-                doc["_pfw_link"] = f"Use PFW MCP: pfw_get_application_documents(app_number='{app_num}')"
+        # The per-row `_pfw_link` is the same sentence on every doc, differing
+        # only in an app number the doc already carries — 1,476 chars of the
+        # minimal tier's 7,350 on app 16816197, for zero information. On a
+        # default-tier response the hand-off is stated ONCE, on the envelope
+        # (`pfw_link`, added by tools/oa.py). It is still injected per row for
+        # a CUSTOM field list, where the caller chose the doc shape and the
+        # inline annotation is the established contract.
+        if custom_fields is not None:
+            for doc in docs:
+                app_num = doc.get("patentApplicationNumber", "")
+                if app_num:
+                    doc["_pfw_link"] = pfw_link_for(app_num)
 
         return result
 

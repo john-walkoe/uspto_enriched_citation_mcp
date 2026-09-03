@@ -6,7 +6,7 @@ This document provides comprehensive examples for using the USPTO Enriched Citat
 
 For the most part, **the LLMs will perform these searches and workflows on their own with minimal guidance from the user**. These examples are illustrative to give insight into what the LLMs are doing in the background.
 
-**💡 Best Practice Recommendation:** For complex workflows or when you're unsure about the best approach, start by asking the LLM to use the `citations_get_guidance` tool first. This tool provides context-efficient workflow recommendations and helps the LLM choose the most appropriate tools and strategies for your specific use case.
+**💡 Best Practice Recommendation:** For complex workflows or when you're unsure about the best approach, start by asking the LLM to use the `Citations_get_guidance` tool first. This tool provides context-efficient workflow recommendations and helps the LLM choose the most appropriate tools and strategies for your specific use case.
 
 Sample requests that the user can give to the LLM to trigger the examples are as follows:
 
@@ -89,8 +89,8 @@ The Citations MCP uses a **progressive disclosure pattern** to optimize token us
 
 ```python
 # Fast discovery: Find all citations for a patent
-discovery = search_citations_minimal(
-    criteria='publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]',
+discovery = Citations_search_citations_minimal(
+    patent_number='9049188',
     rows=50
 )
 
@@ -105,7 +105,7 @@ for citation in discovery['response']['docs'][:10]:
 **Minimal Search Fields (8 fields):**
 - `citedDocumentIdentifier` - Patent/publication number cited
 - `patentApplicationNumber` - Application where citation appears
-- `publicationNumber` - Published patent number
+- `publicationNumber` - Publication number of the cited reference
 - `citationCategoryCode` - X/Y/A/NPL category
 - `examinerCitedReferenceIndicator` - Examiner vs applicant
 - `groupArtUnitNumber` - Art unit
@@ -121,8 +121,8 @@ for citation in discovery['response']['docs'][:10]:
 
 ```python
 # After user selects 10 citations of interest, get detailed analysis
-balanced = search_citations_balanced(
-    criteria='publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]',
+balanced = Citations_search_citations_balanced(
+    patent_number='9049188',
     rows=10
 )
 
@@ -145,7 +145,7 @@ for citation in balanced['response']['docs']:
 - Additional classification and cross-reference fields
 
 **Token Efficiency:**
-- Balanced (18 fields): ~2,000 chars/result
+- Balanced (19 fields): ~2,000 chars/result
 - 10 results: ~20KB total
 - **70-80% reduction vs full data**
 
@@ -153,7 +153,7 @@ for citation in balanced['response']['docs']:
 
 ```python
 # For 1-5 strategically important citations, get complete details
-citation_details = get_citation_details(
+citation_details = Citations_get_citation_details(
     citation_id='12345678-abcd-1234-abcd-123456789abc'
 )
 
@@ -181,15 +181,15 @@ print(f"  Full passage context: {citation_details.get('passageLocationText', 'N/
 
 ```python
 # Standard minimal search (8 fields, 95% reduction)
-standard_minimal = search_citations_minimal(
-    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]',
+standard_minimal = Citations_search_citations_minimal(
+    criteria='groupArtUnitNumber:2854',
     rows=100
 )
 # Returns: 8 fields × 100 results = ~40KB
 
 # Ultra-minimal search (2 fields, 99% reduction)
-ultra_minimal = search_citations_minimal(
-    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]',
+ultra_minimal = Citations_search_citations_minimal(
+    criteria='groupArtUnitNumber:2854',
     fields=['citedDocumentIdentifier', 'citationCategoryCode'],  # Only 2 fields!
     rows=100
 )
@@ -201,8 +201,8 @@ ultra_minimal = search_citations_minimal(
 **1. Citation Counting and Statistics**
 ```python
 # Get just citation counts by category
-citation_counts = search_citations_minimal(
-    criteria='patentApplicationNumber:17896175 AND officeActionDate:[2017-10-01 TO *]',
+citation_counts = Citations_search_citations_minimal(
+    criteria='patentApplicationNumber:17896175',
     fields=['citationCategoryCode'],  # Single field
     rows=100
 )
@@ -218,8 +218,8 @@ print(f"NPL citations: {categories['NPL']}")
 **2. Cited Patent Extraction**
 ```python
 # Extract only patent numbers for prior art list
-prior_art_list = search_citations_minimal(
-    criteria='publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]',
+prior_art_list = Citations_search_citations_minimal(
+    patent_number='9049188',
     fields=['citedDocumentIdentifier'],  # Single field
     rows=50
 )
@@ -231,8 +231,8 @@ print(f"Prior art references: {', '.join(cited_patents[:10])}")
 **3. Cross-MCP Integration Prep**
 ```python
 # Get minimal data for PFW integration (3 fields only)
-citation_prep = search_citations_minimal(
-    criteria='groupArtUnitNumber:1759 AND officeActionDate:[2017-10-01 TO *]',
+citation_prep = Citations_search_citations_minimal(
+    criteria='groupArtUnitNumber:1759',
     fields=[
         'patentApplicationNumber',  # For PFW lookup
         'citedDocumentIdentifier',   # Citation reference
@@ -253,7 +253,7 @@ Ultra-minimal (2 fields):
 Preset minimal (8 fields):
   ~400 chars/result × 100 = ~40KB total (95% reduction)
 
-Preset balanced (18 fields):
+Preset balanced (19 fields):
   ~2,000 chars/result × 100 = ~200KB total (80% reduction)
 
 Full with all fields (NEVER):
@@ -285,7 +285,7 @@ Full with all fields (NEVER):
 examiner_last_name = 'SMITH'  # Extract from "SMITH, JANE"
 
 # Ultra-minimal PFW search (3 fields only, 99% token reduction)
-pfw_apps = pfw_search_applications_minimal(
+pfw_apps = PFW_search_applications_minimal(
     query=f'examinerNameText:{examiner_last_name}* AND filingDate:[2015-01-01 TO *]',
     fields=[
         'applicationNumberText',
@@ -306,8 +306,8 @@ print(f"Art unit distribution: {art_unit_dist}")
 # STEP 3: Get citations for top 20 applications (prevent token explosion)
 citation_data = []
 for app in pfw_apps['applications'][:20]:  # Limit to 20 apps
-    citations = search_citations_minimal(
-        criteria=f"patentApplicationNumber:{app['applicationNumberText']} AND officeActionDate:[2017-10-01 TO *]",
+    citations = Citations_search_citations_minimal(
+        criteria=f"patentApplicationNumber:{app['applicationNumberText']}",
         fields=['citationCategoryCode', 'examinerCitedReferenceIndicator', 'citedDocumentIdentifier'],
         rows=50
     )
@@ -389,8 +389,8 @@ print(f"  NPL (Non-patent literature): {category_dist.get('NPL', 0)}")
 
 ```python
 # Get all citations for patent with category breakdown
-citations = search_citations_balanced(
-    criteria='publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]',
+citations = Citations_search_citations_balanced(
+    patent_number='9049188',
     rows=100
 )
 
@@ -441,7 +441,7 @@ print(f"  NPL (Non-patent): {categories.get('NPL', 0)} (Examiner: {examiner_by_c
 
 ```python
 # Map citation landscape for technology center 2100 (AI/software)
-tech_citations = search_citations_minimal(
+tech_citations = Citations_search_citations_minimal(
     criteria='techCenter:2100 AND officeActionDate:[2020-01-01 TO *]',
     fields=['citedDocumentIdentifier', 'citationCategoryCode', 'officeActionDate'],
     rows=200
@@ -466,7 +466,7 @@ art_units = ['2854', '1759', '3600']
 comparison = {}
 
 for art_unit in art_units:
-    citations = search_citations_minimal(
+    citations = Citations_search_citations_minimal(
         criteria=f'groupArtUnitNumber:{art_unit} AND officeActionDate:[2020-01-01 TO *]',
         fields=['citationCategoryCode', 'examinerCitedReferenceIndicator', 'patentApplicationNumber'],
         rows=200
@@ -503,7 +503,7 @@ for art_unit, stats in comparison.items():
 
 ```python
 # Get statistical norms for art unit 2854
-art_unit_stats = get_citation_statistics(
+art_unit_stats = Citations_get_citation_statistics(
     query='groupArtUnitNumber:2854 AND officeActionDate:[2020-01-01 TO *]'
 )
 
@@ -512,7 +512,7 @@ print(f"============================")
 print(f"Total citations: {art_unit_stats.get('numFound', 0)}")
 
 # Get detailed citations for analysis
-citations = search_citations_minimal(
+citations = Citations_search_citations_minimal(
     criteria='groupArtUnitNumber:2854 AND officeActionDate:[2020-01-01 TO *]',
     fields=['patentApplicationNumber', 'citationCategoryCode', 'examinerCitedReferenceIndicator'],
     rows=200
@@ -546,8 +546,8 @@ print(f"  NPL: {category_dist.get('NPL', 0)} ({category_dist.get('NPL', 0)/citat
 
 ```python
 # STEP 1: Citations - Get citation metadata
-citations = search_citations_balanced(
-    criteria='patentApplicationNumber:17896175 AND officeActionDate:[2017-10-01 TO *]',
+citations = Citations_search_citations_balanced(
+    criteria='patentApplicationNumber:17896175',
     rows=20
 )
 
@@ -555,9 +555,9 @@ print(f"Found {citations['response']['numFound']} citations")
 
 # STEP 2: PFW - Get office action documents (where citations appear)
 # Use selective filtering to avoid context explosion
-office_actions = pfw_get_application_documents(
+office_actions = PFW_get_application_documents(
     app_number='17896175',
-    document_code='CTFR',  # Non-final office actions
+    document_code='CTFR',  # Final office actions (use CTNF for non-final)
     limit=10
 )
 
@@ -565,10 +565,10 @@ print(f"Found {office_actions['count']} office action documents")
 
 # STEP 3a: LLM Analysis - Extract text from office action
 if office_actions['documents']:
-    oa_content = pfw_get_document_content(
+    oa_content = PFW_get_document_content_with_ocr(
         app_number='17896175',
         document_identifier=office_actions['documents'][0]['documentIdentifier'],
-        auto_optimize=True  # Free PyPDF2 → Mistral OCR fallback
+        auto_optimize=True  # fast text extraction first, OCR only for scanned pages
     )
 
     print(f"\nOffice Action Analysis:")
@@ -577,7 +577,7 @@ if office_actions['documents']:
     # Analyze extracted text to understand citation context
 
 # STEP 3b: User Download - Provide PDF link
-download_link = pfw_get_document_download(
+download_link = PFW_get_document_download(
     app_number='17896175',
     document_identifier=office_actions['documents'][0]['documentIdentifier']
 )
@@ -608,8 +608,8 @@ ptab_proceedings = ptab_search_proceedings_balanced(
 print(f"Found {ptab_proceedings.get('recordTotalQuantity', 0)} PTAB proceedings")
 
 # STEP 2: Citations - Get prosecution citations
-prosecution_citations = search_citations_balanced(
-    criteria='publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]',
+prosecution_citations = Citations_search_citations_balanced(
+    patent_number='9049188',
     rows=100
 )
 
@@ -636,8 +636,8 @@ portfolio_patents = ['9049188', '7971071', '11788453']  # Example portfolio
 vulnerability_scores = {}
 
 for patent in portfolio_patents:
-    citations = search_citations_minimal(
-        criteria=f'publicationNumber:{patent} AND officeActionDate:[2017-10-01 TO *]',
+    citations = Citations_search_citations_minimal(
+        patent_number=patent,
         fields=['examinerCitedReferenceIndicator', 'citationCategoryCode'],
         rows=100
     )
@@ -684,7 +684,7 @@ for patent, stats in vulnerability_scores.items():
 
 ```python
 # STEP 1: FPD - Get petitions for application
-petitions = fpd_search_petitions_minimal(
+petitions = FPD_Search_petitions_minimal(
     application_number='17896175',
     limit=10
 )
@@ -692,8 +692,8 @@ petitions = fpd_search_petitions_minimal(
 print(f"Found {petitions.get('recordTotalQuantity', 0)} petitions")
 
 # STEP 2: Citations - Get citation patterns
-citations = search_citations_balanced(
-    criteria='patentApplicationNumber:17896175 AND officeActionDate:[2017-10-01 TO *]',
+citations = Citations_search_citations_balanced(
+    criteria='patentApplicationNumber:17896175',
     rows=100
 )
 
@@ -720,14 +720,14 @@ else:
 
 ```python
 # Get art unit citation statistics
-art_unit_citations = search_citations_minimal(
+art_unit_citations = Citations_search_citations_minimal(
     criteria='groupArtUnitNumber:2854 AND officeActionDate:[2020-01-01 TO *]',
     fields=['examinerCitedReferenceIndicator', 'patentApplicationNumber', 'citationCategoryCode'],
     rows=200
 )
 
 # Get FPD petitions for same art unit
-art_unit_petitions = fpd_search_petitions_minimal(
+art_unit_petitions = FPD_Search_petitions_minimal(
     art_unit='2854',
     limit=100
 )
@@ -768,8 +768,8 @@ print(f"Patent: {patent_number}\n")
 # PHASE 1: Citation Intelligence
 print(f"PHASE 1: CITATION INTELLIGENCE")
 print(f"------------------------------")
-citations = search_citations_balanced(
-    criteria=f'publicationNumber:{patent_number} AND officeActionDate:[2017-10-01 TO *]',
+citations = Citations_search_citations_balanced(
+    patent_number=patent_number,
     rows=100
 )
 
@@ -787,7 +787,7 @@ print(f"  NPL: {category_dist.get('NPL', 0)}")
 # PHASE 2: Prosecution History (PFW)
 print(f"\nPHASE 2: PROSECUTION HISTORY (PFW)")
 print(f"----------------------------------")
-pfw_search = pfw_search_applications_minimal(
+pfw_search = PFW_search_applications_minimal(
     query=f'patentNumber:{patent_number}',
     fields=['applicationNumberText', 'examinerNameText', 'groupArtUnitNumber'],
     limit=1
@@ -803,13 +803,13 @@ if pfw_search['applications']:
     print(f"Art Unit: {art_unit}")
 
     # Get key prosecution documents
-    noa_docs = pfw_get_application_documents(
+    noa_docs = PFW_get_application_documents(
         app_number=app_number,
         document_code='NOA',
         limit=5
     )
 
-    rejection_docs = pfw_get_application_documents(
+    rejection_docs = PFW_get_application_documents(
         app_number=app_number,
         document_code='CTFR',
         limit=10
@@ -821,7 +821,7 @@ if pfw_search['applications']:
 # PHASE 3: Petition Analysis (FPD)
 print(f"\nPHASE 3: PETITION HISTORY (FPD)")
 print(f"-------------------------------")
-petitions = fpd_search_petitions_minimal(
+petitions = FPD_Search_petitions_minimal(
     application_number=app_number,
     limit=10
 )
@@ -889,7 +889,7 @@ else:
 **Token Efficiency for Complete Workflow:**
 
 **Without Optimization:**
-- Citations: 100 results × 18 fields = ~200KB
+- Citations: 100 results × 19 fields = ~200KB
 - PFW: 50 docs × full metadata = ~500KB
 - FPD: 10 petitions × full metadata = ~100KB
 - PTAB: 10 proceedings × full metadata = ~200KB
@@ -922,7 +922,7 @@ The **Office Action Citations v2** API provides raw citation data extracted dire
 
 ```python
 # Broad OA citation discovery for an art unit
-oa_results = search_oa_citations_minimal(
+oa_results = Citations_search_oa_citations_minimal(
     criteria='groupArtUnitNumber:2854 AND createDateTime:[2020-01-01T00:00:00Z TO *]',
     rows=50
 )
@@ -944,15 +944,15 @@ A useful pattern is to check whether a reference appearing in OA citations also 
 app_number = '17896175'
 
 # Get OA citations (broader coverage, raw data)
-oa_citations = search_oa_citations_minimal(
+oa_citations = Citations_search_oa_citations_minimal(
     criteria=f'patentApplicationNumber:{app_number}',
     rows=50
 )
 oa_refs = {doc['referenceIdentifier'] for doc in oa_citations['response']['docs']}
 
 # Get enriched citations (AI-extracted passage locations and claim mapping)
-enriched_citations = search_citations_minimal(
-    criteria=f'patentApplicationNumber:{app_number} AND officeActionDate:[2017-10-01 TO *]',
+enriched_citations = Citations_search_citations_minimal(
+    criteria=f'patentApplicationNumber:{app_number}',
     rows=50
 )
 enriched_refs = {doc['citedDocumentIdentifier'] for doc in enriched_citations['response']['docs']}
@@ -969,7 +969,7 @@ print(f"In both: {len(in_both)} refs")
 # Get passage detail for refs that appear in both (highest confidence)
 if in_both:
     ref_id = next(iter(in_both))
-    detail = search_citations_balanced(
+    detail = Citations_search_citations_balanced(
         criteria=f'patentApplicationNumber:{app_number} AND citedDocumentIdentifier:{ref_id}',
         rows=5
     )
@@ -982,7 +982,7 @@ if in_both:
 
 ```python
 # Get full OA citation context for selected application
-oa_balanced = search_oa_citations_balanced(
+oa_balanced = Citations_search_oa_citations_balanced(
     criteria=f'patentApplicationNumber:{app_number}',
     rows=20
 )
@@ -1001,7 +1001,7 @@ for doc in oa_balanced['response']['docs']:
 
 ```python
 # Discover all available OA citation fields
-oa_fields = get_oa_citation_fields()
+oa_fields = Citations_get_oa_citation_fields()
 # Returns all 16 field names with descriptions and query guidance
 ```
 
@@ -1012,9 +1012,11 @@ oa_fields = get_oa_citation_fields()
 These patents/applications can be used for testing citation workflows:
 
 **For Cross-MCP Integration Testing:**
-- **Patent 9049188** (Application 14171705) - Has IPR proceeding IPR2025-00562
-- **Application 18823722** - For citation analysis testing (Examiner: MEKHLIN, ELI S, Art Unit 1759)
-- **Patent 7971071** (Application 11752072) - Inventors: Wilbur J. Walkoe, John Walkoe
+- **Patent 9049188** (Application 14171705, art unit 2438, TC2400) - challenged in IPR2025-00562 (Apple Inc. v. Proxense, LLC; trial instituted 2025-10-02). 3 enriched citations, all from a 2014-09-22 office action.
+- **Application 18823722** (art unit 1759, TC1700) - 18 enriched citations from a 2025-10-22 office action. Examiner MEKHLIN, ELI S.
+- **Patent 7971071** (Application 11752072, art unit 2432, TC2400) - exercises the granted-patent crosswalk against pre-2017 office actions (2008-09-08 and 2009-01-29). 5 enriched citations.
+- **Application 18180061** (art unit 2128, TC2100) - 48 enriched citations, useful for paging and category-distribution examples.
+- **Application 17896175** (art unit 2471, TC2400) - 7 enriched citations across 2024-10-24 and 2025-04-09 office actions.
 
 **For Examiner Analysis Testing (via PFW):**
 - Search for examiner "SMITH" in various art units
@@ -1031,14 +1033,14 @@ These patents/applications can be used for testing citation workflows:
 
 ### Search Tools (Progressive Disclosure)
 
-**search_citations_minimal** - Citation Discovery (90-95% context reduction)
+**Citations_search_citations_minimal** - Citation Discovery (90-95% context reduction)
 - **Purpose**: Fast citation discovery with essential fields
 - **Fields**: 8 preset fields (citedDocumentIdentifier, patentApplicationNumber, publicationNumber, citationCategoryCode, examinerCitedReferenceIndicator, groupArtUnitNumber, techCenter, officeActionDate)
 - **Ultra-Minimal Mode**: Custom `fields` parameter for 99% reduction (2-3 fields only)
 - **Recommended**: 50-100 results for discovery workflow
 - **Date Range**: officeActionDate from 2017-10-01 to 30 days ago
 
-**search_citations_balanced** - Detailed Citation Analysis (70-80% context reduction)
+**Citations_search_citations_balanced** - Detailed Citation Analysis (70-80% context reduction)
 - **Purpose**: Comprehensive citation analysis with full context
 - **Fields**: 18+ fields including all minimal fields plus relatedClaimNumberText, passageLocationText, officeActionCategory, workGroupNumber, and more
 - **Ultra-Minimal Mode**: Custom `fields` parameter for 99% reduction
@@ -1047,43 +1049,43 @@ These patents/applications can be used for testing citation workflows:
 
 ### Detail Tools
 
-**get_citation_details** - Full Citation Record
+**Citations_get_citation_details** - Full Citation Record
 - **Purpose**: Complete citation details with optional citing context
 - **Use Cases**: Specific citation analysis, passage examination, full record retrieval
 - **⚠️ Returns**: Citation METADATA only, NOT actual documents (use PFW for documents)
 
-**get_available_fields** - Field Discovery
+**Citations_get_available_fields** - Field Discovery
 - **Purpose**: Discover searchable field names and query syntax
 - **Use Cases**: Query construction, field validation, syntax learning
 
-**validate_query** - Query Optimization
+**Citations_validate_query** - Query Optimization
 - **Purpose**: Validate Solr/Lucene syntax and get optimization suggestions
 - **Use Cases**: Query debugging, performance optimization, syntax learning
 
-**get_citation_statistics** - Statistical Analysis
+**Citations_get_citation_statistics** - Statistical Analysis
 - **Purpose**: Get database statistics and aggregations
 - **Use Cases**: Volume analysis, trend identification, strategic planning
 
 ### Office Action Citations v2 Tools
 
-**search_oa_citations_minimal** - OA Citation Discovery
+**Citations_search_oa_citations_minimal** - OA Citation Discovery
 - **Purpose**: High-volume Office Action citation discovery from Form 892/1449 data
 - **Fields**: 7 preset fields (`patentApplicationNumber`, `groupArtUnitNumber`, `techCenter`, `referenceIdentifier`, `actionTypeCategory`, `examinerCitedReferenceIndicator`, `createDateTime`)
 - **Recommended**: 50-100 results for discovery/cross-check
 - **API**: Office Action Citations v2 (broader coverage than Enriched Citations v3)
 
-**search_oa_citations_balanced** - OA Citation Analysis
+**Citations_search_oa_citations_balanced** - OA Citation Analysis
 - **Purpose**: Detailed Office Action citation analysis with all available fields
 - **Fields**: All 16 OA citation fields including `legalSectionCode`, `officeActionNumber`, `nplText`, `kindCode`, `countryCode`
 - **Recommended**: 10-20 results for detailed analysis
 
-**get_oa_citation_fields** - OA Citation Field Discovery
+**Citations_get_oa_citation_fields** - OA Citation Field Discovery
 - **Purpose**: Discover OA Citations API field names and query syntax
 - **Use Cases**: Query construction, field validation for OA citation searches
 
 ### Guidance Tool
 
-**citations_get_guidance** - Selective Workflow Guidance
+**Citations_get_guidance** - Selective Workflow Guidance
 - **Purpose**: Context-efficient selective guidance sections
 - **Sections**: overview, workflows_pfw, workflows_ptab, workflows_fpd, workflows_complete, citation_codes, data_coverage, fields, tools, errors, cost
 - **Efficiency**: 1-12KB per section vs 62KB full content (90-95% reduction)
@@ -1092,11 +1094,47 @@ These patents/applications can be used for testing citation workflows:
 
 ## Query Syntax
 
+### Identifiers: use the parameters, not a criteria clause
+
+Neither index can be searched by granted patent number in `criteria`. The
+enriched lane's `publicationNumber` holds the **cited reference's** publication
+number, so `criteria='publicationNumber:9049188'` finds office actions that
+*cited* patent 9,049,188 rather than the citations raised against it; on the OA
+lane `publicationNumber` returns HTTP 400 outright.
+
+All four search tools take a `patent_number` parameter instead, and each reports
+back what it did in `patent_number_resolution`:
+
+```python
+# Granted patent number (7-8 digits) -> crosswalked to its application serial
+# with one USPTO ODP applications-search call, then queried as
+# patentApplicationNumber.
+Citations_search_citations_minimal(patent_number='9049188', rows=50)
+# patent_number_resolution: {input: '9049188', interpreted_as: 'granted_patent',
+#   resolved_application_number: '14171705',
+#   queried_field: 'patentApplicationNumber',
+#   source: 'USPTO ODP applications search'}
+
+# 11-digit pre-grant publication number -> queried as publicationNumber directly
+Citations_search_citations_minimal(patent_number='20060075466', rows=50)
+
+# Application serial -> its own parameter, digits only
+Citations_search_citations_minimal(application_number='14171705', rows=50)
+```
+
+Accepted `patent_number` forms: 7-8 digits for a granted patent or 11 digits for
+a pre-grant publication, with commas, spaces and a leading `US` stripped
+(`9,049,188`, `US 9049188`). A kind-code suffix is refused with a 400 that names
+the accepted forms, so `US9049188B2` is not a valid value. `application_number`
+is digits only: `14/171,705` is not accepted, and passing it builds a query that
+matches nothing rather than raising. Passing `patent_number` and
+`application_number` that name different applications is refused as a conflict.
+
 ### Basic Search Operators
 
 ```python
-# Exact match
-criteria='publicationNumber:9049188'
+# Granted patent number: the parameter, not a criteria clause
+patent_number='9049188'
 
 # Wildcard search
 criteria='patentApplicationNumber:17896*'
@@ -1104,9 +1142,10 @@ criteria='patentApplicationNumber:17896*'
 # Field-specific search
 criteria='groupArtUnitNumber:2854'
 
-# Date range (CRITICAL: 2017-10-01+ only)
-criteria='officeActionDate:[2017-10-01 TO *]'
+# Date range (enriched lane only; the OA lane has no date field)
+criteria='officeActionDate:[2017-10-01 TO *]'   # the documented window, when you want it
 criteria='officeActionDate:[2020-01-01 TO 2024-12-31]'
+criteria='officeActionDate:[2010-01-01 TO 2016-12-31]'  # pre-2017 records do come back
 
 # Boolean operators
 criteria='techCenter:2100 AND citationCategoryCode:NPL'
@@ -1118,10 +1157,10 @@ criteria='citationCategoryCode:X AND examinerCitedReferenceIndicator:true'
 
 ```python
 # Find all citations for a patent
-criteria='publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]'
+patent_number='9049188'
 
 # Find citations for an application
-criteria='patentApplicationNumber:17896175 AND officeActionDate:[2017-10-01 TO *]'
+criteria='patentApplicationNumber:17896175'
 
 # Find examiner citations only
 criteria='examinerCitedReferenceIndicator:true AND groupArtUnitNumber:2854'
@@ -1133,7 +1172,7 @@ criteria='citationCategoryCode:NPL AND techCenter:2100'
 criteria='groupArtUnitNumber:2854 AND officeActionDate:[2020-01-01 TO 2024-12-31]'
 
 # Find X/Y category citations (critical prior art)
-criteria='(citationCategoryCode:X OR citationCategoryCode:Y) AND publicationNumber:9049188'
+criteria='citationCategoryCode:X OR citationCategoryCode:Y', patent_number='9049188'
 ```
 
 ### OA Citations v2 Query Patterns
@@ -1153,25 +1192,42 @@ criteria='techCenter:2100 AND createDateTime:[2020-01-01T00:00:00Z TO *]'
 # OA citations with legal section code (rejection basis)
 criteria='patentApplicationNumber:17896175 AND legalSectionCode:102'
 
-# NPL-only OA citations
-criteria='groupArtUnitNumber:1759 AND nplIndicator:true'
+# Statutory basis (OA-only capability)
+criteria='techCenter:2100 AND legalSectionCode:103'
+
+# Where a patent was cited (use the normalized field)
+criteria='parsedReferenceIdentifier:9280610'
 ```
 
-**Note**: OA Citations uses `referenceIdentifier` (not `citedDocumentIdentifier`) and `createDateTime` (not `officeActionDate`) for date filtering. Use `get_oa_citation_fields` to see all available field names.
+**Note**: the two lanes reject each other's field names with HTTP 400. OA Citations
+uses `referenceIdentifier` / `parsedReferenceIdentifier` (not `citedDocumentIdentifier`),
+and it has **no date field at all**: `officeActionDate` returns HTTP 400 here, and
+`createDateTime` is an ETL load stamp, not the office action date, so it is not a
+prosecution chronology and cannot be used as one. `nplIndicator`, `passageLocationText`,
+`relatedClaimNumberText` and `qualitySummaryText` are enriched-only; `legalSectionCode`,
+`actionTypeCategory` and `paragraphNumber` are OA-only. Use
+`Citations_get_oa_citation_fields` to see all 16 OA field names and
+`Citations_get_available_fields` for the 22 enriched ones.
 
 ### Important Date Coverage Notes
 
-**⚠️ CRITICAL**: Citation API coverage is **October 1, 2017 to 30 days prior** to current date.
+USPTO documents both APIs as office actions mailed **October 1, 2017 through about
+30 days prior** to the current date. In practice both lanes return records older
+than that floor: measured on TC2100, about 44% of enriched records carry an
+`officeActionDate` before 2017-10-01, verified against PFW document dates back to
+2010-2012.
 
-**Always include date filter:**
+**Do not add a blanket date clause.** Add `officeActionDate:[2017-10-01 TO *]` only
+when you deliberately want the documented window; adding it reflexively discards
+records the index actually serves.
 ```python
-criteria='yourQuery AND officeActionDate:[2017-10-01 TO *]'
+criteria='yourQuery'
 ```
 
 **For application-based searches, use filing date 2015+:**
 ```python
 # When searching via PFW for examiner applications
-pfw_search_applications_minimal(
+PFW_search_applications_minimal(
     query='examinerNameText:SMITH* AND filingDate:[2015-01-01 TO *]',
     # 2015 start date accounts for 1-2 year lag to first office action
 )
@@ -1183,16 +1239,16 @@ pfw_search_applications_minimal(
 
 ### Progressive Disclosure Strategy
 
-1. **Discovery (Minimal)**: Use `search_citations_minimal` for initial exploration (50-100 results)
+1. **Discovery (Minimal)**: Use `Citations_search_citations_minimal` for initial exploration (50-100 results)
 2. **Selection**: User/AI reviews results and selects 10-20 citations of interest
-3. **Analysis (Balanced)**: Use `search_citations_balanced` for selected citations (10-20 results)
-4. **Details**: Use `get_citation_details` for 1-5 specific citations (full data)
+3. **Analysis (Balanced)**: Use `Citations_search_citations_balanced` for selected citations (10-20 results)
+4. **Details**: Use `Citations_get_citation_details` for 1-5 specific citations (full data)
 
 **Token Savings**: This progressive approach reduces context by ~93% compared to fetching full data upfront.
 
 ### Best Practices
 
-- **Always filter by date**: Include `officeActionDate:[2017-10-01 TO *]` in queries
+- **Filter by date only when you mean it**: `officeActionDate` exists on the enriched lane and returns pre-2017 records, so add a date clause for a window you actually want, not by reflex; the OA lane has no date field
 - **Start with minimal search** for discovery (50-100 results)
 - **Use ultra-minimal mode** for high-volume extraction (custom `fields` parameter)
 - **Limit result sets**: 20-50 results for balanced searches
@@ -1210,7 +1266,7 @@ Ultra-minimal mode (2 fields):
 Preset minimal (8 fields):
   ~400 chars/result × 100 = ~40KB total (95% reduction)
 
-Preset balanced (18 fields):
+Preset balanced (19 fields):
   ~2,000 chars/result × 100 = ~200KB total (80% reduction)
 
 Full data (NEVER):
@@ -1259,4 +1315,4 @@ Full data (NEVER):
 
 ## Questions?
 
-For more detailed workflow guidance, use the `citations_get_guidance` tool with specific sections like "workflows_pfw", "workflows_ptab", or "workflows_complete" for targeted LLM-friendly guidance for complex multi-step analyses.
+For more detailed workflow guidance, use the `Citations_get_guidance` tool with specific sections like "workflows_pfw", "workflows_ptab", or "workflows_complete" for targeted LLM-friendly guidance for complex multi-step analyses.

@@ -350,3 +350,32 @@ def get_metrics_collector() -> MetricsCollector:
         Current metrics collector instance
     """
     return _metrics_collector
+
+
+#: Selectable collectors for CITATIONS_METRICS_COLLECTOR.
+COLLECTORS: Dict[str, type] = {
+    "none": NoOpMetricsCollector,
+    "logging": LoggingMetricsCollector,
+}
+
+
+def configure_metrics(name: str) -> MetricsCollector:
+    """Install the collector named by configuration.
+
+    `set_metrics_collector` had zero call sites, so the default no-op was the
+    only collector that ever ran and every record_request in the client stack
+    went nowhere (S-17). An unknown name falls back to the no-op rather than
+    failing startup: metrics are not worth refusing to serve over.
+    """
+    collector_cls = COLLECTORS.get(name.strip().lower())
+    if collector_cls is None:
+        logger.warning(
+            "Unknown metrics collector %r; using %s. Valid: %s",
+            name,
+            NoOpMetricsCollector.__name__,
+            ", ".join(sorted(COLLECTORS)),
+        )
+        collector_cls = NoOpMetricsCollector
+    collector = collector_cls()
+    set_metrics_collector(collector)
+    return collector

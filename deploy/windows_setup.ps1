@@ -713,11 +713,11 @@ Write-Host "  [*] Memory cleanup after key entry (prevents leaks)" -ForegroundCo
 Write-Host ""
 
 Write-Host "Available Tools (6):" -ForegroundColor Cyan
-Write-Host "  - ec_search_citations_minimal (ultra-fast discovery)" -ForegroundColor White
-Write-Host "  - ec_search_citations_balanced (detailed analysis)" -ForegroundColor White
+Write-Host "  - Citations_search_citations_minimal (ultra-fast discovery)" -ForegroundColor White
+Write-Host "  - Citations_search_citations_balanced (detailed analysis)" -ForegroundColor White
 Write-Host "  - ec_search_by_patent (patent-specific citations)" -ForegroundColor White
 Write-Host "  - ec_search_by_examiner (examiner citation patterns)" -ForegroundColor White
-Write-Host "  - ec_get_citation_details (full citation details)" -ForegroundColor White
+Write-Host "  - Citations_get_citation_details (full citation details)" -ForegroundColor White
 Write-Host "  - ec_get_tool_reflections (workflow guidance)" -ForegroundColor White
 Write-Host ""
 Write-Host "Key Management:" -ForegroundColor Cyan
@@ -725,5 +725,5 @@ Write-Host "  Manage keys: ./deploy/manage_api_keys.ps1" -ForegroundColor Yellow
 Write-Host "  Test keys:   uv run python tests/test_unified_key_management.py" -ForegroundColor Yellow
 Write-Host "  Cross-MCP:   Keys shared with FPD, PFW, and PTAB MCPs" -ForegroundColor White
 Write-Host ""
-Write-Host "Test with: ec_search_citations_minimal" -ForegroundColor Yellow
+Write-Host "Test with: Citations_search_citations_minimal" -ForegroundColor Yellow
 Write-Host "Learn workflows: ec_get_tool_reflections" -ForegroundColor Yellow

@@ -68,12 +68,14 @@ if "{art_unit}":
     criteria_parts.append(f'groupArtUnitNumber:{art_unit}')
 
 # Add date constraint (CRITICAL: Citations only from 2017-10-01+, but use filing date context)
-criteria_parts.append('officeActionDate:[2017-10-01 TO *]')
+# Append the 2017-10-01 clause only to restrict to the documented window;
+# left off by default. Run the OA lane too and report both volumes:
+# criteria_parts.append('officeActionDate:[2017-10-01 TO *]')
 
 criteria = ' AND '.join(criteria_parts)
 
 # Ultra-minimal discovery (99% token reduction)
-landscape_citations = search_citations_minimal(
+landscape_citations = Citations_search_citations_minimal(
     criteria=criteria,
     fields=['citationCategoryCode', 'groupArtUnitNumber', 'techCenter', 'citedDocumentIdentifier'],
     rows=100
@@ -112,7 +114,7 @@ for art_unit in top_art_units:
     # Search applications in this art unit + technology
     tech_filter = f' AND inventionTitle:"{technology_keywords}"' if "{technology_keywords}" else ''
 
-    pfw_apps = pfw_search_applications_minimal(
+    pfw_apps = PFW_search_applications_minimal(
         query=f'groupArtUnitNumber:{{art_unit}}*{{tech_filter}} AND filingDate:[{date_start} TO *]',
         fields=['applicationNumberText', 'applicationMetaData.inventionTitle', 'applicationMetaData.groupArtUnitNumber'],
         limit=20
@@ -127,7 +129,7 @@ for art_unit in top_art_units:
 
 ```python
 # Get balanced citation data for detailed analysis
-detailed_citations = search_citations_balanced(
+detailed_citations = Citations_search_citations_balanced(
     criteria=criteria,
     rows=50
 )

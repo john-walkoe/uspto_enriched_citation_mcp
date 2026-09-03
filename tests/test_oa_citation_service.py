@@ -7,7 +7,7 @@ Run with: uv run pytest tests/test_oa_citation_service.py -v
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from uspto_enriched_citation_mcp.services.oa_citation_service import (
     OACitationService,
@@ -74,12 +74,17 @@ class TestOACitationServiceSearch:
         assert "response" in result
         assert len(result["response"]["docs"]) == 2
 
-        # Verify each doc has _pfw_link and patentApplicationNumber
-        # Note: client-side filtering only applies when custom_fields is set.
-        # With custom_fields=None, the API returns all fields; we still add _pfw_link.
+        # The OA API ignores `fl`, so the tier's default set is enforced
+        # client-side: fields outside OA_CITATIONS_MINIMAL_FIELDS are dropped
+        # on the default path. Nothing is injected on top — the PFW hand-off
+        # is stated once on the response envelope (tools/oa.py `pfw_link`)
+        # instead of repeating the same sentence on every row.
         for doc in result["response"]["docs"]:
             assert "patentApplicationNumber" in doc
-            assert "_pfw_link" in doc
+            assert "_pfw_link" not in doc
+            assert "parsedReferenceIdentifier" not in doc
+            assert "legalSectionCode" not in doc
+            assert set(doc) <= set(OA_CITATIONS_MINIMAL_FIELDS)
 
     @pytest.mark.asyncio
     async def test_search_minimal_custom_fields(self, service, mock_client):
@@ -116,6 +121,8 @@ class TestOACitationServiceSearch:
             assert "patentApplicationNumber" in doc
             assert "groupArtUnitNumber" in doc
             assert "actionTypeCategory" not in doc  # not in custom_fields
+            # A caller-chosen doc shape keeps the inline annotation.
+            assert "_pfw_link" in doc
 
     @pytest.mark.asyncio
     async def test_search_balanced_fields(self, service, mock_client):
@@ -164,8 +171,11 @@ class TestOACitationServiceSearch:
         assert "createUserIdentifier" in doc
         assert "obsoleteDocumentIdentifier" in doc
 
-        # All fields from the API response are included (filtering only applies
-        # when custom_fields is set, which overrides OA_CITATIONS_ALL_FIELDS)
+        # The tier's own field set is enforced client-side, so a field the API
+        # volunteers outside OA_CITATIONS_ALL_FIELDS is dropped, and the
+        # default path injects nothing on top of it.
+        assert "extraField" not in doc
+        assert "_pfw_link" not in doc
 
     @pytest.mark.asyncio
     async def test_search_balanced_custom_fields(self, service, mock_client):
@@ -212,7 +222,10 @@ class TestOACitationServicePfwLink:
 
     @pytest.mark.asyncio
     async def test_pfw_link_injection(self, service, mock_client):
-        """Test 4: Each doc with patentApplicationNumber gets _pfw_link injected."""
+        """Test 4: On a CUSTOM field list, each doc with a
+        patentApplicationNumber gets _pfw_link injected. The default tiers
+        state the hand-off once on the envelope instead (see
+        TestOACitationServicePfwLink.test_default_path_has_no_per_row_link)."""
         mock_client.search_records.return_value = {
             "response": {
                 "numFound": 3,
@@ -233,14 +246,18 @@ class TestOACitationServicePfwLink:
             }
         }
 
-        result = await service.search_minimal(criteria="techCenter:2100", rows=50)
+        result = await service.search_minimal(
+            criteria="techCenter:2100",
+            rows=50,
+            custom_fields=["patentApplicationNumber", "groupArtUnitNumber"],
+        )
 
         docs = result["response"]["docs"]
 
         # First doc has app number → _pfw_link
         assert "_pfw_link" in docs[0]
         assert "17896175" in docs[0]["_pfw_link"]
-        assert "pfw_get_application_documents" in docs[0]["_pfw_link"]
+        assert "PFW_get_application_documents" in docs[0]["_pfw_link"]
 
         # Second doc has app number → _pfw_link
         assert "_pfw_link" in docs[1]
@@ -264,14 +281,18 @@ class TestOACitationServicePfwLink:
             }
         }
 
-        result = await service.search_minimal(criteria="techCenter:2100")
+        result = await service.search_minimal(
+            criteria="techCenter:2100",
+            custom_fields=["patentApplicationNumber", "groupArtUnitNumber"],
+        )
 
         link = result["response"]["docs"][0]["_pfw_link"]
-        assert link == "Use PFW MCP: pfw_get_application_documents(app_number='17901234')"
+        assert link == "Use PFW MCP: PFW_get_application_documents(app_number='17901234')"
 
     @pytest.mark.asyncio
     async def test_pfw_link_balanced(self, service, mock_client):
-        """Test 4c: _pfw_link is also injected in balanced search."""
+        """Test 4c: the custom-fields path injects _pfw_link on the balanced
+        tier too."""
         mock_client.search_records.return_value = {
             "response": {
                 "numFound": 1,
@@ -285,10 +306,33 @@ class TestOACitationServicePfwLink:
             }
         }
 
-        result = await service.search_balanced(criteria="techCenter:2100")
+        result = await service.search_balanced(
+            criteria="techCenter:2100",
+            custom_fields=["patentApplicationNumber", "groupArtUnitNumber"],
+        )
 
         assert "_pfw_link" in result["response"]["docs"][0]
         assert "17896175" in result["response"]["docs"][0]["_pfw_link"]
+
+    @pytest.mark.asyncio
+    async def test_default_path_has_no_per_row_link(self, service, mock_client):
+        """The dedupe: the default tiers repeat nothing per row."""
+        mock_client.search_records.return_value = {
+            "response": {
+                "numFound": 2,
+                "docs": [
+                    {"patentApplicationNumber": "17896175", "techCenter": "2100"},
+                    {"patentApplicationNumber": "17896176", "techCenter": "2100"},
+                ]
+            }
+        }
+
+        minimal = await service.search_minimal(criteria="techCenter:2100")
+        balanced = await service.search_balanced(criteria="techCenter:2100")
+
+        for result in (minimal, balanced):
+            for doc in result["response"]["docs"]:
+                assert "_pfw_link" not in doc
 
 
 class TestOACitationServiceGetFields:

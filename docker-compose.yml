@@ -2,7 +2,9 @@ services:
   uspto-enriched-citations-mcp:
     build: .
     ports:
-      - "8000:8000"
+      # Loopback only: the reverse proxy is the intended front door, and
+      # "8000:8000" published the MCP surface on every host interface.
+      - "127.0.0.1:8000:8000"
     environment:
       # Required
       - USPTO_API_KEY=${USPTO_API_KEY}
@@ -15,6 +17,20 @@ services:
       # Transport is set to http in the Dockerfile; override here if needed
       - FASTMCP_TRANSPORT=${FASTMCP_TRANSPORT:-http}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Set explicitly here too so the bind mounts below are the paths used.
+      - LOG_DIR=${LOG_DIR:-/app/logs}
+      - CITATIONS_AUTH_DB_PATH=${CITATIONS_AUTH_DB_PATH:-/app/data/mcp_auth.db}
+    volumes:
+      # The security log and, in OAuth mode, the whole user table and every
+      # live refresh token used to sit on the container's ephemeral writable
+      # layer: a --force-recreate signed every user out and discarded the
+      # audit trail the 90-day retention claims to keep (S-40).
+      - ./logs:/app/logs
+      - ./data:/app/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]

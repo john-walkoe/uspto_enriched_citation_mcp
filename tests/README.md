@@ -25,15 +25,15 @@ API's constraints, you can use these as a reliable baseline.
 The server provides these tools for citation research:
 
 ### Search Tools (Progressive Disclosure)
-- **`search_citations_minimal`** - Minimal fields (8 fields, 90-95% context reduction)
-- **`search_citations_balanced`** - Balanced fields (18 fields, 80-85% context reduction)
+- **`Citations_search_citations_minimal`** - Minimal fields (8 fields, 90-95% context reduction)
+- **`Citations_search_citations_balanced`** - Balanced fields (19 fields, 80-85% context reduction)
 - **`search_citations`** - Full search with custom field selection (ultra-minimal mode: 99% reduction)
 
 ### Analysis Tools
-- **`get_citation_details`** - Get complete citation record with all available fields
-- **`get_citation_statistics`** - Aggregate statistics for strategic intelligence
-- **`get_available_fields`** - List all 22 searchable fields with descriptions
-- **`validate_query`** - Lucene syntax validation and optimization suggestions
+- **`Citations_get_citation_details`** - Get complete citation record with all available fields
+- **`Citations_get_citation_statistics`** - Aggregate statistics for strategic intelligence
+- **`Citations_get_available_fields`** - List all 22 searchable fields with descriptions
+- **`Citations_validate_query`** - Lucene syntax validation and optimization suggestions
 
 ## Essential Tests
 
@@ -93,7 +93,7 @@ The server provides these tools for citation research:
   - Failure recovery mechanisms
 
 ### Statistics Tests
-- **`test_statistics.py`** - Citation statistics and aggregations
+- **`test_statistics_tool.py`** - Citation statistics and aggregations (mocked runtime, runs by default)
   - Basic statistics retrieval
   - Category distribution analysis
   - Examiner vs applicant citation stats
@@ -142,7 +142,7 @@ export USPTO_API_KEY=your_api_key_here
 
 ### Option 3: Testing Without Real API Key
 
-If you don't have a USPTO API key yet, unit tests (`test_basic.py`, `test_field_configuration.py`, `test_convenience_parameters.py`, `test_security.py`, `test_resilience.py`) will use a mock key for testing code structure. However, integration tests (`test_integration.py`, `test_statistics.py`) require a real key and will be skipped without one.
+If you don't have a USPTO API key yet, unit tests (`test_basic.py`, `test_field_configuration.py`, `test_convenience_parameters.py`, `test_security.py`, `test_resilience.py`) will use a mock key for testing code structure. However, integration tests (`test_integration.py`) require a real key and will be skipped without one.
 
 ## Running Tests
 
@@ -158,7 +158,7 @@ uv run pytest tests/test_resilience.py -v
 
 # Integration tests (requires API key, slower)
 uv run pytest tests/test_integration.py -v
-uv run pytest tests/test_statistics.py -v
+uv run pytest tests/test_statistics_tool.py -v
 
 # Cross-MCP integration tests
 uv run pytest tests/test_unified_key_management.py -v
@@ -338,34 +338,13 @@ test_resilience.py::TestCaching::test_search_cache PASSED
 ======================== 30 passed in 2.5s ========================
 ```
 
-### test_statistics.py
+### test_statistics_tool.py
 ```
-test_statistics.py::TestCitationStatistics::test_basic_statistics_retrieval PASSED
-test_statistics.py::TestCitationStatistics::test_statistics_with_empty_criteria PASSED
-test_statistics.py::TestCitationStatistics::test_category_distribution_stats PASSED
-test_statistics.py::TestCitationStatistics::test_examiner_vs_applicant_stats PASSED
-test_statistics.py::TestCitationStatistics::test_multiple_stats_fields PASSED
-test_statistics.py::TestCitationStatistics::test_date_range_statistics PASSED
-test_statistics.py::TestCitationStatistics::test_empty_result_statistics PASSED
-test_statistics.py::TestCitationStatistics::test_invalid_stats_field PASSED
-test_statistics.py::TestStatisticsServiceLayer::test_service_get_statistics PASSED
-test_statistics.py::TestStatisticsServiceLayer::test_statistics_with_wildcard PASSED
-test_statistics.py::TestStatisticsResponseFormat::test_response_has_required_fields PASSED
-test_statistics.py::TestStatisticsResponseFormat::test_error_response_format PASSED
-test_statistics.py::TestStatisticsResponseFormat::test_count_information PASSED
-test_statistics.py::TestStatisticsPerformance::test_large_dataset_statistics PASSED
-test_statistics.py::TestStatisticsPerformance::test_multiple_aggregations_performance PASSED
-test_statistics.py::TestStatisticsEdgeCases::test_no_results_statistics PASSED
-test_statistics.py::TestStatisticsEdgeCases::test_empty_stats_fields PASSED
-test_statistics.py::TestStatisticsEdgeCases::test_complex_criteria_statistics PASSED
-test_statistics.py::TestStatisticsEdgeCases::test_statistics_field_validation PASSED
-test_statistics.py::TestStatisticsIntegration::test_statistics_with_field_manager PASSED
-test_statistics.py::TestStatisticsIntegration::test_statistics_respects_api_constraints PASSED
-test_statistics.py::TestStatisticsUseCase::test_art_unit_analysis PASSED
-test_statistics.py::TestStatisticsUseCase::test_tech_center_comparison PASSED
-test_statistics.py::TestStatisticsUseCase::test_temporal_analysis PASSED
+test_statistics_tool.py::test_breakdowns_carry_the_counts_from_the_fan_out PASSED
+test_statistics_tool.py::test_fan_out_does_not_double_charge_the_quota PASSED
+test_statistics_tool.py::test_partial_failure_is_reported_not_hidden PASSED
 
-======================== 24 passed in 12.0s =======================
+======================== 9 passed in 0.2s ========================
 ```
 
 ### test_integration.py
@@ -465,7 +444,7 @@ Current Mistral Key: [INFO]  Not set (optional)
 
 ### Progressive Disclosure Pattern
 - **Minimal search** (8 fields): Discovery mode, 90-95% context reduction
-- **Balanced search** (18 fields): Analysis mode, 80-85% context reduction
+- **Balanced search** (19 fields): Analysis mode, 80-85% context reduction
 - **Ultra-minimal custom** (2-3 fields): Maximum efficiency, 99% reduction
 - **Complete details**: Full record with all 22 available fields
 
@@ -671,7 +650,7 @@ When adding new tests:
 4. **Convenience parameter tests** go in `test_convenience_parameters.py`
 5. **Security tests** go in `test_security.py` (security logging, injection detection)
 6. **Resilience tests** go in `test_resilience.py` (rate limiting, circuit breaker, retry)
-7. **Statistics tests** go in `test_statistics.py` (aggregations, real API)
+7. **Statistics tests** go in `test_statistics_tool.py` (aggregations, mocked runtime)
 8. **Cross-MCP tests** go in `test_unified_key_management.py`
 
 Follow the existing patterns:

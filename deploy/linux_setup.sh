@@ -329,9 +329,9 @@ echo "  uv run uspto-enriched-citation-mcp --help"
 
 echo ""
 log_info "Test with Claude Code:"
-echo "  Ask Claude: 'Use search_citations_minimal to find citations for art unit 2854'"
-echo "  Ask Claude: 'Use get_available_fields to explore citation data fields'"
-echo "  Ask Claude: 'Use validate_query to check Lucene syntax for patent searches'"
+echo "  Ask Claude: 'Use Citations_search_citations_minimal to find citations for art unit 2854'"
+echo "  Ask Claude: 'Use Citations_get_available_fields to explore citation data fields'"
+echo "  Ask Claude: 'Use Citations_validate_query to check Lucene syntax for patent searches'"
 
 echo ""
 log_info "Verify MCP is running:"

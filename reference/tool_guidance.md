@@ -11,8 +11,9 @@
 ### 🎯 Quick Reference Chart - What section for your question?
 
 - 🔍 **"Find citations by examiner/application/tech"** → `fields`
+- 🔀 **"Which lane — OA citations or enriched citations?"** → `oa_citations`
 - 📄 **"Understand citation categories (X/Y/A)"** → `citation_codes`
-- 🔖 **"Citation data coverage (2017+)"** → `data_coverage`
+- 🔖 **"Citation date coverage per lane"** → `data_coverage`
 - 🤝 **"PFW workflow for office action documents"** → `workflows_pfw`
 - 🚩 **"PTAB citation correlation"** → `workflows_ptab`
 - 📊 **"FPD petition citation patterns"** → `workflows_fpd`
@@ -21,14 +22,36 @@
 - ❌ **"Search errors or query issues"** → `errors`
 - 💰 **"Reduce API costs and optimize"** → `cost`
 
+### Two Citation Surfaces — Read This First
+
+This MCP serves **two different USPTO indexes**. They are not tiers of the same
+data and they do not share a field vocabulary:
+
+| | **OA Citations (v2)** | **Enriched Citations (v3)** |
+|---|---|---|
+| Tools | `Citations_search_oa_citations_minimal` / `_balanced`, `Citations_get_oa_citation_fields` | `Citations_search_citations_minimal` / `_balanced`, `Citations_get_citation_details`, `Citations_get_citation_statistics`, `Citations_get_available_fields` |
+| What it is | Raw citation lists transcribed from Form PTO-892 (examiner) and PTO-1449 (applicant IDS) | AI-extracted analysis of a subset of office actions |
+| Documented window | Office actions 2017-10-01 → T-30d | Office actions 2017-10-01 → T-30d (same) |
+| Adds | Statutory basis (`legalSectionCode` 102/103/112), rejection posture (`actionTypeCategory`), paragraph number | Passage locations, claim mapping, quality score, NPL flag, `officeActionDate` |
+| Date filtering | **None** — no office-action date field exists | Full `officeActionDate` range queries |
+
+**Routing rule: TRY BOTH.** Neither lane is a superset of the other — OA is
+usually broader in bulk, but on a given application the enriched lane can
+return more. For any completeness-sensitive question, query both and union.
+Go single-lane only for a lane-exclusive capability: passage locations and
+claim mapping → enriched; `legalSectionCode` statutory filter → OA.
+Both lanes have also been observed serving records older than the documented
+window. Full detail and measured numbers: `oa_citations` section.
+
 ### Available Sections:
 - **overview**: Available sections and tool summary (this section)
+- **oa_citations**: OA (v2) vs enriched (v3) routing rule, measured coverage, field matrix
 - **workflows_pfw**: Citation + PFW integration workflows
 - **workflows_ptab**: Citation + PTAB integration workflows
 - **workflows_fpd**: Citation + FPD integration workflows
 - **workflows_complete**: Four-MCP complete lifecycle analysis
 - **citation_codes**: X/Y/A category decoder and NPL query guidance (use nplIndicator:true)
-- **data_coverage**: 2017+ eligibility and date handling
+- **data_coverage**: per-lane date coverage and date handling
 - **fields**: Field selection strategies and Solr/Lucene syntax
 - **tools**: Tool-specific guidance and parameters
 - **errors**: Common error patterns and troubleshooting
@@ -46,60 +69,112 @@
 
 ## Core Tools Overview
 
-### Search Tools (Progressive Disclosure)
+### Tool Inventory (10 tools, with defer_loading status)
 
-**search_citations_minimal** - Citation Discovery
+Always loaded (defer_loading false): `Citations_get_guidance`,
+`Citations_search_citations_minimal`, `Citations_search_oa_citations_minimal`.
+Loaded on demand via tool search (defer_loading true):
+`Citations_search_citations_balanced`, `Citations_get_citation_details`,
+`Citations_get_citation_statistics`, `Citations_get_available_fields`,
+`Citations_validate_query`, `Citations_search_oa_citations_balanced`,
+`Citations_get_oa_citation_fields`. (An 11th tool, `citations_manage_users`,
+registers only on OAuth deployments with user management enabled.)
+Note: defer_loading is advisory metadata; each client decides which tools it
+surfaces eagerly.
+
+**Citations_get_guidance** - This Guidance Document
+- **Purpose**: Sectioned workflow guidance (this document); pass `section` for one topic
+- **Use Cases**: Workflow routing, coverage notes, cross-MCP integration patterns
+
+### Enriched Citations Search Tools (v3, Progressive Disclosure)
+
+**Citations_search_citations_minimal** - Citation Discovery
 - **Purpose**: Fast citation discovery with essential fields (90-95% context reduction)
 - **Use Cases**: Initial research, volume citation analysis, pattern identification
 - **Fields**: Core identifiers, citation categories, art units, temporal data (8 fields)
 - **Ultra-Minimal Mode**: Custom fields parameter for 99% reduction (2-3 fields only)
 - **Recommended**: 50-100 results for discovery workflow
-- **Date Range**: officeActionDate from 2017-10-01 to 30 days ago (API availability)
+- **Date Range**: documented 2017-10-01+; older records observed in practice (see `data_coverage`)
 
-**search_citations_balanced** - Detailed Citation Analysis
+**Citations_search_citations_balanced** - Detailed Citation Analysis
 - **Purpose**: Comprehensive citation analysis with full context (70-80% context reduction)
 - **Use Cases**: Detailed analysis, cross-MCP integration, legal research
 - **Fields**: All citation metadata, classifications, cross-reference data (18 fields)
 - **Ultra-Minimal Mode**: Custom fields parameter for 99% reduction (2-3 fields only)
 - **Recommended**: 20-50 results for analysis workflow
-- **Date Range**: officeActionDate from 2017-10-01 to 30 days ago (API availability)
+- **Convenience params**: `patent_number` (granted patent number → crosswalked to
+  `patentApplicationNumber`; 11-digit publication number → `publicationNumber`),
+  `application_number`, `art_unit`, `tech_center`, `category_code`, `examiner_cited`,
+  `date_start`/`date_end`
+
+### OA Citations Search Tools (v2, Raw 892/1449 Lists)
+
+**Citations_search_oa_citations_minimal** - Raw Citation Discovery
+- **Purpose**: Complete cited-art inventory from the raw examiner/applicant forms
+- **Use Cases**: Coverage sweeps, statutory-basis analysis, applicant-IDS inventory
+- **Fields**: 7 key fields — application, art unit, tech center, `referenceIdentifier`,
+  `actionTypeCategory`, `examinerCitedReferenceIndicator`, `createDateTime`
+- **Convenience params**: `application_number`, `patent_number` (granted patent number,
+  crosswalked to the application serial), `art_unit`, `tech_center`, `examiner_cited`
+- **⚠️ No date filtering** — the index has no office-action date field
+
+**Citations_search_oa_citations_balanced** - Full OA Detail
+- **Purpose**: All 16 OA fields for selected applications
+- **Adds over minimal**: `legalSectionCode` (102/103/112), `paragraphNumber`,
+  `parsedReferenceIdentifier`, `applicantCitedExaminerReferenceIndicator`,
+  `officeActionCitationReferenceIndicator`, `workGroup`
+
+**Citations_get_oa_citation_fields** - OA Field Discovery
+- **Purpose**: The 16 searchable OA v2 field names (a *different* vocabulary
+  from enriched — always check before writing OA criteria)
 
 ### Detail Tools
 
-**get_citation_details** - Full Citation Record
+**Citations_get_citation_details** - Full Citation Record
 - **Purpose**: Complete citation details with optional citing context
 - **Use Cases**: Specific citation analysis, passage examination, full record retrieval
 - **Features**: Citation passage analysis, decision context, outcome verification
 - **⚠️ IMPORTANT**: Returns citation METADATA only, NOT actual documents
 
-**get_available_fields** - Field Discovery
+**Citations_get_available_fields** - Field Discovery
 - **Purpose**: Discover searchable field names and query syntax
 - **Use Cases**: Query construction, field validation, syntax learning
 
-**validate_query** - Query Optimization
+**Citations_validate_query** - Query Optimization
 - **Purpose**: Validate Solr/Lucene syntax and get optimization suggestions
 - **Use Cases**: Query debugging, performance optimization, syntax learning
 
-**get_citation_statistics** - Statistical Analysis
+**Citations_get_citation_statistics** - Statistical Analysis
 - **Purpose**: Get database statistics and aggregations
 - **Use Cases**: Volume analysis, trend identification, strategic planning
 
 ### Progressive Disclosure Strategy
 
-**Stage 1: Discovery (Minimal Search)**
-- Use `search_citations_minimal` for broad exploration
-- 8 preset fields (~400 chars/result) OR custom fields (~100 chars/result)
+**Stage 0: Decide how many lanes (do this first)**
+- **Default: BOTH.** Any completeness-sensitive question — full cited-art
+  inventory, litigation sweeps, art-unit or examiner behavior, "was X ever
+  cited" — runs both lanes and unions the results. Neither is a superset.
+- Single-lane shortcut only for a lane-exclusive need: *"why was it cited /
+  which claim / what passage"* or a date-windowed query → **enriched**;
+  *"which references drew a §103"* → **OA** (`legalSectionCode`).
+- Report both counts whenever you ran both, and say which lane gave what.
+  See `oa_citations`.
+
+**Stage 1: Discovery (Minimal Search) — run both**
+- OA lane: `Citations_search_oa_citations_minimal` — raw 892/1449 inventory
+- Enriched lane: `Citations_search_citations_minimal` — AI-extracted records
+- 7-8 preset fields (~400 chars/result) OR custom fields (~100 chars/result)
 - Present top results to user for selection
 
 **Stage 2: Analysis (Balanced Search)**
-- Use `search_citations_balanced` for selected citations
-- 18 comprehensive fields (~2000 chars/result)
-- Detailed analysis for critical citations
+- OA lane: `Citations_search_oa_citations_balanced` — statutory basis, paragraph number
+- Enriched lane: `Citations_search_citations_balanced` — passages, claim mapping
+- 16-18 comprehensive fields (~2000 chars/result)
 
-**Stage 3: Details (Citation Details)**
-- Use `get_citation_details` for specific citations
-- Complete record with citing passage context
-- Full metadata for legal analysis
+**Stage 3: Details (Citation Details — enriched only)**
+- Use `Citations_get_citation_details` for specific citations
+- Complete record with passage-location context
+- Pass the enriched record's `id` field (there is no `citationIdentifier` field)
 
 ---
 
@@ -107,42 +182,56 @@
 
 ## Citation + PFW Integration Workflows
 
-### 2-STEP PFW MCP WORKFLOW FOR DOCUMENTS
+### GETTING OFFICE ACTION TEXT FOR A CITATION
 
-**⚠️ CRITICAL**: Citation API returns METADATA only, NOT actual documents.
-After retrieving citation details, use PFW MCP to get office action documents.
+**⚠️ CRITICAL**: Both citation lanes return METADATA only, NOT actual documents.
+Use the PFW MCP for the office action itself.
 
-**Step 1: Get Document List (Always Required)**
+**Preferred path — direct OA tools (one call, no OCR):**
+
 ```python
-# Use selective filtering to avoid context explosion
-docs = pfw_get_application_documents(
-    app_number='17896175',  # from citation['patentApplicationNumber']
-    document_code='CTNF',   # See decoder below
+# "What did the examiner say?" / "Why was this cited?"
+oa = PFW_get_oa_text(app_number='17896175')   # latest_only=True for just the most recent
+
+# "Which rejections did this reference carry?" — structured 102/103/112 indicators
+rej = PFW_get_oa_rejections(app_number='17896175')
+```
+
+`PFW_get_oa_text` and `PFW_get_oa_rejections` serve office-action text directly
+from the application number. **Do not route through
+`PFW_get_application_documents` + OCR for office actions** — that is the old
+document-bag round trip and it costs an extra call plus an OCR pass for the same
+text.
+
+Pair `PFW_get_oa_rejections` with the OA lane's `legalSectionCode` when you need
+to confirm which statutory basis a specific cited reference supported.
+
+**Fallback path — document bag (for documents the OA tools do not serve):**
+
+```python
+# Notices of Allowance, IDS forms, 892 forms, and any OA PFW_get_oa_text misses
+docs = PFW_get_application_documents(
+    app_number='17896175',
+    document_code='NOA',    # See decoder below
     limit=20
+)
+content = PFW_get_document_content_with_ocr(
+    app_number='17896175',
+    document_identifier=docs['documents'][0]['documentIdentifier']
 )
 ```
 
 **Document Code Decoder (Citation-Related Documents):**
-- **CTNF**: Non-Final Office Action (where citation appears — start here)
-- **CTFR**: Final Office Action Rejection
-- **NOA**: Notice of Allowance (citation overcame or not used)
-- **892**: Examiner's Search Strategy & Citations List
-- **IDS**: Applicant's Information Disclosure Statement
+- **CTNF**: Non-Final Office Action — prefer `PFW_get_oa_text`
+- **CTFR**: Final Office Action Rejection — prefer `PFW_get_oa_text`
+- **NOA**: Notice of Allowance (document bag only — OA tools do not serve NOAs)
+- **892**: Examiner's Search Strategy & Citations List (the OA lane's source form)
+- **IDS**: Applicant's Information Disclosure Statement (the 1449 source form)
 
-**Step 2a: LLM Analysis (Extract Text)**
-```python
-# When user asks: "What did the examiner say?" or "Why was this cited?"
-content = pfw_get_document_content(
-    app_number='17896175',
-    document_identifier=docs['documents'][0]['documentIdentifier']
-)
-# Analyze extracted text and answer user's question
-```
-
-**Step 2b: User Download (Provide PDF Link)**
+**User Download (Provide PDF Link)**
 ```python
 # When user says: "Get me the office action" or "I want to review it"
-download = pfw_get_document_download(
+download = PFW_get_document_download(
     app_number='17896175',
     document_identifier=docs['documents'][0]['documentIdentifier']
 )
@@ -160,7 +249,7 @@ Use PFW → Citations workflow for examiner analysis.
 # STEP 1: PFW - Get examiner's applications (wildcard-first strategy)
 last_name = 'SMITH'  # Extract from "SMITH, JANE"
 
-pfw_apps = pfw_search_applications_minimal(
+pfw_apps = PFW_search_applications_minimal(
     query=f'examinerNameText:{last_name}* AND filingDate:[2015-01-01 TO *]',
     fields=[
         'applicationNumberText',
@@ -179,10 +268,12 @@ art_unit_dist = Counter([
 ])
 
 # STEP 3: Get citations for top 20 applications only
+# Lane choice: enriched for category mix + passage depth and any pre-2017 work;
+# OA for the complete inventory and statutory basis (2017-10-01+ only).
 citation_data = []
 for app in pfw_apps['applications'][:20]:  # Limit to prevent token explosion
-    citations = search_citations_minimal(
-        criteria=f"patentApplicationNumber:{app['applicationNumberText']} AND officeActionDate:[2017-10-01 TO *]",
+    citations = Citations_search_citations_minimal(
+        criteria=f"patentApplicationNumber:{app['applicationNumberText']}",
         fields=['citationCategoryCode', 'examinerCitedReferenceIndicator', 'citedDocumentIdentifier'],
         rows=50
     )
@@ -191,6 +282,14 @@ for app in pfw_apps['applications'][:20]:  # Limit to prevent token explosion
         'citation_count': citations['response']['numFound'],
         'citations': citations['response']['docs']
     })
+
+# STEP 3b (optional): statutory-basis profile — OA lane only
+for app in pfw_apps['applications'][:20]:
+    oa = Citations_search_oa_citations_minimal(
+        application_number=app['applicationNumberText'],
+        fields=['legalSectionCode', 'actionTypeCategory', 'parsedReferenceIdentifier'],
+        rows=50
+    )   # note: NO officeActionDate clause — that field does not exist in OA v2
 ```
 
 **Why This Works:**
@@ -213,7 +312,7 @@ Office action documents (CTFR, NOA, 892) contain the citation context and examin
 
 ```python
 # Use PFW's XML tool with token optimization
-xml_data = pfw_get_patent_or_application_xml(
+xml_data = PFW_get_patent_or_application_xml(
     application_number='17896175',
     include_fields=['abstract', 'claims'],  # Select only needed fields
     include_raw_xml=False  # ⭐ CRITICAL: 91-99% token reduction!
@@ -226,10 +325,10 @@ xml_data = pfw_get_patent_or_application_xml(
 
 | Use Case | Recommended Tool | Reason |
 |----------|------------------|--------|
-| Citation context & examiner reasoning | **pfw_get_application_documents** + **pfw_get_document_content** | Office action documents contain citations |
-| Claim text for prior art comparison | **pfw_get_patent_or_application_xml** (include_fields=['claims'], include_raw_xml=False) | Structured claim data from patent XML |
-| Patent abstract/description | **pfw_get_patent_or_application_xml** (include_fields=['abstract', 'description'], include_raw_xml=False) | Structured patent content |
-| Examiner's citation decisions | **pfw_get_application_documents** (document_code='892') | 892 document lists examiner citations |
+| Citation context & examiner reasoning | **PFW_get_oa_text** (or **PFW_get_oa_rejections** for rejection types) | Direct office-action text — no document-bag + OCR round trip |
+| Claim text for prior art comparison | **PFW_get_patent_or_application_xml** (include_fields=['claims'], include_raw_xml=False) | Structured claim data from patent XML |
+| Patent abstract/description | **PFW_get_patent_or_application_xml** (include_fields=['abstract', 'description'], include_raw_xml=False) | Structured patent content |
+| Examiner's citation decisions | **PFW_get_application_documents** (document_code='892') | 892 document lists examiner citations |
 
 **Key Points:**
 - Always use `include_raw_xml=False` (saves ~45KB per request, 91% reduction)
@@ -251,25 +350,28 @@ xml_data = pfw_get_patent_or_application_xml(
 ```python
 # STEP 1: PTAB - Get IPR proceedings for patent (ultra-minimal mode for 99% reduction)
 # Note: PTAB API now has separate search tools for trials, appeals, and interferences
-# - Trials: search_trials_minimal/balanced/complete (IPR/PGR/CBM proceedings)
-# - Appeals: search_appeals_minimal/balanced/complete (Ex Parte/Interference Appeals)
-# - Interferences: search_interferences_minimal/balanced/complete (Derivations/Interferences)
-# - Documents: ptab_get_documents(identifier, identifier_type) for all proceeding types
+# - Trials: PTAB_search_trials_minimal/balanced/complete (IPR/PGR/CBM proceedings)
+# - Appeals: PTAB_search_appeals_minimal/balanced/complete (Ex Parte/Interference Appeals)
+# - Interferences: PTAB_search_interferences_minimal/balanced/complete (Derivations/Interferences)
+# - Documents: PTAB_get_documents(identifier, identifier_type) for all proceeding types
 #
 # Token Optimization: All search tools support `fields` parameter for ultra-minimal queries:
 # - Ultra-minimal (2-3 fields): 99% reduction - Use for identifier correlation
 # - Preset minimal (10-15 fields): 68% reduction - Use for discovery/presentation
 # - Preset balanced (30-50 fields): 13.5% reduction - Use for detailed analysis
 
-ptab_proceedings = search_trials_minimal(
+ptab_proceedings = PTAB_search_trials_minimal(
     patent_number='9049188',
     fields=['trialNumber', 'trialMetaData.trialStatusCategory', 'patentOwnerData.patentNumber'],
     limit=20
 )
 
 # STEP 2: Citation - Get prosecution citations
-citations = search_citations_balanced(
-    criteria=f'publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]',
+# patent_number takes the granted number directly and crosswalks it to the
+# application serial; publicationNumber holds pre-grant publications and would
+# not match 9049188.
+citations = Citations_search_citations_balanced(
+    patent_number='9049188',
     rows=100
 )
 
@@ -295,8 +397,8 @@ new_prior_art = ptab_prior_art - prosecution_citations
 ```python
 # Get citation patterns for portfolio patents
 for patent in portfolio:
-    citations = search_citations_minimal(
-        criteria=f'publicationNumber:{patent} AND officeActionDate:[2017-10-01 TO *]',
+    citations = Citations_search_citations_minimal(
+        patent_number=patent,   # granted number: crosswalked to the application
         fields=['examinerCitedReferenceIndicator', 'citationCategoryCode'],
         rows=100
     )
@@ -332,13 +434,13 @@ for patent in portfolio:
 **Workflow:**
 ```python
 # STEP 1: FPD - Get petitions for application
-petitions = fpd_search_petitions_minimal(
+petitions = FPD_Search_petitions_minimal(
     application_number='17896175',
     limit=10
 )
 
 # STEP 2: Citation - Get citation patterns
-citations = search_citations_balanced(
+citations = Citations_search_citations_balanced(
     criteria=f'patentApplicationNumber:17896175 AND officeActionDate:[2017-10-01 TO *]',
     rows=100
 )
@@ -361,14 +463,14 @@ if petitions['response']['numFound'] > 0 and citations['response']['numFound'] <
 **Workflow:**
 ```python
 # Get art unit citation statistics
-citations = search_citations_minimal(
+citations = Citations_search_citations_minimal(
     criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]',
     fields=['examinerCitedReferenceIndicator', 'patentApplicationNumber'],
     rows=200
 )
 
 # Get FPD petitions for same art unit
-petitions = fpd_search_petitions_minimal(
+petitions = FPD_Search_petitions_minimal(
     art_unit='2854',
     decision_type='GRANTED',
     limit=100
@@ -407,8 +509,8 @@ if petition_rate > 0.2 and citation_density < 3:
 
 ```python
 # PHASE 1: Citation Intelligence
-citations = search_citations_balanced(
-    criteria=f'publicationNumber:9049188 AND officeActionDate:[2017-10-01 TO *]',
+citations = Citations_search_citations_balanced(
+    patent_number='9049188',   # granted number: crosswalked to the application
     rows=100
 )
 
@@ -416,7 +518,7 @@ examiner_citations = [c for c in citations['response']['docs']
                       if c['examinerCitedReferenceIndicator'] == 'true']
 
 # PHASE 2: Prosecution History (PFW)
-pfw_search = pfw_search_applications_minimal(
+pfw_search = PFW_search_applications_minimal(
     query='patentNumber:9049188',
     fields=['applicationNumberText'],
     limit=1
@@ -424,26 +526,26 @@ pfw_search = pfw_search_applications_minimal(
 app_number = pfw_search['applications'][0]['applicationNumberText']
 
 # Get key prosecution documents
-noa_docs = pfw_get_application_documents(
+noa_docs = PFW_get_application_documents(
     app_number=app_number,
     document_code='NOA',
     limit=5
 )
 
-rejection_docs = pfw_get_application_documents(
+rejection_docs = PFW_get_application_documents(
     app_number=app_number,
     document_code='CTFR|CTNF',
     limit=10
 )
 
 # PHASE 3: Petition Analysis (FPD)
-petitions = fpd_search_petitions_minimal(
+petitions = FPD_Search_petitions_minimal(
     application_number=app_number,
     limit=10
 )
 
 # PHASE 4: PTAB Challenges (ultra-minimal mode for 99% reduction)
-ptab_proceedings = search_trials_minimal(
+ptab_proceedings = PTAB_search_trials_minimal(
     patent_number='9049188',
     fields=['trialNumber', 'patentOwnerData.patentNumber'],
     limit=10
@@ -505,6 +607,157 @@ print(f"  - Proceedings: {ptab_proceedings.get('response', {}).get('numFound', 0
 - FPD: 10 petitions × 3 fields = ~10KB
 - PTAB: 10 proceedings × 3 fields = ~20KB
 - **Total: ~70KB (93% reduction)**
+
+---
+
+## oa_citations
+
+## OA Citations (v2) vs Enriched Citations (v3) — Run Both
+
+### The default is TRY BOTH, not either/or
+
+**Neither lane is a superset of the other, in either direction.** For any
+completeness-sensitive question — litigation prior-art sweeps, art-unit or
+examiner behavior studies, "was reference X ever cited" — the recommended
+workflow is to query **both** `Citations_search_citations_*` and
+`Citations_search_oa_citations_*`, then union and compare the results.
+
+Take a single-lane shortcut only when the question needs a lane-exclusive
+capability:
+
+| Need | Lane | Why |
+|---|---|---|
+| Passage locations, claim mapping, quality score, NPL flag | **Enriched only** | `passageLocationText`, `relatedClaimNumberText`, `qualitySummaryText`, `nplIndicator` exist nowhere else |
+| Statutory basis filter (102/103/112) | **OA only** | `legalSectionCode` + `actionTypeCategory` exist nowhere else |
+| Date-windowed query | **Enriched only** | OA has no date field at all |
+| Subject-patent lookup by parameter | **Both** | `patent_number` crosswalks a granted patent number to its application on either lane; enriched also takes an 11-digit publication number |
+| Reverse lookup of a cited reference | **Both** | enriched `citedDocumentIdentifier`, OA `parsedReferenceIdentifier` — both via `criteria` |
+| Everything else, especially "is this complete?" | **Both** | Union the results |
+
+### Measured coverage (Tech Center 2100, measured 2026-08)
+
+| Query | OA (v2) | Enriched (v3) |
+|---|---|---|
+| `techCenter:2100` (all) | **4,870,078** | 4,317,926 |
+| `techCenter:2100` examiner-cited only | **3,711,459** | 3,619,296 |
+| Art unit 2854 | **42,509** | 37,937 |
+| App 18407147 (2024 filing) | **38** | 26 |
+| App 12849948 (2012 office action) | 4 | **8** |
+| Cited-patent reverse lookup, US 9,280,610 | **25** | 17 |
+
+**Read these numbers carefully:**
+
+1. **OA is usually broader, but not always, and never by a huge margin.** At
+   tech-center scale the gap is ~13%; on examiner-cited references alone it
+   narrows to ~2.5%. The enriched index is *not* a thin sample of the examiner
+   record — it captures the large majority of it.
+2. **Most of OA's surplus is applicant IDS citations.** OA carries ~1.16M
+   applicant-only (Form 1449) records in TC2100 vs ~0.70M in enriched. If the
+   question is "what did the applicant disclose", lean OA — but still check
+   enriched.
+3. **The direction can reverse on a specific application.** App 12849948
+   returns 8 enriched records and only 4 OA records. Per-application, you
+   cannot predict which lane wins. This is the single strongest argument for
+   querying both.
+
+### Coverage window: documented vs observed
+
+**USPTO's published documentation gives BOTH APIs the same window** — office
+actions mailed **2017-10-01 through ~30 days prior to the current date**.
+Treat that as the official answer when describing the data to a user.
+
+**In practice, both lanes have been observed serving records outside that
+window.** This is a measured observation, not a documented guarantee, and it
+matches practitioner experience that coverage often reaches back further than
+the docs promise:
+
+- **Enriched:** 1,905,220 of 4,317,926 TC2100 records (44.1%) carry an
+  `officeActionDate` before 2017-10-01, back to roughly 2008.
+- **OA:** cannot be date-filtered, but demonstrably contains such records too —
+  see the verification below.
+
+**Verification method (reproducible).** `officeActionDate` was cross-checked
+against PFW, which holds the authoritative prosecution record:
+
+| App | Enriched `officeActionDate` | PFW document date (authoritative) | Match |
+|---|---|---|---|
+| 12849948 | 2012-06-07 (CTNF) | CTNF `officialDate` 2012-06-07 | ✅ exact |
+| 11802002 | 2010-02-01 (CTNF) | CTNF `officialDate` 2010-02-01 | ✅ exact |
+
+So `officeActionDate` is the genuine office-action **mail date**, not the cited
+reference's publication date (the cited documents in those records are from
+2006 and 2005 respectively — different values).
+
+For the OA lane, app 12849948's Form **892** — the source document OA v2 is
+built from — carries PFW `officialDate` **2012-06-07**, and the OA lane returns
+4 records for that application. Pre-2017 material is present there as well.
+
+**How to state this to a user:** cite the documented 2017-10-01 window as the
+official coverage, and add that coverage has in practice been observed beyond
+it, so older prosecution is worth querying rather than assumed absent. Never
+report an empty result on an older application as proof that no art was cited
+without having tried both lanes.
+
+### Practical both-lanes pattern
+
+```python
+# Completeness-sensitive question -> union both lanes.
+enriched = Citations_search_citations_minimal(
+    criteria='patentApplicationNumber:12849948', rows=100
+)
+oa = Citations_search_oa_citations_minimal(
+    application_number='12849948', rows=100
+)   # note: NO date clause, NO publicationNumber — both 400 on this lane
+
+# Compare numFound from each, then union on the normalized reference id:
+#   enriched -> citedDocumentIdentifier / publicationNumber
+#   OA       -> parsedReferenceIdentifier
+# Report both totals and the union; say which lane contributed what.
+```
+
+### Field vocabulary does not transfer — hard failures
+
+The two indexes reject each other's field names with HTTP 400. These are the
+mistakes that actually happen:
+
+```python
+# ❌ ERRORS — officeActionDate does not exist in OA v2
+Citations_search_oa_citations_minimal(
+    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]'
+)
+# "Invalid criteria: Invalid field name: officeActionDate."
+# ✅ OA has NO office-action date field. Drop the clause entirely.
+Citations_search_oa_citations_minimal(art_unit='2854')
+
+# ❌ ERRORS — publicationNumber does not exist in OA v2
+Citations_search_oa_citations_minimal(criteria='publicationNumber:9049188')
+# ✅ The patent_number PARAMETER crosswalks to the application serial for you
+#    (the field still does not exist, so it can never go in `criteria`):
+Citations_search_oa_citations_minimal(patent_number='9049188')
+#    To find where a patent was CITED, use parsedReferenceIdentifier:
+Citations_search_oa_citations_minimal(criteria='parsedReferenceIdentifier:9280610')
+
+# ❌ ERRORS — legalSectionCode does not exist in enriched v3
+Citations_search_citations_minimal(criteria='techCenter:2100 AND legalSectionCode:103')
+# ✅ Statutory basis is an OA-only capability.
+Citations_search_oa_citations_minimal(criteria='techCenter:2100 AND legalSectionCode:103')
+```
+
+**`createDateTime` in OA is an ETL load timestamp, not the office action date.**
+Sampled OA records carry 2025 load stamps regardless of when the office action
+issued. Never present it as prosecution chronology and never range-filter on it
+expecting office-action semantics.
+
+**Matching a cited reference in OA:** use `parsedReferenceIdentifier` (normalized,
+e.g. `9280610`), not `referenceIdentifier` — the raw string format varies across
+records for the same patent (`US 9280610 B2` vs `US 9,280,610 B2`).
+
+### Neither index has examiner names
+
+There is **no examiner name field in either lane** — `examinerNameText` returns
+HTTP 400 on the enriched API. Examiner-level analysis must go through PFW
+(`PFW_search_applications_minimal` on `examinerNameText`) to get that examiner's
+application numbers, then query citations by application. See `workflows_pfw`.
 
 ---
 
@@ -578,19 +831,19 @@ NPL documents can carry X, Y, or A category codes like any other reference.
 
 ```python
 # Get only X citations (US patents)
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='citationCategoryCode:X AND officeActionDate:[2017-10-01 TO *]',
     rows=100
 )
 
 # Get NPL citations (bleeding-edge tech) — use nplIndicator, NOT citationCategoryCode:NPL
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='nplIndicator:true AND techCenter:2100',
     rows=50
 )
 
 # Get examiner citations only
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='examinerCitedReferenceIndicator:true AND officeActionDate:[2023-01-01 TO *]',
     rows=100
 )
@@ -600,93 +853,111 @@ search_citations_minimal(
 
 ## data_coverage
 
-## Data Coverage (2017+ Eligibility)
+## Data Coverage
 
-### API Data Availability
+### Documented window (both lanes)
 
-**Office Action Dates:**
-- **Start**: October 1, 2017
-- **End**: 30 days prior to current date
-- **Coverage**: ~7 years of citation data
+USPTO's published documentation gives **both** APIs the same coverage: office
+actions mailed **2017-10-01 through ~30 days prior to the current date**.
 
-**⚠️ CRITICAL DATE CONSTRAINT**
-Office action dates before 2017-10-01 return NO results.
-This is an API limitation, not a query error.
+| | OA Citations (v2) | Enriched Citations (v3) |
+|---|---|---|
+| Documented window | 2017-10-01 → T-30d | 2017-10-01 → T-30d |
+| Date field | **none** | `officeActionDate` |
+| Date filtering possible? | No | Yes |
+
+### Observed coverage exceeds the documented window
+
+Measured on this API, **both lanes return records older than the documented
+floor**. State the documented window as the official answer, and treat older
+material as "worth querying" rather than guaranteed:
+
+- **Enriched, TC2100 bands:**
+
+  | Band | Records | Share |
+  |---|---|---|
+  | Before 2008-01-01 | 2,238 | 0.05% |
+  | Before 2010-01-01 | 199,180 | 4.6% |
+  | Before 2017-10-01 | 1,905,220 | **44.1%** |
+  | All | 4,317,926 | 100% |
+
+- **OA:** no date field, so it cannot be banded — but app 12849948's Form 892
+  (the OA v2 source document) is dated 2012-06-07 in PFW and the OA lane
+  returns 4 records for that application.
+
+**`officeActionDate` verified as the true OA mail date** against PFW's
+authoritative document dates: app 12849948 → 2012-06-07 CTNF (exact match); app
+11802002 → 2010-02-01 CTNF (exact match). It is not the cited reference's
+publication date — those cited documents are from 2006 and 2005.
 
 ### Date Handling Strategies
 
-**For Application-Based Searches:**
-Use filing date starting 2015-01-01 to account for 1-2 year lag.
+**Enriched lane — date filtering works:**
 
 ```python
-# ✅ CORRECT: Account for filing-to-OA lag
-search_citations_minimal(
-    application_number='17896175',  # Filed 2015
-    date_start='2015-01-01'          # Filing date context
+# ✅ Pre-2017 windows return results in practice
+Citations_search_citations_minimal(
+    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2010-01-01 TO 2016-12-31]',
+    rows=100
 )
-# Will find citations from office actions mailed 2017+
 ```
 
-**For Direct Citation Searches:**
-Always use 2017-10-01 or later.
+Add an `officeActionDate:[2017-10-01 TO *]` clause only when you deliberately
+want the documented window (e.g. reporting strictly-documented coverage). Do not
+add it reflexively — it discards ~44% of the records the index actually serves.
+
+**OA lane — no date filtering exists:**
 
 ```python
-# ✅ CORRECT: Direct citation date search
-search_citations_minimal(
-    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]',
-    rows=100
+# ❌ ERRORS with HTTP 400 - officeActionDate is not an OA field
+Citations_search_oa_citations_minimal(
+    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]'
 )
 
-# ❌ WRONG: Date before API cutoff
-search_citations_minimal(
-    criteria='officeActionDate:[2015-01-01 TO 2024-12-31]',
-    rows=100
-)
-# Returns warning: "Office action dates before 2017-10-01 not available"
+# ✅ Just omit the date clause
+Citations_search_oa_citations_minimal(art_unit='2854')
 ```
 
-### Filing-to-Office Action Timeline
+If you need a date-scoped subset of raw citations, there is no way to get it
+from OA directly. Get the date-scoped application list from the enriched lane
+(or PFW), then query OA per application number.
 
-**Typical Progression:**
-- Filing date: 2015-01-01
-- First office action: 2017-01-01 to 2018-01-01 (2-3 years)
-- Citation data: Available if office action mailed 2017-10-01+
+### Eligibility Quick Check
 
-**Coverage Window:**
-- Apps filed 2015+ → Office actions 2017+ → ✅ Citation data available
-- Apps filed 2013-2014 → Office actions 2015-2016 → ❌ Citation data NOT available
+| Scenario | First OA Date | Documented? | Observed in practice |
+|----------|---------------|-------------|----------------------|
+| Recent app | 2022-01-01 | ✅ Both lanes | ✅ Both |
+| Mid app | 2017-06-01 | ❌ Outside window | ✅ Seen in both |
+| Older app | 2012-06-01 | ❌ Outside window | ✅ Verified in both (app 12849948) |
+| Very old app | 2006-01-01 | ❌ Outside window | ⚠️ Rare (enriched thins out below ~2008) |
+
+**Zero results is not proof of "no citations"** — and it is not proof of the
+coverage floor either. Try the other lane before concluding anything.
 
 ### Cross-MCP Date Coordination
 
 **PFW + Citations Integration:**
 ```python
-# Use 2015-01-01 for PFW filing date filter
-pfw_apps = pfw_search_applications_minimal(
+# Scope the PFW filing-date filter to the era you actually want to report on.
+# 2015-01-01 caps an examiner study at ~10 recent years; go earlier if the
+# question is career-spanning — older office actions do appear in practice.
+pfw_apps = PFW_search_applications_minimal(
     query='examinerNameText:SMITH* AND filingDate:[2015-01-01 TO *]',
     fields=['applicationNumberText'],
     limit=50
 )
 
-# Always include officeActionDate constraint for citations
+# Enriched lane: add an officeActionDate clause only if you want that window.
 for app in pfw_apps:
-    citations = search_citations_minimal(
-        criteria=f'patentApplicationNumber:{app} AND officeActionDate:[2017-10-01 TO *]',
+    citations = Citations_search_citations_minimal(
+        criteria=f'patentApplicationNumber:{app}',
         rows=50
     )
+
+# OA lane: no date clause is possible — query by application number.
+for app in pfw_apps:
+    oa = Citations_search_oa_citations_minimal(application_number=app, rows=50)
 ```
-
-### Eligibility Quick Check
-
-**Use Cases:**
-
-| Scenario | Filing Date | First OA Date | Citations Available? |
-|----------|-------------|---------------|---------------------|
-| Recent app | 2020-01-01 | 2022-01-01 | ✅ Yes |
-| Older app | 2015-01-01 | 2017-06-01 | ✅ Yes |
-| Pre-2015 app | 2014-01-01 | 2016-06-01 | ❌ No |
-| Very old app | 2010-01-01 | 2012-06-01 | ❌ No |
-
-**For examiner analysis:** Use 2015-01-01 filing date to capture last ~10 years of work (vs entire 20-30 year career), saving massive context.
 
 ---
 
@@ -696,8 +967,13 @@ for app in pfw_apps:
 
 ### Predefined Field Sets
 
-**citations_minimal (8 fields):**
-- `citationIdentifier`
+**⚠️ The two lanes have different field vocabularies.** Confirm with
+`Citations_get_available_fields` (enriched, 22 fields) or
+`Citations_get_oa_citation_fields` (OA, 16 fields) before writing criteria —
+a wrong field name is an HTTP 400, not an empty result.
+
+**citations_minimal (enriched, 8 fields):**
+- `id` (the record identifier — pass this to `Citations_get_citation_details`)
 - `patentApplicationNumber`
 - `publicationNumber`
 - `groupArtUnitNumber`
@@ -706,14 +982,38 @@ for app in pfw_apps:
 - `officeActionDate`
 - `examinerCitedReferenceIndicator`
 
-**citations_balanced (18 fields):**
+**citations_balanced (enriched, 18 fields):**
 All minimal fields plus:
 - `citedDocumentIdentifier`
-- `citingPassageText`
+- `passageLocationText` (column/line/figure/paragraph/claim locators)
 - `relatedClaimNumberText`
+- `qualitySummaryText`
 - `officeActionCategory`
 - `nplIndicator`
-- Additional metadata fields
+- `countryCode`, `kindCode`, `inventorNameText`, `createDateTime`,
+  `workGroupNumber`, `applicantCitedExaminerReferenceIndicator`,
+  `createUserIdentifier`, `obsoleteDocumentIdentifier`
+
+**OA citations (v2, all 16 fields):**
+`patentApplicationNumber`, `groupArtUnitNumber`, `techCenter`, `workGroup`,
+`referenceIdentifier`, `parsedReferenceIdentifier`, `actionTypeCategory`,
+`legalSectionCode`, `paragraphNumber`, `examinerCitedReferenceIndicator`,
+`applicantCitedExaminerReferenceIndicator`,
+`officeActionCitationReferenceIndicator`, `createDateTime`,
+`createUserIdentifier`, `obsoleteDocumentIdentifier`, `id`
+
+### Fields That Do NOT Exist (common HTTP 400 causes)
+
+| Field used | Reality |
+|---|---|
+| `examinerNameText` | **In neither lane.** Go through PFW for examiner analysis. |
+| `firstApplicantName` / `firstApplicantNameText` | Not an enriched field. The `applicant_name` convenience param builds this query and **silently returns 0 results** — do not rely on it. |
+| `citingPassageText` | Enriched field is `passageLocationText`. |
+| `citationIdentifier` | Enriched field is `id`. |
+| `officeActionDate` on the OA lane | OA has no date field at all. |
+| `publicationNumber` on the OA lane | Not an OA field. Use the `patent_number` parameter, which crosswalks to `patentApplicationNumber`. |
+| `legalSectionCode` on the enriched lane | Statutory basis is OA-only. |
+| `citationCategoryCode:NPL` | Returns 0 — use `nplIndicator:true`. |
 
 ### Ultra-Minimal Mode (Custom Fields)
 
@@ -721,7 +1021,7 @@ All minimal fields plus:
 
 ```python
 # For PFW integration (2 fields only)
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='techCenter:2100 AND officeActionDate:[2017-10-01 TO *]',
     fields=['citedDocumentIdentifier', 'patentApplicationNumber'],
     rows=100
@@ -729,7 +1029,7 @@ search_citations_minimal(
 # Token cost: ~10KB (vs ~400KB with preset minimal)
 
 # For frequency analysis (1 field only!)
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]',
     fields=['citedDocumentIdentifier'],
     rows=500
@@ -737,7 +1037,7 @@ search_citations_minimal(
 # Token cost: ~25KB (vs ~2MB with preset minimal)
 
 # For examiner behavior (3 fields)
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='officeActionDate:[2023-01-01 TO *]',
     fields=['citationCategoryCode', 'examinerCitedReferenceIndicator', 'patentApplicationNumber'],
     rows=200
@@ -749,11 +1049,13 @@ search_citations_minimal(
 
 **Field Searches:**
 ```
-patentApplicationNumber:18010777        # Exact match
+patentApplicationNumber:18180061        # Exact match
 groupArtUnitNumber:2854                 # Art unit
 techCenter:2100                         # Technology center
 citedDocumentIdentifier:US*             # Wildcard
-publicationNumber:11234567              # Patent number
+publicationNumber:20060075466           # 11-digit PRE-GRANT publication number
+                                        # (for a granted patent number, use the
+                                        #  patent_number parameter, not criteria)
 ```
 
 **Boolean Operators:**
@@ -794,7 +1096,7 @@ nplIndicator:true                                      # NPL only (use this — 
 
 **Examiner Citation Analysis:**
 ```python
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='examinerCitedReferenceIndicator:true AND groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]',
     rows=100
 )
@@ -802,7 +1104,7 @@ search_citations_minimal(
 
 **Technology Landscape:**
 ```python
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='techCenter:2100 AND citationCategoryCode:X AND officeActionDate:[2023-01-01 TO *]',
     rows=100
 )
@@ -811,7 +1113,7 @@ search_citations_minimal(
 **NPL Analysis:**
 ```python
 # ⚠️ citationCategoryCode:NPL returns 0 results — use nplIndicator:true instead
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='nplIndicator:true AND techCenter:2100 AND officeActionDate:[2017-10-01 TO *]',
     rows=50
 )
@@ -823,41 +1125,129 @@ search_citations_minimal(
 
 ## Common Errors and Troubleshooting
 
-### Date Range Errors
+### Wrong-Lane Field Errors (most common failure)
 
-**Error**: "No results found" or "Office action dates before 2017-10-01 not available"
+**Error**: `Invalid criteria: Invalid field name: officeActionDate` (HTTP 400)
 
-**Cause**: Searching before API cutoff date (2017-10-01)
+**Cause**: An enriched-lane field name was sent to the OA lane. OA v2 has **no
+office-action date field**; `officeActionDate`, `publicationNumber`,
+`citationCategoryCode` and `nplIndicator` all 400 there.
 
-**Solution:**
+**Solution**: Drop the clause — OA cannot be date-filtered at all.
+
 ```python
-# ❌ WRONG
-search_citations_minimal(date_start='2015-01-01', date_end='2024-12-31')
+# ❌ WRONG — 400
+Citations_search_oa_citations_minimal(
+    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]'
+)
 
 # ✅ CORRECT
-search_citations_minimal(date_start='2017-10-01', date_end='2024-12-31')
+Citations_search_oa_citations_minimal(art_unit='2854')
+```
 
-# ✅ CORRECT (for application searches, use filing date context)
-search_citations_minimal(
-    application_number='17896175',  # Filed 2015
-    date_start='2015-01-01'          # Will search citations from 2017+
+**Error**: `Invalid field name: legalSectionCode` on the enriched lane
+
+**Cause**: Statutory basis is OA-only. Move the query to
+`Citations_search_oa_citations_minimal`.
+
+### Patent Numbers: the Crosswalk, and What Each Lane Actually Holds
+
+**Neither citation index stores a granted patent number.** The enriched lane's
+`publicationNumber` holds 11-digit PRE-GRANT publication numbers; the OA lane has
+no patent-number field at all (`publicationNumber` returns 400 there). Both
+indexes key on `patentApplicationNumber`.
+
+**All four search tools therefore take `patent_number` and resolve it for you**
+(added 2026-09-02). A 7-8 digit granted patent number is crosswalked to its
+application serial with one USPTO ODP applications-search call and queried as
+`patentApplicationNumber`; on the enriched lane an 11-digit value is queried
+directly as `publicationNumber`. Commas, spaces and a `US` prefix are accepted,
+so `7971071`, `7,971,071` and `US 7,971,071` are the same input. A kind-code
+suffix is NOT accepted: `US9049188B2` is refused with a 400 naming the accepted
+forms. `application_number` is a separate parameter and is digits only, so a
+slashed or comma-separated serial such as `14/171,705` is not a valid value
+there and builds a query that matches nothing rather than raising.
+
+Every response says how the input was read:
+
+```json
+"patent_number_resolution": {
+  "input": "7,971,071",
+  "interpreted_as": "granted_patent",
+  "resolved_application_number": "11752072",
+  "queried_field": "patentApplicationNumber",
+  "source": "USPTO ODP applications search"
+}
+```
+
+`interpreted_as` is `"publication"` (enriched lane only) for an 11-digit value,
+and there is no `resolved_application_number` because nothing was crosswalked.
+
+**Failures are 400s, not zero-results.** A number that resolves to no
+application, a value that is neither 7-8 nor 11 digits, an 11-digit publication
+number on the OA lane, and a `patent_number` that disagrees with a
+`application_number` passed alongside it are all refused with a message naming
+the three accepted forms: granted patent number, 11-digit publication number,
+application serial.
+
+**`application_number` is unchanged** — it is the application serial, and it
+still collides in shape with 8-digit patent numbers, so pass a patent number as
+`patent_number` and let the crosswalk decide. The PFW MCP remains the tool for
+the reverse direction:
+
+```python
+# application serial -> patent number
+PFW_search_applications_minimal(query='applicationNumberText:12849948')
+```
+
+### Date Range Errors
+
+**Error**: Thin or empty results on an older office action
+
+**Cause**: Usually an over-restrictive date clause, or having queried only one
+lane. The documented floor is 2017-10-01, but both lanes serve older records in
+practice — an empty result is not proof of the floor.
+
+**Solution**: Drop the date clause and try the other lane.
+
+```python
+# ❌ Over-restrictive — discards ~44% of the records enriched actually serves
+Citations_search_citations_minimal(
+    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]'
 )
+
+# ✅ Enriched returns pre-2017 windows in practice
+Citations_search_citations_minimal(
+    criteria='groupArtUnitNumber:2854 AND officeActionDate:[2010-01-01 TO 2016-12-31]'
+)
+
+# ✅ And always cross-check the other lane before concluding
+Citations_search_oa_citations_minimal(art_unit='2854')
 ```
 
 ### Field Name Errors
 
 **Error**: "Field not found" or 400 Bad Request
 
-**Cause**: Invalid field names in query or fields parameter
+**Cause**: Invalid field names in query or fields parameter — or the right field
+name sent to the wrong lane.
 
-**Solution**: Use `get_available_fields()` to discover valid field names
+**Solution**: Use the field-discovery tool **for the lane you are querying**
 
 ```python
-# Get all available fields
-fields_info = get_available_fields()
-
-# Check field names before using in query
+fields_info = Citations_get_available_fields()      # enriched v3 (22 fields)
+oa_fields   = Citations_get_oa_citation_fields()    # OA v2 (16 fields)
 ```
+
+### Silent Zero Results
+
+**Error**: `numFound: 0` with no error raised
+
+**Cause**: `applicant_name` builds a `firstApplicantName:` query against a field
+that does not exist on the enriched API — it returns zero rather than 400.
+
+**Solution**: Do not filter by applicant on this MCP. Resolve the applicant's
+applications through PFW, then query citations by application number.
 
 ### Query Syntax Errors
 
@@ -865,17 +1255,17 @@ fields_info = get_available_fields()
 
 **Cause**: Malformed Solr/Lucene query syntax
 
-**Solution**: Use `validate_query()` before execution
+**Solution**: Use `Citations_validate_query()` before execution
 
 ```python
 # Validate complex query
-validation = validate_query(
+validation = Citations_validate_query(
     query='citationCategoryCode:X AND techCenter:2100 NOT groupArtUnitNumber:1600'
 )
 
 if validation['valid']:
     # Proceed with search
-    search_citations_minimal(criteria=query, rows=100)
+    Citations_search_citations_minimal(criteria=query, rows=100)
 ```
 
 ### Cross-MCP Integration Errors
@@ -888,7 +1278,7 @@ if validation['valid']:
 
 ```python
 # STEP 1: Check PFW filing date
-pfw_app = pfw_search_applications_minimal(
+pfw_app = PFW_search_applications_minimal(
     application_number='12345678',
     fields=['applicationNumberText', 'applicationMetaData.filingDate']
 )
@@ -897,7 +1287,7 @@ filing_date = pfw_app['applications'][0]['applicationMetaData']['filingDate']
 
 # STEP 2: Only search citations if filing date >= 2015-01-01
 if filing_date >= '2015-01-01':
-    citations = search_citations_minimal(
+    citations = Citations_search_citations_minimal(
         application_number='12345678',
         date_start='2017-10-01'
     )
@@ -914,10 +1304,10 @@ else:
 4. Query syntax error (silent failure)
 
 **Debugging Steps:**
-1. Validate query syntax with `validate_query()`
+1. Validate query syntax with `Citations_validate_query()`
 2. Check date range is within 2017-10-01 to present
 3. Broaden search criteria to verify data exists
-4. Check field names with `get_available_fields()`
+4. Check field names with `Citations_get_available_fields()`
 
 ---
 
@@ -930,7 +1320,7 @@ else:
 **Level 1: Ultra-Minimal Mode (99% reduction)**
 ```python
 # 1-2 fields for frequency/discovery
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='groupArtUnitNumber:2854 AND officeActionDate:[2017-10-01 TO *]',
     fields=['citedDocumentIdentifier'],  # Only 1 field!
     rows=500
@@ -941,7 +1331,7 @@ search_citations_minimal(
 **Level 2: Preset Minimal (90-95% reduction)**
 ```python
 # 8 preset fields for discovery
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='techCenter:2100 AND officeActionDate:[2017-10-01 TO *]',
     rows=100
 )
@@ -951,7 +1341,7 @@ search_citations_minimal(
 **Level 3: Custom Minimal (75-90% reduction)**
 ```python
 # 3-5 custom fields for targeted analysis
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='techCenter:2100 AND officeActionDate:[2017-10-01 TO *]',
     fields=['citationCategoryCode', 'examinerCitedReferenceIndicator', 'patentApplicationNumber'],
     rows=100
@@ -962,7 +1352,7 @@ search_citations_minimal(
 **Level 4: Balanced (70-80% reduction)**
 ```python
 # 18 preset fields for comprehensive analysis
-search_citations_balanced(
+Citations_search_citations_balanced(
     criteria='techCenter:2100 AND officeActionDate:[2017-10-01 TO *]',
     rows=50
 )
@@ -984,7 +1374,7 @@ search_citations_balanced(
 - Cost: ~10-25KB
 
 **Stage 3: Details (Balanced or Details)**
-- Use balanced or get_citation_details
+- Use balanced or Citations_get_citation_details
 - Low volume (5-10 results)
 - Complete analysis of final selections
 - Cost: ~20-50KB
@@ -997,7 +1387,7 @@ search_citations_balanced(
 ```python
 # Ultra-efficient workflow
 # STEP 1: PFW discovery (1 field only)
-pfw_apps = pfw_search_applications_minimal(
+pfw_apps = PFW_search_applications_minimal(
     query='examinerNameText:SMITH* AND filingDate:[2015-01-01 TO *]',
     fields=['applicationNumberText'],  # Only app numbers!
     limit=50
@@ -1006,7 +1396,7 @@ pfw_apps = pfw_search_applications_minimal(
 
 # STEP 2: Citation analysis (3 fields, top 20 only)
 for app in pfw_apps['applications'][:20]:
-    citations = search_citations_minimal(
+    citations = Citations_search_citations_minimal(
         criteria=f'patentApplicationNumber:{app["applicationNumberText"]} AND officeActionDate:[2017-10-01 TO *]',
         fields=['citationCategoryCode', 'examinerCitedReferenceIndicator', 'citedDocumentIdentifier'],
         rows=50
@@ -1035,14 +1425,14 @@ for app in pfw_apps['applications'][:20]:
 'officeActionDate:[2023-01-01 TO 2023-12-31]'
 
 # ⚠️ OKAY: Broader searches with field limits
-search_citations_minimal(
+Citations_search_citations_minimal(
     criteria='techCenter:2100 AND officeActionDate:[2017-10-01 TO *]',
     fields=['citationCategoryCode', 'groupArtUnitNumber'],
     rows=200
 )
 
 # ❌ AVOID: Open-ended searches without field limits
-search_citations_balanced(
+Citations_search_citations_balanced(
     criteria='techCenter:2100 AND officeActionDate:[2017-10-01 TO *]',
     rows=500
 )  # Expensive!

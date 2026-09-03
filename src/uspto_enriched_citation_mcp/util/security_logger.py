@@ -12,13 +12,19 @@ Provides dedicated security logging separate from application logs for:
 import hashlib
 import json
 import logging
-import os
 from datetime import datetime, timezone
-from logging.handlers import RotatingFileHandler
 from typing import Optional
 from enum import Enum
 
-from .logging import get_logger, prepare_log_dir
+from .logging import (
+    ModePreservingTimedRotatingFileHandler,
+    SanitizingFilter,
+    get_logger,
+    prepare_log_dir,
+)
+
+# security.log rotates daily and keeps this many days of history.
+SECURITY_LOG_RETENTION_DAYS = 90
 
 
 def query_fingerprint(query: str) -> str:
@@ -45,6 +51,7 @@ class SecurityEventType(Enum):
     INJECTION_ATTEMPT = "injection_attempt"
     EXCESSIVE_WILDCARDS = "excessive_wildcards"
     INVALID_FIELD_ACCESS = "invalid_field_access"
+    ADMIN_ACTION = "admin_action"
 
 
 class SecurityLogger:
@@ -68,6 +75,12 @@ class SecurityLogger:
         """
         self.logger = get_logger(f"security.{name}")
         self.logger.setLevel(logging.INFO)
+        # Security events belong in the 0600 security log only. Without this
+        # the records also propagate to the ancestor 'uspto_ecitation' logger,
+        # which carries application.log and error.log at 0640 — defeating the
+        # permission the security file is created with, and doubling the
+        # volume the retention window is sized against.
+        self.logger.propagate = False
 
         # Prevent duplicate handlers
         if self.logger.handlers:
@@ -82,9 +95,15 @@ class SecurityLogger:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
-        # Console handler for security events
+        # Console handler for security events. The sanitizing filter is
+        # attached at the HANDLER, not only at the logger: get_logger puts one
+        # on the logger object and that is what redacts today, but a handler
+        # added elsewhere, or a refactor that stops routing through
+        # get_logger, would silently drop redaction from the audit trail
+        # (S-44). CLAUDE.md names this filter as the guarantee.
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
+        console_handler.addFilter(SanitizingFilter())
         console_handler.setFormatter(formatter)
         self.logger.addHandler(console_handler)
 
@@ -92,21 +111,28 @@ class SecurityLogger:
         if enable_file_logging:
             try:
                 security_log_file = log_path / "security.log"
-                security_handler = RotatingFileHandler(
+                # Retention is stated in DAYS, so rotate on days. The old
+                # size-triggered handler kept 90 files of 10MB and printed
+                # "approx 90 days" as fact; an event burst compressed that
+                # window arbitrarily while the line still claimed 90 days
+                # (S-43).
+                security_handler = ModePreservingTimedRotatingFileHandler(
                     security_log_file,
-                    maxBytes=10 * 1024 * 1024,  # 10MB
-                    backupCount=90,  # 90 days retention (approx 1 day per file)
+                    when="midnight",
+                    backupCount=SECURITY_LOG_RETENTION_DAYS,
                     encoding="utf-8",
+                    file_mode=0o600,  # owner read/write, reapplied on rollover
                 )
                 security_handler.setLevel(logging.INFO)
+                security_handler.addFilter(SanitizingFilter())
                 security_handler.setFormatter(formatter)
                 self.logger.addHandler(security_handler)
 
-                # Secure permissions (owner read/write only for security events)
-                os.chmod(security_log_file, 0o600)
-
                 self.logger.info(f"Security logging enabled: {security_log_file}")
-                self.logger.info("Security log retention: 90 backup files (approx 90 days)")
+                self.logger.info(
+                    "Security log retention: %d daily files",
+                    SECURITY_LOG_RETENTION_DAYS,
+                )
 
             except Exception as e:
                 self.logger.warning(f"Failed to setup security file logging: {e}")
@@ -355,6 +381,42 @@ class SecurityLogger:
             level=logging.WARNING,
             field_name=field_name,
             attempted_operation=attempted_operation,
+            **kwargs,
+        )
+
+    def admin_action(
+        self,
+        actor: str,
+        action: str,
+        target: str,
+        success: bool = True,
+        role: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """
+        Log a privileged user-list mutation.
+
+        `mcp_users` is the authorization source of truth for OAuth sign-in, so
+        every add / set_role / activate / deactivate / delete needs a record
+        naming who did it. Emails are masked by the sanitizing filter.
+
+        Args:
+            actor: Authenticated identity performing the action
+            action: One of add, set_role, activate, deactivate, delete
+            target: Email of the affected user
+            success: Whether the mutation was applied
+            role: Role granted, for add / set_role
+            **kwargs: Additional context
+        """
+        self._log_event(
+            SecurityEventType.ADMIN_ACTION,
+            f"User management action: {action} on {target}",
+            level=logging.WARNING,
+            actor=actor,
+            action=action,
+            target=target,
+            role=role,
+            success=success,
             **kwargs,
         )
 

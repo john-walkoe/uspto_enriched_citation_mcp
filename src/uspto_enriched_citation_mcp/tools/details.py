@@ -1,17 +1,26 @@
 """Enriched Citations (v3) single-citation detail tool."""
 
-import re
 from typing import Any, Dict
 
 from .. import runtime
+from ..api.enriched_client import _CITATION_ID_RE
 from ..shared.error_utils import format_error_response
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, scan_hits
+from ..util.request_context import RequestContext
+from ..util.security_logger import get_security_logger
+from ._shared import run_with_deadline
+
+security_logger = get_security_logger()
 
 # Citation IDs are 32-character lowercase hex strings (e.g.
 # "0de7ea10c59e03dab218a40dece9dffd"), used downstream to build an "id:<x>"
 # Lucene lookup (input-validation.md §3c) — reject anything else before it
-# reaches the query builder.
-_CITATION_ID_RE = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
+# reaches the query builder. The pattern now lives on the client (the sink);
+# this remains the fast fail and the re-export main.py imports.
+__all__ = ["_CITATION_ID_RE", "get_citation_details", "register"]
+
+# officeActionCategory values that are also valid PFW document codes.
+_KNOWN_OA_DOC_CODES = frozenset({"CTNF", "CTFR"})
 
 
 def _pfw_retrieval_guidance(app_number: str, suggested_doc_code: str) -> Dict[str, Any]:
@@ -22,7 +31,7 @@ def _pfw_retrieval_guidance(app_number: str, suggested_doc_code: str) -> Dict[st
     return {
         "notice": "⚠️ This is citation METADATA only. To get actual documents, use PFW MCP (2-step process):",
         "suggested_document_code": suggested_doc_code,
-        "step_1_get_documents": f"pfw_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)",
+        "step_1_get_documents": f"PFW_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)",
         "common_citation_documents": {
             "CTNF": "Non-Final Office Action (where this citation most likely appears — start here)",
             "CTFR": "Final Office Action Rejection",
@@ -31,25 +40,25 @@ def _pfw_retrieval_guidance(app_number: str, suggested_doc_code: str) -> Dict[st
             "IDS": "Applicant's Information Disclosure Statement",
         },
         "step_2_options": {
-            "for_llm_analysis": f"pfw_get_document_content(app_number='{app_number}', document_identifier='{{from_step_1}}') → Extract text to answer user questions",
-            "for_user_download": f"pfw_get_document_download(app_number='{app_number}', document_identifier='{{from_step_1}}') → PDF download link",
+            "for_llm_analysis": f"PFW_get_document_content_with_ocr(app_number='{app_number}', document_identifier='{{from_step_1}}') → Extract text to answer user questions",
+            "for_user_download": f"PFW_get_document_download(app_number='{app_number}', document_identifier='{{from_step_1}}') → PDF download link",
         },
         "example_workflow_analysis": f"""
 # When user asks "What did the examiner say?" or wants citation context:
-docs = pfw_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)
-content = pfw_get_document_content(app_number='{app_number}', document_identifier=docs['documents'][0]['documentIdentifier'])
+docs = PFW_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)
+content = PFW_get_document_content_with_ocr(app_number='{app_number}', document_identifier=docs['documents'][0]['documentIdentifier'])
 # Analyze content and respond to user question
 """,
         "example_workflow_download": f"""
 # When user says "Get me the office action" or wants to review themselves:
-docs = pfw_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)
-download = pfw_get_document_download(app_number='{app_number}', document_identifier=docs['documents'][0]['documentIdentifier'])
+docs = PFW_get_application_documents(app_number='{app_number}', document_code='{suggested_doc_code}', limit=20)
+download = PFW_get_document_download(app_number='{app_number}', document_identifier=docs['documents'][0]['documentIdentifier'])
 # Present as: **📁 [Download Office Action]({{download['proxy_download_url']}})**
 """,
         "alternative_xml_retrieval": f"""
 # Alternative: Patent XML (rare for citation workflows, use document retrieval above instead)
 # If you need patent claims/abstract for prior art comparison:
-xml_data = pfw_get_patent_or_application_xml(
+xml_data = PFW_get_patent_or_application_xml(
     application_number='{app_number}',
     include_fields=['claims', 'abstract'],  # Select only needed fields
     include_raw_xml=False  # ⭐ CRITICAL: 91-99% token reduction (saves ~45KB)
@@ -63,6 +72,7 @@ async def get_citation_details(
     citation_id: str, include_context: bool = True
 ) -> Dict[str, Any]:
     """Get complete details for specific citation by ID.
+    Full record for one citation, all fields, cited passage, column and line locator, figure, mapped claim, quality summary.
 
     Use for deep analysis of strategically important citations.
     Full record with all fields and complete citing context.
@@ -70,7 +80,7 @@ async def get_citation_details(
     ⚠️ IMPORTANT: Returns citation METADATA only, NOT actual documents.
 
     2-STEP PFW MCP WORKFLOW:
-    Step 1: pfw_get_application_documents(app_number='{app_number}', document_code='CTNF', limit=20)
+    Step 1: PFW_get_application_documents(app_number='{app_number}', document_code='CTNF', limit=20)
 
     Document Code Decoder:
     - CTNF: Non-Final Office Action (where most citations appear — start here)
@@ -79,11 +89,21 @@ async def get_citation_details(
     - 892: Examiner's Search Strategy & Citations List
     - IDS: Applicant's Information Disclosure Statement
 
-    Step 2a (LLM analysis): pfw_get_document_content(app_number, document_identifier) → Extract text for analysis
-    Step 2b (User download): pfw_get_document_download(app_number, document_identifier) → PDF download link
+    Step 2a (LLM analysis): PFW_get_document_content_with_ocr(app_number, document_identifier) → Extract text for analysis
+    Step 2b (User download): PFW_get_document_download(app_number, document_identifier) → PDF download link
 
-    For complete cross-MCP workflows, use citations_get_guidance(section='workflows_pfw') for detailed integration patterns.
+    For complete cross-MCP workflows, use Citations_get_guidance(section='workflows_pfw') for detailed integration patterns.
     """
+    with RequestContext():
+        return await run_with_deadline(
+            lambda: _get_citation_details_body(citation_id, include_context),
+            "Details retrieval",
+        )
+
+
+async def _get_citation_details_body(
+    citation_id: str, include_context: bool
+) -> Dict[str, Any]:
     try:
         runtime.initialize_services()
         if not citation_id:
@@ -102,9 +122,12 @@ async def get_citation_details(
         if result and citation_doc.get("patentApplicationNumber"):
             app_number = citation_doc.get("patentApplicationNumber", "")
             oa_category = citation_doc.get("officeActionCategory", "")
-            # Map officeActionCategory to PFW document_code
-            doc_code_map = {"CTNF": "CTNF", "CTFR": "CTFR"}
-            suggested_doc_code = doc_code_map.get(oa_category, "CTNF")
+            # Accept CTNF or CTFR as the PFW document_code; default anything
+            # else to CTNF. This read as a translation table but mapped each
+            # key to itself (R-12).
+            suggested_doc_code = (
+                oa_category if oa_category in _KNOWN_OA_DOC_CODES else "CTNF"
+            )
             result["pfw_document_retrieval_guidance"] = _pfw_retrieval_guidance(
                 app_number, suggested_doc_code
             )
@@ -120,9 +143,18 @@ async def get_citation_details(
 
         return result
     except Exception as e:
+        security_logger.api_error(
+            endpoint="get_citation_details",
+            error_code=500,
+            error_type=type(e).__name__,
+        )
         return format_error_response("Details retrieval failed", 500, exception=e)
 
 
 def register(mcp) -> None:
-    """Register get_citation_details (name/schema unchanged)."""
-    mcp.tool(annotations={"defer_loading": True, "readOnlyHint": True})(get_citation_details)
+    """Register get_citation_details as Citations_get_citation_details
+    (function name/schema unchanged)."""
+    mcp.tool(
+        name="Citations_get_citation_details",
+        annotations={"defer_loading": True, "readOnlyHint": True},
+    )(get_citation_details)

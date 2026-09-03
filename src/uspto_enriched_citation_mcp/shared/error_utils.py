@@ -6,7 +6,7 @@ while preserving full details for internal logging.
 """
 
 import re
-from typing import Optional, Dict
+from typing import Any, Optional, Dict
 
 # SENSITIVE_PATTERNS is the single shared redaction list (union of the
 # previously drifted logging/error lists) — defined in util.logging so this
@@ -15,6 +15,9 @@ from typing import Optional, Dict
 from ..util.logging import SENSITIVE_PATTERNS, get_logger
 
 logger = get_logger(__name__)
+
+# Status code used when a caller does not assert one.
+DEFAULT_ERROR_CODE = 500
 
 # Exception type to user-friendly message mapping
 EXCEPTION_MESSAGES: Dict[str, str] = {
@@ -210,7 +213,7 @@ def raise_http_exception(response, error_message: Optional[str] = None) -> None:
 
 def format_error_response(
     message: str,
-    code: int = 500,
+    code: Optional[int] = None,
     exception: Optional[Exception] = None,
     sanitize: bool = True,
 ) -> dict:
@@ -222,7 +225,10 @@ def format_error_response(
 
     Args:
         message: Error message prefix (e.g., "Search failed")
-        code: HTTP status code
+        code: HTTP status code the CALLER asserts for this failure. Defaults
+            to 500 when omitted. An explicit code is honored even when an
+            `exception` is also supplied, unless the exception carries its own
+            status (see below).
         exception: Optional exception to extract safe message from
         sanitize: Whether to sanitize the message (default True)
 
@@ -234,13 +240,32 @@ def format_error_response(
         try:
             from .exceptions import USPTOCitationError, exception_to_response
 
-            # If it's already our custom exception, use its to_dict method
+            # If it's already our custom exception, use its to_dict method —
+            # its status code is authoritative and outranks the argument.
             if isinstance(exception, USPTOCitationError):
                 response = exception.to_dict()
             else:
                 # Convert to response using exception_to_response
                 response = exception_to_response(exception)
-                # Prepend custom message if provided
+                # exception_to_response knows nothing about WHY the tool
+                # raised, so it stamps a plain ValueError as 500 — which
+                # turned caller errors ("At least one search criterion
+                # required") into 5xx on the enriched lane, the class of
+                # error an agent retries, while the OA lane reported the
+                # same message as a 400. The caller's explicit code wins,
+                # except for an exception carrying its own status_code.
+                if code is not None and not hasattr(exception, "status_code"):
+                    response["code"] = code
+                # Prepend the caller's label if provided. NOTE the
+                # asymmetry (E-6): a USPTOCitationError returns its own
+                # to_dict() above and does NOT get the label, so
+                # format_error_response("OA Citations search failed", ...,
+                # exception=APITimeoutError(...)) reads as "Request timed
+                # out" with no lane context. That is deliberate — the
+                # exception's own message is the sanitized, test-pinned
+                # string — and the lane is recoverable from `request_id`
+                # plus the security-log api_error event, which names the
+                # endpoint.
                 if message and message not in response.get("error", ""):
                     response["error"] = f"{message}: {response['error']}"
                     response["message"] = response["error"]
@@ -251,7 +276,7 @@ def format_error_response(
             response = {
                 "status": "error",
                 "error": full_message,
-                "code": code,
+                "code": DEFAULT_ERROR_CODE if code is None else code,
                 "message": full_message,
             }
     else:
@@ -260,7 +285,7 @@ def format_error_response(
         response = {
             "status": "error",
             "error": full_message,
-            "code": code,
+            "code": DEFAULT_ERROR_CODE if code is None else code,
             "message": full_message,
         }
 
@@ -274,4 +299,23 @@ def format_error_response(
     except ImportError:
         pass  # Request context not available
 
+    if sanitize:
+        _sanitize_response_text(response)
+
     return response
+
+
+def _sanitize_response_text(response: Dict[str, Any]) -> None:
+    """Redact the user-facing text of an error envelope, in place.
+
+    Sanitization used to run on the no-exception branch of
+    `format_error_response` only (S-05), so `USPTOCitationError.to_dict()`
+    and `exception_to_response` returned raw exception text — and the client
+    builds messages like `APIResponseError(f"HTTP error: {str(e)}")` from
+    httpx exceptions that embed the full upstream URL. Extracted rather than
+    inlined to keep `format_error_response` under the C901 ceiling.
+    """
+    for key in ("error", "message"):
+        value = response.get(key)
+        if isinstance(value, str):
+            response[key] = sanitize_error_message(value)

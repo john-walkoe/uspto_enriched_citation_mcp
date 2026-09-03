@@ -65,9 +65,11 @@ class TestTokenBucket:
 
         # Should fail to consume more
         assert bucket.consume(1) is False
-        # Tokens approach zero but float precision means tiny remainder
-        # Use tolerance instead of exact equality
-        assert bucket.tokens < 1e-4
+        # The bucket refills on wall-clock time, so the remainder is whatever
+        # accrued between the two calls. The invariant the rejection proves is
+        # "fewer than one token", not "within 1e-4 of zero" — the tighter
+        # bound was a timing flake under a loaded machine.
+        assert bucket.tokens < 1.0
 
     def test_token_replenishment(self):
         """Test 1.4: Tokens replenish over time."""

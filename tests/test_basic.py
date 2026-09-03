@@ -131,7 +131,9 @@ class TestBasic:
     async def test_get_citation_details(self, mock_client):
         """Test getting citation details."""
         client = mock_client
-        citation_id = "12345"
+        # A real enriched citation id is 32 hex characters; the client now
+        # enforces that shape before building the id:<value> clause.
+        citation_id = "0de7ea10c59e03dab218a40dece9dffd"
 
         # Mock the API response
         mock_response = {

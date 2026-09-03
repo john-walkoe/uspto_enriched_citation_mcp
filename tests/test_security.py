@@ -54,7 +54,7 @@ class TestSecurityLogger:
             security_logger.auth_failure(
                 method="api_key",
                 reason="Invalid API key",
-                ip_address="192.168.1.1"
+                ip_address="203.0.113.1"
             )
 
             assert mock_log.called

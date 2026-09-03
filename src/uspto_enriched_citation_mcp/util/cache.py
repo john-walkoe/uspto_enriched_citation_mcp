@@ -7,6 +7,7 @@ Provides performance optimization through intelligent caching:
 - Configurable sizes and TTLs
 """
 
+import copy
 import time
 import hashlib
 import json
@@ -18,6 +19,28 @@ from dataclasses import dataclass
 from .logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _snapshot(value: Any) -> Any:
+    """Deep-copy a value crossing the cache boundary.
+
+    Both caches used to hand out `entry.value` itself. Four layers above them
+    write into the response envelope they were given (`query_info`,
+    `patent_number_resolution`, `warnings`, `coverage_notes`,
+    `injection_scan`, `_pfw_link`, `_cache_status`), so those annotations
+    landed in the CACHED object and were served to the next caller of the
+    same query — including a `patent_number_resolution` provenance claim
+    about an input the second caller never supplied, and a transient
+    "API temporarily unavailable" marker that nothing ever cleared.
+
+    Copying on both store and read makes the cached object unreachable from
+    anywhere else, so no annotation can reach it.
+    """
+    try:
+        return copy.deepcopy(value)
+    except Exception:  # pragma: no cover - non-copyable values are not cached
+        logger.debug("Cache value is not deep-copyable; storing by reference")
+        return value
 
 
 @dataclass
@@ -48,8 +71,21 @@ class CacheStatsMixin:
     Mixin providing common cache statistics functionality.
 
     Provides shared get_stats() method for cache implementations.
-    Requires subclass to have: _lock, _hits, _misses, _cache, max_size
+
+    The five attributes below are the contract every subclass must satisfy.
+    They are declared rather than merely described because the mixin reads
+    all five and defines none, which made it independently unusable, made a
+    third subclass fail at runtime rather than at import, and produced the
+    single largest cluster of mypy attr-defined errors in the codebase (M-7).
     """
+
+    # Both concrete caches use an RLock; the annotation is the reentrant type
+    # so a subclass is not pushed toward the weaker one.
+    _lock: "threading.RLock"
+    _hits: int
+    _misses: int
+    _cache: Dict[str, Any]
+    max_size: int
 
     def get_stats(self) -> Dict[str, Any]:
         """
@@ -126,7 +162,7 @@ class TTLCache(CacheStatsMixin):
                     entry.access()
                     self._hits += 1
                     logger.warning(f"Cache stale (degraded mode): {key} (age: {time.time() - entry.created_at:.0f}s)")
-                    return entry.value
+                    return _snapshot(entry.value)
                 else:
                     # Remove expired entry
                     del self._cache[key]
@@ -138,7 +174,7 @@ class TTLCache(CacheStatsMixin):
             entry.access()
             self._hits += 1
             logger.debug(f"Cache hit: {key} (hits: {entry.hit_count})")
-            return entry.value
+            return _snapshot(entry.value)
 
     def set(self, key: str, value: Any, ttl_seconds: Optional[int] = None) -> None:
         """
@@ -160,7 +196,7 @@ class TTLCache(CacheStatsMixin):
 
             entry = CacheEntry(
                 key=key,
-                value=value,
+                value=_snapshot(value),
                 created_at=now,
                 expires_at=expires_at,
                 last_accessed=now,
@@ -234,7 +270,7 @@ class TTLCache(CacheStatsMixin):
             age_seconds = time.time() - entry.created_at
 
             return {
-                "value": entry.value,
+                "value": _snapshot(entry.value),
                 "is_stale": is_stale,
                 "age_seconds": round(age_seconds, 1),
                 "hit_count": entry.hit_count,
@@ -289,7 +325,7 @@ class LRUCache(CacheStatsMixin):
             entry.access()
             self._hits += 1
             logger.debug(f"LRU hit: {key} (hits: {entry.hit_count})")
-            return entry.value
+            return _snapshot(entry.value)
 
     def set(self, key: str, value: Any) -> None:
         """
@@ -304,7 +340,7 @@ class LRUCache(CacheStatsMixin):
             if key in self._cache:
                 self._cache.move_to_end(key)
                 entry = self._cache[key]
-                entry.value = value
+                entry.value = _snapshot(value)
                 entry.last_accessed = time.time()
                 logger.debug(f"LRU updated: {key}")
                 return
@@ -312,7 +348,7 @@ class LRUCache(CacheStatsMixin):
             # Add new entry
             entry = CacheEntry(
                 key=key,
-                value=value,
+                value=_snapshot(value),
                 created_at=time.time(),
                 expires_at=None,
                 last_accessed=time.time(),

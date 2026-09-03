@@ -57,15 +57,23 @@ include_ptab='true'
 ```python
 # Search for all citations related to the patent/application
 if "{patent_number}":
-    criteria = f'publicationNumber:{patent_number}'
+    # Pass patent_number as the TOOL PARAMETER, not a criteria clause: the
+    # server crosswalks a granted patent number to its application via the
+    # USPTO ODP applications API (7-8 digits = granted, 11 = publication)
+    # and self-reports the resolution in patent_number_resolution. A raw
+    # publicationNumber: clause returns zero for a granted patent number.
+    search_kwargs = {{"patent_number": "{patent_number}"}}
 else:
     criteria = f'patentApplicationNumber:{application_number}'
 
 # Include date constraint (citations from 2017-10-01+ only)
-criteria += ' AND officeActionDate:[2017-10-01 TO *]'
+# Optional: restrict to the documented 2017-10-01+ window. Left off by
+# default. Always ALSO sweep Citations_search_oa_citations_minimal and union —
+# for an invalidity record, single-lane misses are the failure mode.
+# criteria += ' AND officeActionDate:[2017-10-01 TO *]'
 
 # Get comprehensive citation data
-citations = search_citations_balanced(
+citations = Citations_search_citations_balanced(
     criteria=criteria,
     rows=200
 )
@@ -115,7 +123,7 @@ litigation_citations = []
 for citation in top_citations:
     citation_id = citation.get('citationIdentifier')
     if citation_id:
-        details = get_citation_details(
+        details = Citations_get_citation_details(
             citation_id=citation_id,
             include_context=True
         )
@@ -141,7 +149,7 @@ for i, cite in enumerate(litigation_citations):
 # Get application number if we only have patent number
 if "{patent_number}" and not "{application_number}":
     # Search for application using patent number
-    pfw_search = pfw_search_applications_minimal(
+    pfw_search = PFW_search_applications_minimal(
         query=f'patentNumber:{patent_number}',
         fields=['applicationNumberText'],
         limit=1
@@ -155,7 +163,7 @@ if app_number:
     print(f"Application Number: {{app_number}}")
 
     # Get key prosecution documents
-    key_docs = pfw_get_application_documents(
+    key_docs = PFW_get_application_documents(
         app_number=app_number,
         limit=50
     )
@@ -167,13 +175,13 @@ if app_number:
 
 ```python
 # Get specific document types for litigation
-noa_docs = pfw_get_application_documents(
+noa_docs = PFW_get_application_documents(
     app_number=app_number,
     document_code='NOA',  # Notice of Allowance
     limit=10
 )
 
-rejection_docs = pfw_get_application_documents(
+rejection_docs = PFW_get_application_documents(
     app_number=app_number,
     document_code='CTFR',  # Final Rejection
     limit=10
@@ -184,7 +192,7 @@ print(f"Final Rejection documents: {{rejection_docs['count']}}")
 
 # Extract examiner's final reasoning
 if noa_docs['documentBag']:
-    noa_content = pfw_get_document_content(
+    noa_content = PFW_get_document_content_with_ocr(
         app_number=app_number,
         document_identifier=noa_docs['documentBag'][0]['documentIdentifier']
     )
@@ -194,10 +202,10 @@ if noa_docs['documentBag']:
 ## Phase 3: PTAB Proceedings (if enabled)
 
 **PTAB MCP Tool Updates (as of 2026-01-17):**
-- Use search_trials_minimal() for discovery with fields parameter (99% reduction)
-- Use search_trials_balanced() only for detailed analysis of selected trials
-- Use ptab_get_documents() to list documents (supports filtering by category/party)
-- Use ptab_get_document_content() to extract decision text for LLM analysis
+- Use PTAB_search_trials_minimal() for discovery with fields parameter (99% reduction)
+- Use PTAB_search_trials_balanced() only for detailed analysis of selected trials
+- Use PTAB_get_documents() to list documents (supports filtering by category/party)
+- Use PTAB_get_document_content() to extract decision text for LLM analysis
 - Decisions accessed via document API with document_category='DECISION' filter
 
 **Token Optimization Examples:**
@@ -211,13 +219,13 @@ if "{include_ptab}".lower() == 'true' and "{patent_number}":
 
     # Search for PTAB proceedings involving this patent (ultra-minimal mode first)
     # Use ultra-minimal mode first for discovery, then escalate to balanced if needed
-    ptab_proceedings = search_trials_minimal(
+    ptab_proceedings = PTAB_search_trials_minimal(
         patent_number="{patent_number}",
         fields=['trialNumber', 'trialMetaData.trialStatusCategory', 'petitionerData.petitionerName'],
         limit=20
     )
     # If user needs more details on specific trials, follow up with:
-    # search_trials_balanced(trial_number=selected_trial, limit=1)
+    # PTAB_search_trials_balanced(trial_number=selected_trial, limit=1)
 
     print(f"Found {{ptab_proceedings.get('response', {{}}).get('numFound', 0)}} PTAB proceedings")
 
@@ -237,9 +245,9 @@ if "{include_ptab}".lower() == 'true' and "{patent_number}":
         trial_number = key_proceeding.get('trialNumber') or key_proceeding.get('proceedingNumber')
 
         if trial_number:
-            # Use ptab_get_documents() to list documents (supports filtering by category/party)
+            # Use PTAB_get_documents() to list documents (supports filtering by category/party)
             # Use filtering to get only decision documents (95% token reduction)
-            decisions = ptab_get_documents(
+            decisions = PTAB_get_documents(
                 identifier=trial_number,
                 identifier_type='trial',
                 document_category='DECISION',  # Filter for decisions only

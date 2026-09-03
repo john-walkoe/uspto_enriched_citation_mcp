@@ -113,13 +113,15 @@ Follow these steps to obtain your USPTO API key:
 
 **⚠️ Important Information Governance Note:**
 
-The author's USPTO MCP servers with OCR capabilities (PFW, PTAB, FPD) only use Mistral OCR to have the LLM read **publicly available USPTO documents**. This usage should not raise information governance concerns.
+The USPTO MCP servers with document extraction (PFW, PTAB, FPD) send only **publicly available USPTO documents** to Mistral OCR. This usage should not raise information governance concerns.
 
-However, if you use the API key separately outside the scope of the USPTO MCPs to:
+If you use the same key outside the scope of the USPTO MCPs to:
 - Scan and OCR client documents
-- Use other Mistral API endpoints (e.g., chat API)
+- Call other Mistral API endpoints (e.g., the chat API)
 
-Then the **free tier may not be appropriate** due to the terms of service stating: **"API requests may be used to improve our services"**
+then check the terms of service that apply to your account before doing so. Mistral's terms state that **"API requests may be used to improve our services"**, which is a poor fit for privileged or client-confidential material.
+
+**A self-hosted OCR backend is an alternative.** The document-extraction MCPs can be pointed at a Docling instance you run yourself (`docling-serve`) instead of a hosted OCR service, in which case no third-party key is involved at all. Those servers read `DOCLING_SERVE_URL` (base URL of the docling-serve instance, e.g. `http://your-docling-host:5001`), with `DOCLING_TIMEOUT` (read timeout in seconds, default 300) and `DOCLING_MAX_PAGES` (skip Docling for documents exceeding this page count) as optional dials. See those repositories' own INSTALL guides. **This server reads none of them**: it has no document-extraction tool and no OCR path.
 
 ---
 
@@ -171,7 +173,7 @@ Then the **free tier may not be appropriate** due to the terms of service statin
 
 ✅ **USPTO API Key**: Required for Citations MCP, free, no rotation available - safeguard carefully
 
-ℹ️ **Mistral API Key**: Not needed for Citations MCP (metadata only). Only required for other USPTO MCPs with OCR capabilities (PFW, PTAB, FPD) - free tier available, paid recommended for production
+ℹ️ **Mistral API Key**: Optional, and not used by the Citations MCP at all. This server returns citation metadata and has no document-extraction tool. It applies only to the USPTO MCPs that do extract document text (PFW, PTAB, FPD), where those servers read a document's native text layer first and fall back to OCR only for scanned pages that have none. A self-hosted Docling backend (`DOCLING_SERVE_URL`) can be configured there instead of a hosted OCR service.
 
 API keys are stored securely by the deployment script using Windows DPAPI encryption for the secure configuration method.
 

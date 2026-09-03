@@ -209,7 +209,7 @@ def _check_field_whitelist(query: str, valid_fields: Set[str]) -> _CheckResult:
             )
             return (
                 False,
-                f"Invalid field name: {field}. Use get_available_fields tool for valid fields.",
+                f"Invalid field name: {field}. Use Citations_get_available_fields tool for valid fields.",
             )
     return None
 

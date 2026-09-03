@@ -1,6 +1,8 @@
 """MCP App HTML view for USPTO Enriched Citation search results."""
 
-CITATION_RESULTS_HTML = r"""<!DOCTYPE html>
+from ._common import SHARED_VIEW_JS
+
+_HEAD = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -93,11 +95,26 @@ let activeFilters = {};                    // { source: 'examiner' | null, categ
 
 app.ontoolresult = (result) => {
   const text = result.content?.find(c => c.type === 'text')?.text;
-  try { render(JSON.parse(text)); }
+  try {
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
+    render(data);
+  }
   catch { showError('Could not parse citation results.'); }
 };
 
 app.connect();
+
+// S-04: USPTO citation text (inventor names, passage locators, reference
+// identifiers, aggregation keys) is AI-extracted from office actions that
+// quote applicant-drafted text, and the markup below is built with
+// innerHTML. Same helper as user_management_view.py, which had it and used
+// it.
+"""
+
+_TAIL = r"""
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
@@ -124,7 +141,7 @@ function render(data) {
     <div>Showing: <span>${start + 1}–${Math.min(start + allDocs.length, numFound)}</span></div>
     <div>Examiner-cited: <span>${examinerCount}</span></div>
     ${withPassage ? `<div>With passages: <span>${withPassage}</span></div>` : ''}
-    ${data.query_info?.constructed_query ? `<div style="color:#888;font-size:11px;font-weight:400">Query: ${data.query_info.constructed_query.substring(0,80)}${data.query_info.constructed_query.length>80?'…':''}</div>` : ''}
+    ${data.query_info?.constructed_query ? `<div style="color:#888;font-size:11px;font-weight:400">Query: ${esc(data.query_info.constructed_query.substring(0,80))}${data.query_info.constructed_query.length>80?'…':''}</div>` : ''}
   `;
 
   // Build cards DOM
@@ -147,15 +164,7 @@ function render(data) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function googlePatentsUrl(id) {
-  if (!id || id === '—') return null;
-  // Only show for patent/publication identifiers starting with 2-letter country code
-  // Excludes NPL references (journal articles, books, etc.)
-  if (!/^[A-Z]{2}/.test(id)) return null;
-  // Strip spaces, commas, slashes to build Google Patents identifier (e.g. "US 6,848,420 B2" → "US6848420B2")
-  const clean = id.replace(/[\s,/]/g, '');
-  return `https://patents.google.com/patent/${encodeURIComponent(clean)}`;
-}
+
 
 function formatPassages(passages) {
   if (!passages?.length) return '';
@@ -175,7 +184,7 @@ function categoryBadge(code) {
   if (!code) return '';
   const cls = ['X','Y','A'].includes(code) ? `badge-${code}` : 'badge-cat';
   const labels = { X: 'X — Novel', Y: 'Y — Inventive', A: 'A — Background' };
-  return `<span class="${cls}">${labels[code] || code}</span>`;
+  return `<span class="${cls}">${esc(labels[code] || code)}</span>`;
 }
 
 function buildCard(doc) {
@@ -201,27 +210,27 @@ function buildCard(doc) {
   const inventor = doc.inventorNameText || '';
 
   div.innerHTML = `
-    <div class="card-header"><div class="card-title">${citedId}</div></div>
+    <div class="card-header"><div class="card-title">${esc(citedId)}</div></div>
     <div class="badges">
       ${isExam ? '<span class="badge-examiner">EXAMINER CITED</span>' : '<span class="badge-applicant">APPLICANT CITED</span>'}
       ${categoryBadge(catCode)}
-      ${oaCat ? `<span class="badge-cat">${oaCat}</span>` : ''}
+      ${oaCat ? `<span class="badge-cat">${esc(oaCat)}</span>` : ''}
     </div>
     <div class="meta">
-      <div class="meta-item"><span class="meta-label">Application</span><span class="meta-val">${appNum || '—'}</span></div>
-      <div class="meta-item"><span class="meta-label">Art Unit</span><span class="meta-val">${artUnit}</span></div>
-      <div class="meta-item"><span class="meta-label">Tech Center</span><span class="meta-val">${techCenter}</span></div>
-      <div class="meta-item"><span class="meta-label">OA Date</span><span class="meta-val">${oaDate}</span></div>
-      ${inventor ? `<div class="meta-item"><span class="meta-label">Inventor / Author</span><span class="meta-val">${inventor}</span></div>` : ''}
-      ${doc.relatedClaimNumberText ? `<div class="meta-item"><span class="meta-label">Claims</span><span class="meta-val">${doc.relatedClaimNumberText}</span></div>` : ''}
+      <div class="meta-item"><span class="meta-label">Application</span><span class="meta-val">${esc(appNum) || '—'}</span></div>
+      <div class="meta-item"><span class="meta-label">Art Unit</span><span class="meta-val">${esc(artUnit)}</span></div>
+      <div class="meta-item"><span class="meta-label">Tech Center</span><span class="meta-val">${esc(techCenter)}</span></div>
+      <div class="meta-item"><span class="meta-label">OA Date</span><span class="meta-val">${esc(oaDate)}</span></div>
+      ${inventor ? `<div class="meta-item"><span class="meta-label">Inventor / Author</span><span class="meta-val">${esc(inventor)}</span></div>` : ''}
+      ${doc.relatedClaimNumberText ? `<div class="meta-item"><span class="meta-label">Claims</span><span class="meta-val">${esc(doc.relatedClaimNumberText)}</span></div>` : ''}
     </div>
-    ${passages?.length ? `<div class="passage">📍 ${formatPassages(passages)}</div>` : ''}
+    ${passages?.length ? `<div class="passage">📍 ${esc(formatPassages(passages))}</div>` : ''}
     ${(appNum || gpUrl) ? `<div class="pfw-link">
       ${appNum ? `<button class="pfw-btn">Open citing application in Patent Center →</button>` : ''}
       ${gpUrl ? `<button class="gp-btn">View cited patent or application on Google Patents →</button>` : ''}
     </div>` : ''}
   `;
-  if (appNum) div.querySelector('.pfw-btn')?.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${appNum}` }));
+  if (appNum) div.querySelector('.pfw-btn')?.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${encodeURIComponent(appNum)}` }));
   if (gpUrl)  div.querySelector('.gp-btn')?.addEventListener('click',  () => app.openLink({ url: gpUrl }));
   return div;
 }
@@ -281,7 +290,7 @@ function buildFilterBar() {
 function pillGroup(label, counts, dim, styleMap) {
   const group = document.createElement('div');
   group.className = 'filter-group';
-  group.innerHTML = `<span class="filter-label">${label}:</span>`;
+  group.innerHTML = `<span class="filter-label">${esc(label)}:</span>`;
 
   Object.entries(counts).sort((a,b) => b[1]-a[1]).forEach(([val, count]) => {
     const cfg = styleMap[val] || {};
@@ -289,18 +298,14 @@ function pillGroup(label, counts, dim, styleMap) {
     pill.className = 'pill';
     pill.dataset.dim = dim;
     pill.dataset.val = val;
-    pill.innerHTML = `${cfg.label || val}: <span class="pill-count">${count}</span>`;
+    pill.innerHTML = `${esc(cfg.label || val)}: <span class="pill-count">${Number(count)}</span>`;
     pill.addEventListener('click', () => toggleFilter(dim, val, cfg.activeClass || 'active', pill));
     group.appendChild(pill);
   });
   return group;
 }
 
-function sep() {
-  const s = document.createElement('div');
-  s.className = 'filter-sep';
-  return s;
-}
+
 
 function countBy(fn, filterFn = () => true) {
   const map = {};
@@ -372,12 +377,12 @@ window.clearFilters = function() {
   updateCounter();
 };
 
-function showError(msg) {
-  document.getElementById('loading').style.display = 'none';
-  const el = document.getElementById('error');
-  el.style.display = 'block';
-  el.textContent = `Error: ${msg}`;
-}
+
 </script>
 </body>
 </html>"""
+
+# One copy of the four helpers both card views share verbatim,
+# concatenated rather than f-string-formatted so the JavaScript keeps
+# its literal braces (D-3).
+CITATION_RESULTS_HTML = _HEAD + SHARED_VIEW_JS + _TAIL

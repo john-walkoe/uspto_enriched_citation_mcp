@@ -80,10 +80,22 @@ _WARNING_NOTE = (
     "source office-action document when presenting them."
 )
 
-# Text-bearing payload keys worth scanning on a citation hit dict. These are
-# the two free-text fields in the Enriched Citations v3 schema; all other
-# fields are structured identifiers/codes/dates.
-_DEFAULT_TEXT_KEYS = ("passageLocationText", "qualitySummaryText")
+# Text-bearing payload keys worth scanning on a citation hit dict. Every key
+# here is rendered into an MCP App view, which is the reason the list has to
+# match what the views interpolate: it covered only the first two while
+# inventorNameText, citedDocumentIdentifier, relatedClaimNumberText and
+# referenceIdentifier were all rendered and none were scanned (S-04).
+# citedDocumentIdentifier and referenceIdentifier are nominally structured
+# identifiers, but referenceIdentifier is transcribed from Form 892/1449 and
+# its raw string format varies, so it is free text in practice.
+_DEFAULT_TEXT_KEYS = (
+    "passageLocationText",
+    "qualitySummaryText",
+    "inventorNameText",
+    "citedDocumentIdentifier",
+    "relatedClaimNumberText",
+    "referenceIdentifier",
+)
 
 # `id` is commented out of the default field sets in field_configs.yaml, so
 # fall back to the stable structured identifiers that ARE in the default sets.

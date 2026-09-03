@@ -6,17 +6,57 @@ stack, uvicorn.run). Imports the composition root lazily inside the function
 """
 
 import os
+from typing import List, Optional
 
 from .middleware import (
     APIKeyAuthMiddleware,
+    InboundRateLimitMiddleware,
     RequestSizeLimitMiddleware,
     SecurityHeadersMiddleware,
 )
 from .runtime import initialize_services
 from .config.settings import get_settings
-from .util.logging import get_logger
+from .util.logging import attach_uvicorn_sanitizer, get_logger
 
 logger = get_logger(__name__)
+
+_LOOPBACK_ORIGIN_RE = r"^http://(localhost|127\.0\.0\.1)(:[0-9]+)?$"
+
+
+def build_cors_origins(cors_extra_origin: Optional[str]) -> List[str]:
+    """Build the CORS allowlist.
+
+    The two loopback development origins used to be present in every
+    deployment; they are now gated on CITATIONS_DEV_CORS. An extra origin
+    must be HTTPS unless it is loopback, matching the check
+    build_auth_provider already applies to auth_base_url (S-24).
+    """
+    import re
+
+    origins: List[str] = []
+    if os.getenv("CITATIONS_DEV_CORS", "").lower() in ("1", "true", "yes"):
+        origins = ["http://localhost:8080", "http://127.0.0.1:8080"]
+
+    if not cors_extra_origin:
+        return origins
+
+    # SECURITY: Validate CORS origin to prevent injection of arbitrary origins
+    if not re.match(r"^https?://[a-zA-Z0-9.\-]+(:[0-9]+)?$", cors_extra_origin):
+        raise ValueError(
+            f"CORS_EXTRA_ORIGIN must be a valid HTTP/HTTPS URL, got: {cors_extra_origin}"
+        )
+    if not (
+        cors_extra_origin.startswith("https://")
+        or re.match(_LOOPBACK_ORIGIN_RE, cors_extra_origin)
+    ):
+        raise ValueError(
+            "CORS_EXTRA_ORIGIN must use https:// (loopback excepted). A "
+            "plaintext origin lets a network attacker read tool responses. "
+            "Got: " + cors_extra_origin
+        )
+    origins.append(cors_extra_origin)
+    logger.info(f"CORS: added extra origin {cors_extra_origin}")
+    return origins
 
 
 def run_server():
@@ -85,26 +125,20 @@ def run_server():
         host = settings.http_host
         port = settings.http_port
 
-        # Build CORS origins list
-        origins = ["http://localhost:8080", "http://127.0.0.1:8080"]
-        if settings.cors_extra_origin:
-            # SECURITY: Validate CORS origin to prevent injection of arbitrary origins
-            import re
-            if not re.match(r"^https?://[a-zA-Z0-9.\-]+(:[0-9]+)?$", settings.cors_extra_origin):
-                raise ValueError(
-                    f"CORS_EXTRA_ORIGIN must be a valid HTTP/HTTPS URL, got: {settings.cors_extra_origin}"
-                )
-            origins.append(settings.cors_extra_origin)
-            logger.info(f"CORS: added extra origin {settings.cors_extra_origin}")
+        origins = build_cors_origins(settings.cors_extra_origin)
 
         from starlette.middleware.cors import CORSMiddleware
         import uvicorn
-        # Middleware stack (outermost first): SecurityHeaders → APIKeyAuth → SizeLimit → CORS → mcp app
+        # Middleware stack (outermost first): SecurityHeaders → APIKeyAuth →
+        # InboundRateLimit → SizeLimit → CORS → mcp app.
         # Security headers wrap everything so they appear on 401 responses too.
         # SizeLimit (M3) caps tool-call JSON bodies before they reach FastMCP.
+        # InboundRateLimit meters requests per identity: the only RateLimiter
+        # in the process paced OUTBOUND USPTO calls, so nothing metered what
+        # came in, while main.py's health route claimed otherwise.
         inner = RequestSizeLimitMiddleware(
             CORSMiddleware(
-                mcp.http_app(),
+                mcp.http_app(stateless_http=settings.fastmcp_stateless_http),
                 allow_origins=origins,
                 allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
                 # X-API-KEY removed from allow_headers — auth is enforced via
@@ -124,15 +158,66 @@ def run_server():
                 "CITATIONS_AUTH_MODE=oauth: x-api-key guard disabled; the MCP "
                 "surface is protected by bearer tokens."
             )
-            app = SecurityHeadersMiddleware(inner)
+            app = SecurityHeadersMiddleware(InboundRateLimitMiddleware(inner))
         else:
-            app = SecurityHeadersMiddleware(APIKeyAuthMiddleware(inner))
+            app = SecurityHeadersMiddleware(
+                APIKeyAuthMiddleware(InboundRateLimitMiddleware(inner))
+            )
         logger.info(f"Starting HTTP transport on {host}:{port}")
+        # uvicorn logs unhandled ASGI tracebacks on its own handler, which
+        # never sees SanitizingFilter — the one class of record the redaction
+        # policy exists for (E-4). Attached before uvicorn.run installs the
+        # handlers, and again from the app's startup hook.
+        attach_uvicorn_sanitizer()
         # access_log off: access lines include request paths and client IPs,
-        # and uvicorn's access logger bypasses our sanitizing handlers
-        uvicorn.run(app, host=host, port=port, access_log=False)
+        # and uvicorn's access logger bypasses our sanitizing handlers.
+        #
+        # proxy_headers with forwarded_allow_ips pinned to the reverse proxy:
+        # without it uvicorn's default only trusts 127.0.0.1, never matches
+        # the container-network proxy peer, and every request appears to come
+        # from one address — which collapses the OAuth rate limiter to a
+        # single shared bucket for the whole internet (S-08). Never "*": an
+        # unpinned allow list makes X-Forwarded-For attacker-controlled.
+        trusted_proxies = os.getenv("TRUSTED_PROXY_IPS", "127.0.0.1")
+        if trusted_proxies.strip() == "*":
+            raise ValueError(
+                "TRUSTED_PROXY_IPS='*' would let any client spoof its address "
+                "through X-Forwarded-For and bypass the rate limiter. Name the "
+                "proxy's address instead."
+            )
+        try:
+            uvicorn.run(
+                app,
+                host=host,
+                port=port,
+                access_log=False,
+                proxy_headers=True,
+                forwarded_allow_ips=trusted_proxies,
+            )
+        finally:
+            _close_services()
     else:
-        mcp.run(transport="stdio")
+        try:
+            mcp.run(transport="stdio")
+        finally:
+            _close_services()
+
+
+def _close_services() -> None:
+    """Close the three httpx pools on the way out.
+
+    initialize_services() had no counterpart, so on SIGTERM up to 30 sockets
+    were torn down by process exit rather than closed (F-2). uvicorn.run and
+    mcp.run both block until the server stops, so this runs once, after.
+    """
+    import asyncio
+
+    from .runtime import shutdown_services
+
+    try:
+        asyncio.run(shutdown_services())
+    except Exception:  # pragma: no cover - shutdown must not mask the exit
+        logger.warning("Service shutdown did not complete cleanly")
 
 
 if __name__ == "__main__":

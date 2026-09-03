@@ -1,6 +1,8 @@
 """MCP App HTML view for USPTO Office Action Citations (v2) search results."""
 
-OA_CITATIONS_HTML = r"""<!DOCTYPE html>
+from ._common import SHARED_VIEW_JS
+
+_HEAD = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -95,13 +97,26 @@ const filters = { source: null, legal: null, action: null };
 app.ontoolresult = (result) => {
   const text = result.content?.find(c => c.type === 'text')?.text;
   try {
-    render(JSON.parse(text));
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
+    render(data);
   } catch {
     showError('Could not parse OA citation results.');
   }
 };
 
 app.connect();
+
+// S-04: USPTO citation text (inventor names, passage locators, reference
+// identifiers, aggregation keys) is AI-extracted from office actions that
+// quote applicant-drafted text, and the markup below is built with
+// innerHTML. Same helper as user_management_view.py, which had it and used
+// it.
+"""
+
+_TAIL = r"""
 
 function render(data) {
   document.getElementById('loading').style.display = 'none';
@@ -139,15 +154,7 @@ function render(data) {
   document.getElementById('content').style.display = 'block';
 }
 
-function googlePatentsUrl(id) {
-  if (!id || id === '—') return null;
-  // Only show for patent/publication identifiers starting with 2-letter country code
-  // Excludes NPL references (journal articles, books, etc.)
-  if (!/^[A-Z]{2}/.test(id)) return null;
-  // Strip spaces, commas, slashes to build Google Patents identifier (e.g. "US 6,848,420 B2" → "US6848420B2")
-  const clean = id.replace(/[\s,/]/g, '');
-  return `https://patents.google.com/patent/${encodeURIComponent(clean)}`;
-}
+
 
 function buildCard(doc) {
   const div = document.createElement('div');
@@ -173,21 +180,21 @@ function buildCard(doc) {
   div.dataset.action = actionType.toLowerCase().replace(/\s+/g, '-');
 
   div.innerHTML = `
-    <div style="font-weight:600;font-size:13px;margin-bottom:5px">${refId}</div>
+    <div style="font-weight:600;font-size:13px;margin-bottom:5px">${esc(refId)}</div>
     <div class="badges">
       ${isExaminer ? '<span class="badge-examiner">EXAMINER (892)</span>' : ''}
       ${isApplicantOA ? '<span class="badge-applicant">APPLICANT (1449)</span>' : ''}
       ${isOACite ? '<span class="badge-oa">IN OA</span>' : ''}
-      ${actionType ? `<span class="badge-action">${actionType}</span>` : ''}
-      ${legalCode ? `<span class="badge-legal">§ ${legalCode}</span>` : ''}
+      ${actionType ? `<span class="badge-action">${esc(actionType)}</span>` : ''}
+      ${legalCode ? `<span class="badge-legal">§ ${esc(legalCode)}</span>` : ''}
     </div>
     <div class="meta">
-      <div class="meta-item"><span class="meta-label">Application</span><span class="meta-val">${appNum || '—'}</span></div>
-      <div class="meta-item"><span class="meta-label">Art Unit</span><span class="meta-val">${artUnit}</span></div>
-      <div class="meta-item"><span class="meta-label">Tech Center</span><span class="meta-val">${techCenter}</span></div>
-      ${workGroup ? `<div class="meta-item"><span class="meta-label">Work Group</span><span class="meta-val">${workGroup}</span></div>` : ''}
-      ${para ? `<div class="meta-item"><span class="meta-label">Paragraph</span><span class="meta-val">${para}</span></div>` : ''}
-      <div class="meta-item"><span class="meta-label">Created</span><span class="meta-val">${created}</span></div>
+      <div class="meta-item"><span class="meta-label">Application</span><span class="meta-val">${esc(appNum) || '—'}</span></div>
+      <div class="meta-item"><span class="meta-label">Art Unit</span><span class="meta-val">${esc(artUnit)}</span></div>
+      <div class="meta-item"><span class="meta-label">Tech Center</span><span class="meta-val">${esc(techCenter)}</span></div>
+      ${workGroup ? `<div class="meta-item"><span class="meta-label">Work Group</span><span class="meta-val">${esc(workGroup)}</span></div>` : ''}
+      ${para ? `<div class="meta-item"><span class="meta-label">Paragraph</span><span class="meta-val">${esc(para)}</span></div>` : ''}
+      <div class="meta-item"><span class="meta-label">Created</span><span class="meta-val">${esc(created)}</span></div>
     </div>
     ${(appNum || gpUrl) ? `<div class="pfw-link">
       ${appNum ? `<button class="pfw-btn">Open citing application in Patent Center →</button>` : ''}
@@ -195,7 +202,7 @@ function buildCard(doc) {
     </div>` : ''}
   `;
 
-  if (appNum) div.querySelector('.pfw-btn')?.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${appNum}` }));
+  if (appNum) div.querySelector('.pfw-btn')?.addEventListener('click', () => app.openLink({ url: `https://patentcenter.uspto.gov/applications/${encodeURIComponent(appNum)}` }));
   if (gpUrl)  div.querySelector('.gp-btn')?.addEventListener('click',  () => app.openLink({ url: gpUrl }));
 
   return div;
@@ -293,7 +300,7 @@ function pillGroup(label, counts, dim, styleMap) {
     pill.dataset.dim = dim;
     pill.dataset.val = val;
     pill.dataset.activeClass = activeClass;
-    pill.innerHTML = `${displayLabel}: <span class="pill-count">${count}</span>`;
+    pill.innerHTML = `${esc(displayLabel)}: <span class="pill-count">${Number(count)}</span>`;
     pill.addEventListener('click', () => toggleFilter(dim, val, activeClass, pill));
     group.appendChild(pill);
   });
@@ -301,11 +308,7 @@ function pillGroup(label, counts, dim, styleMap) {
   return group;
 }
 
-function sep() {
-  const s = document.createElement('div');
-  s.className = 'filter-sep';
-  return s;
-}
+
 
 function countBy(fn, filterFn) {
   const cards = Array.from(document.querySelectorAll('#cards .card'));
@@ -380,12 +383,12 @@ window.clearFilters = function() {
   updateCounter();
 };
 
-function showError(msg) {
-  document.getElementById('loading').style.display = 'none';
-  const el = document.getElementById('error');
-  el.style.display = 'block';
-  el.textContent = `Error: ${msg}`;
-}
+
 </script>
 </body>
 </html>"""
+
+# One copy of the four helpers both card views share verbatim,
+# concatenated rather than f-string-formatted so the JavaScript keeps
+# its literal braces (D-3).
+OA_CITATIONS_HTML = _HEAD + SHARED_VIEW_JS + _TAIL

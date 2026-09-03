@@ -32,9 +32,9 @@ and is never mutated in the name of injection defense.
 ## What we do instead: structured, provenance-aware interfaces
 
 1. **Data/instruction separation by labeling.** Every tool that returns
-   free-text citation content (`search_citations_minimal`,
-   `search_citations_balanced`, `get_citation_details`,
-   `search_oa_citations_minimal`, `search_oa_citations_balanced`) attaches a
+   free-text citation content (`Citations_search_citations_minimal`,
+   `Citations_search_citations_balanced`, `Citations_get_citation_details`,
+   `Citations_search_oa_citations_minimal`, `Citations_search_oa_citations_balanced`) attaches a
    machine-readable `provenance_note` stating that the text is quoted data, not
    instructions, and the server-level instructions direct the consuming model to
    report instruction-like language found inside retrieved text rather than act

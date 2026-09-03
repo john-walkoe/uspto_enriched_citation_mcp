@@ -1,7 +1,7 @@
-"""Unit tests for CitationService._get_cross_mcp_links (audit item 1a).
+"""Unit tests for CitationService.get_cross_mcp_links (audit item 1a).
 
-services/citation_service.py:_get_cross_mcp_links had zero tests prior to
-this file (`grep -rn "_get_cross_mcp_links" tests/` returned no hits) despite
+services/citation_service.py:get_cross_mcp_links had zero tests prior to
+this file (`grep -rn "get_cross_mcp_links" tests/` returned no hits) despite
 being non-trivial logic — dedupes 4 identifier types across docs, decides
 `integration_ready` — that's injected directly into every
 search_citations_minimal response (tools/search.py).
@@ -13,7 +13,7 @@ from uspto_enriched_citation_mcp.services.citation_service import CitationServic
 
 
 def _service() -> CitationService:
-    # _get_cross_mcp_links doesn't touch self.client/self.field_manager, so
+    # get_cross_mcp_links doesn't touch self.client/self.field_manager, so
     # Mocks are enough here (no network/service call happens).
     return CitationService(client=Mock(), field_manager=Mock())
 
@@ -22,21 +22,21 @@ class TestGetCrossMcpLinks:
     def test_empty_docs_returns_not_integration_ready(self):
         service = _service()
 
-        result = service._get_cross_mcp_links({"response": {"docs": []}})
+        result = service.get_cross_mcp_links({"response": {"docs": []}})
 
         assert result == {"available_links": {}, "integration_ready": False}
 
     def test_missing_response_key_treated_as_no_docs(self):
         service = _service()
 
-        result = service._get_cross_mcp_links({})
+        result = service.get_cross_mcp_links({})
 
         assert result == {"available_links": {}, "integration_ready": False}
 
     def test_dedupes_application_numbers_and_flags_ready(self):
         service = _service()
 
-        result = service._get_cross_mcp_links(
+        result = service.get_cross_mcp_links(
             {
                 "response": {
                     "docs": [
@@ -63,7 +63,7 @@ class TestGetCrossMcpLinks:
     def test_records_without_application_numbers_but_with_publication_numbers(self):
         service = _service()
 
-        result = service._get_cross_mcp_links(
+        result = service.get_cross_mcp_links(
             {
                 "response": {
                     "docs": [
@@ -87,7 +87,7 @@ class TestGetCrossMcpLinks:
         application/patent numbers do (per the `or` condition in source)."""
         service = _service()
 
-        result = service._get_cross_mcp_links(
+        result = service.get_cross_mcp_links(
             {
                 "response": {
                     "docs": [
@@ -108,7 +108,7 @@ class TestGetCrossMcpLinks:
         service = _service()
 
         docs = [{"patentApplicationNumber": str(16000000 + i)} for i in range(8)]
-        result = service._get_cross_mcp_links({"response": {"docs": docs}})
+        result = service.get_cross_mcp_links({"response": {"docs": docs}})
 
         assert result["available_links"]["patent_file_wrapper"]["count"] == 8
         assert len(result["available_links"]["patent_file_wrapper"]["sample"]) == 5
@@ -119,7 +119,7 @@ class TestGetCrossMcpLinks:
         propagate."""
         service = _service()
 
-        result = service._get_cross_mcp_links(None)
+        result = service.get_cross_mcp_links(None)
 
         assert result["integration_ready"] is False
         assert result["available_links"] == {}

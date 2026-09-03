@@ -52,7 +52,11 @@ const app = new App({ name: 'USPTO Citations MCP Users', version: '1.0.0' });
 app.ontoolresult = (result) => {
   const text = result.content?.find(c => c.type === 'text')?.text;
   try {
-    render(JSON.parse(text));
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
+    render(data);
   } catch {
     showError('Could not parse user list.');
   }

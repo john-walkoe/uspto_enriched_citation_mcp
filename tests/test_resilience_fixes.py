@@ -354,10 +354,12 @@ class TestGetCitationDetailsSanitization:
             raise RuntimeError("Traceback at /home/john/secret/config.py line 42")
 
         with patch.object(client, "search_records", side_effect=boom):
-            result = await client.get_citation_details("12345")
+            result = await client.get_citation_details(
+                "0de7ea10c59e03dab218a40dece9dffd"
+            )
 
         assert result["status"] == "error"
-        assert result["citation_id"] == "12345"
+        assert result["citation_id"] == "0de7ea10c59e03dab218a40dece9dffd"
         # get_safe_error_message maps RuntimeError to a fixed friendly
         # message — the raw exception text (and any embedded path) must not
         # reach the caller.
@@ -494,3 +496,81 @@ class TestAuthStoreFailureCleanError:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# --------------------------------------------- include_context=False is real
+
+
+class TestMinimalContextAppliesAFieldSet:
+    """`include_context=False` used to map to `selected_fields=[]`, and an
+    empty Solr `fl` is not a request for no fields — it is treated as unset,
+    so the full ~4KB record came back labelled context_level "minimal". The
+    minimal level now passes the actual minimal field set.
+    """
+
+    @pytest.mark.asyncio
+    async def test_minimal_context_requests_the_minimal_field_set(self):
+        from uspto_enriched_citation_mcp.config.field_manager import (
+            DEFAULT_MINIMAL_FIELDS,
+        )
+
+        client = EnrichedCitationClient(api_key="x" * 32, enable_cache=False)
+        captured = {}
+
+        async def fake_search(criteria, start, rows, selected_fields):
+            captured["selected_fields"] = selected_fields
+            # The API ignores `fl` and returns the whole record regardless.
+            return {
+                "response": {
+                    "docs": [
+                        {
+                            "id": "0de7ea10c59e03dab218a40dece9dffd",
+                            "patentApplicationNumber": "16816197",
+                            "passageLocationText": "col. 4, ll. 1-20",
+                            "qualitySummaryText": "AOK",
+                        }
+                    ]
+                }
+            }
+
+        with patch.object(client, "search_records", side_effect=fake_search):
+            result = await client.get_citation_details(
+                "0de7ea10c59e03dab218a40dece9dffd", include_context=False
+            )
+
+        assert captured["selected_fields"] == list(DEFAULT_MINIMAL_FIELDS)
+        assert captured["selected_fields"] != []
+        assert "passageLocationText" not in captured["selected_fields"]
+        assert result["context_level"] == "minimal"
+        # ...and the field set is enforced client-side, because the API
+        # ignores `fl` — the label has to match the payload.
+        assert "passageLocationText" not in result["citation"]
+        assert "qualitySummaryText" not in result["citation"]
+        assert result["citation"]["patentApplicationNumber"] == "16816197"
+
+    @pytest.mark.asyncio
+    async def test_full_context_still_requests_every_field(self):
+        client = EnrichedCitationClient(api_key="x" * 32, enable_cache=False)
+        captured = {}
+
+        async def fake_search(criteria, start, rows, selected_fields):
+            captured["selected_fields"] = selected_fields
+            return {
+                "response": {
+                    "docs": [
+                        {
+                            "patentApplicationNumber": "16816197",
+                            "passageLocationText": "col. 4, ll. 1-20",
+                        }
+                    ]
+                }
+            }
+
+        with patch.object(client, "search_records", side_effect=fake_search):
+            result = await client.get_citation_details(
+                "0de7ea10c59e03dab218a40dece9dffd", include_context=True
+            )
+
+        assert captured["selected_fields"] is None
+        assert result["context_level"] == "full"
+        assert "passageLocationText" in result["citation"]

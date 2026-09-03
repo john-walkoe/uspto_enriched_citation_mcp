@@ -6,6 +6,13 @@ from fastmcp import FastMCP
 from fastmcp.apps import AppConfig, ResourceCSP
 import structlog
 
+# FastMCP 4 / mcp-types 2 dropped extra="allow" on ToolAnnotations, which
+# silently strips the `defer_loading` flag off every tool. Must run before any
+# tool is registered. See fastmcp_compat for the full rationale.
+from .fastmcp_compat import apply as _apply_fastmcp_compat
+
+_apply_fastmcp_compat()
+
 # Configure enhanced logging with file rotation and security hardening
 from .util.logging import setup_logging
 logger = setup_logging(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -39,31 +46,60 @@ SERVER_INSTRUCTIONS = """
 Citations MCP provides USPTO citation data through 11 tools covering two APIs.
 
 ALWAYS-AVAILABLE TOOLS (non-deferred, immediate access):
-1. search_citations_minimal - Primary enriched citation discovery (90-95% context reduction)
-2. citations_get_guidance - Workflow guidance and documentation (use section parameter)
+1. Citations_search_citations_minimal - Primary enriched citation discovery (90-95% context reduction)
+2. Citations_search_oa_citations_minimal - Primary OA citation discovery (raw 892/1449 lists)
+3. Citations_get_guidance - Workflow guidance and documentation (use section parameter)
 
-ENRICHED CITATIONS (v3) - AI-extracted passage locations, claim mapping, quality scores:
-- search_citations_minimal / search_citations_balanced - Progressive disclosure search
-- get_citation_details - Full record for specific citation by ID
-- get_citation_statistics - Aggregations and trend analysis
-- get_available_fields - Enriched Citations field discovery
+TWO INDEPENDENT SURFACES. They are not tiers of one dataset and they reject
+each other's field names with HTTP 400. DEFAULT TO QUERYING BOTH — neither is
+a superset of the other.
 
-OFFICE ACTION CITATIONS (v2) - Raw citation lists from Form 892/1449, broader coverage:
-- search_oa_citations_minimal / search_oa_citations_balanced - OA citation search
-- get_oa_citation_fields - OA Citations field discovery
+ENRICHED CITATIONS (v3) - AI-extracted analysis of a subset of office actions:
+- Citations_search_citations_minimal / Citations_search_citations_balanced - Progressive disclosure search
+- Citations_get_citation_details - Full record for specific citation (pass the record's `id`)
+- Citations_get_citation_statistics - Aggregations and trend analysis
+- Citations_get_available_fields - Enriched Citations field discovery
+- Only lane with: passageLocationText (column/line/figure/claim locators),
+  relatedClaimNumberText (claim mapping), qualitySummaryText, nplIndicator,
+  officeActionDate (date filtering), and 11-digit publication-number lookup.
 
-UTILITY TOOLS:
-- validate_query - Lucene syntax validation and optimization
-- citations_get_guidance - All workflow and integration guidance
+OFFICE ACTION CITATIONS (v2) - Raw lists transcribed from Form 892/1449:
+- Citations_search_oa_citations_minimal / Citations_search_oa_citations_balanced - OA citation search
+- Citations_get_oa_citation_fields - OA Citations field discovery
+- Only lane with: legalSectionCode (102/103/112 statutory basis),
+  actionTypeCategory, paragraphNumber, and the broadest applicant-IDS inventory.
+- Has NO date field — never add an officeActionDate clause to an OA query, it
+  will 400. publicationNumber also 400s as a FIELD — pass the `patent_number`
+  parameter instead, which crosswalks a granted patent number to the
+  application serial this index holds (all four search tools take it, and each
+  reports the mapping back as `patent_number_resolution`).
+
+COVERAGE: USPTO documents BOTH APIs as office actions mailed 2017-10-01 through
+~30 days ago. In practice both lanes have been observed serving older records
+(enriched officeActionDate values verified against PFW document dates back to
+2010-2012), so query older prosecution rather than assuming it is absent.
+
+ROUTING RULE — TRY BOTH:
+- Default for any completeness-sensitive question (litigation prior-art sweeps,
+  art-unit or examiner behavior, "was reference X cited") → run BOTH lanes and
+  union/compare. Neither is a superset; OA is usually broader in bulk, but on a
+  given application enriched can return more.
+- Single-lane shortcut ONLY for a lane-exclusive capability:
+    passage locations / claim mapping / date windows → enriched
+    statutory-basis filter (legalSectionCode) → OA
+- Report both counts whenever you ran both, and say which lane gave what.
+- Neither lane has examiner names — go through PFW for examiner analysis
 
 PROGRESSIVE WORKFLOW:
-1. Discovery: search_citations_minimal → broad pattern identification
-2. Analysis: search_citations_balanced → detailed field analysis
-3. Deep Dive: get_citation_details → individual citation context
-4. OA Cross-check: search_oa_citations_minimal → verify via raw 892/1449 data
+1. Route: default to BOTH lanes; go single-lane only per the rule above
+2. Discovery: Citations_search_*_minimal → broad pattern identification
+3. Analysis: Citations_search_*_balanced → detailed field analysis
+4. Deep Dive: Citations_get_citation_details → individual citation context (enriched only)
+5. Documents: PFW_get_oa_text / PFW_get_oa_rejections → the office action itself
 
-For workflow guidance: citations_get_guidance(section="tools")
-For cross-MCP integration: citations_get_guidance(section="workflows_pfw")
+For lane routing and measured coverage: Citations_get_guidance(section="oa_citations")
+For workflow guidance: Citations_get_guidance(section="tools")
+For cross-MCP integration: Citations_get_guidance(section="workflows_pfw")
 
 ADMIN (OAuth deployments only): citations_manage_users — registered-user
 management (hidden unless the signed-in identity has the citations:admin scope).
@@ -112,13 +148,30 @@ def _build_auth_provider():
 
 _AUTH_PROVIDER = _build_auth_provider()
 
-# Initialize FastMCP with server instructions for tool search optimization
-mcp = FastMCP(
-    "uspto-enriched-citation-mcp",
-    instructions=SERVER_INSTRUCTIONS,
-    icons=[{"src": "https://raw.githubusercontent.com/tailwindlabs/heroicons/master/src/24/outline/document-magnifying-glass.svg", "mimeType": "image/svg+xml"}],
-    auth=_AUTH_PROVIDER,
-)
+def _pin_tool_titles(server: FastMCP) -> None:
+    """Keep the tool display name equal to the tool name (pre-FastMCP-4 behavior).
+
+    FastMCP 4 always emits a `title` on tools/list, deriving one from the name
+    when none is set (`_default_title`: "Citations_get_guidance" becomes
+    "Citations Get Guidance"). FastMCP 3 emitted no title, so every client
+    displayed the name.
+
+    Every reference to these tools — SERVER_INSTRUCTIONS above, the guidance
+    sections, README, USAGE_EXAMPLES — names them in the underscore form, so
+    letting the framework retitle them would put a different string in the UI
+    than in the text telling the user which tool to ask for. Pinning the title
+    to the name keeps the displayed label byte-identical to pre-4 while still
+    satisfying clients that drop title-less tools (the reason FastMCP added the
+    default).
+
+    Applied centrally rather than as a `title=` kwarg on each registration so a
+    newly added tool cannot silently pick up a derived title.
+    """
+    from fastmcp.tools.base import Tool
+
+    for component in server.local_provider._components.values():
+        if isinstance(component, Tool) and not component.title:
+            component.title = component.name
 
 
 def _attach_admin_scope_checks(server: FastMCP) -> None:
@@ -162,24 +215,6 @@ def _attach_admin_scope_checks(server: FastMCP) -> None:
                 "FastMCP internals may have changed; refusing to start ungated."
             )
 
-# =============================================================================
-# MCP APPS — Resource URIs and HTML view registration
-# =============================================================================
-from .ui.views import (  # noqa: E402
-    CITATION_RESULTS_HTML,
-    OA_CITATIONS_HTML,
-    STATISTICS_HTML,
-    USER_MANAGEMENT_HTML,
-)
-
-from .app_uris import (  # noqa: E402
-    CITATION_RESULTS_URI as _CITATION_RESULTS_URI,
-    OA_CITATIONS_URI as _OA_CITATIONS_URI,
-    STATISTICS_URI as _STATISTICS_URI,
-    USER_MANAGEMENT_URI as _USER_MANAGEMENT_URI,
-)
-
-
 def _build_csp_domains() -> list[str]:
     """Build CSP domain list for MCP Apps. Always includes CDN; MCP_APP_EXTRA_DOMAINS adds more."""
     domains = ["https://cdn.jsdelivr.net"]
@@ -191,63 +226,103 @@ def _build_csp_domains() -> list[str]:
                 domains.append(d)
     return domains
 
-_CSP = ResourceCSP(resource_domains=_build_csp_domains())
+def build_server() -> FastMCP:
+    """Construct and fully wire the FastMCP server.
 
-
-@mcp.resource(_CITATION_RESULTS_URI, app=AppConfig(csp=_CSP))
-def citation_results_view() -> str:
-    return CITATION_RESULTS_HTML
-
-
-@mcp.resource(_OA_CITATIONS_URI, app=AppConfig(csp=_CSP))
-def oa_citations_view() -> str:
-    return OA_CITATIONS_HTML
-
-
-@mcp.resource(_STATISTICS_URI, app=AppConfig(csp=_CSP))
-def statistics_view() -> str:
-    return STATISTICS_HTML
-
-
-@mcp.resource(_USER_MANAGEMENT_URI, app=AppConfig(csp=_CSP))
-def user_management_view() -> str:
-    return USER_MANAGEMENT_HTML
-
-
-@mcp.custom_route("/health", methods=["GET"])
-async def health_check(request):
+    This was the module body: importing main.py built the FastMCP instance,
+    registered four resources, one custom route, every prompt and every tool,
+    and could raise RuntimeError from _attach_admin_scope_checks — none of it
+    inside a function, so the server could not be constructed twice in one
+    process and every importer paid for all of it (F-4). The module-level
+    `mcp = build_server()` below keeps that import-time behavior for existing
+    callers; what changed is that it is now a call anyone can make.
     """
-    Health check endpoint for reverse proxy / Docker deployments.
+    server = FastMCP(
+        "uspto-enriched-citation-mcp",
+        instructions=SERVER_INSTRUCTIONS,
+        icons=[{"src": "https://raw.githubusercontent.com/tailwindlabs/heroicons/master/src/24/outline/document-magnifying-glass.svg", "mimeType": "image/svg+xml"}],
+        auth=_AUTH_PROVIDER,
+    )
 
-    NOTE: This endpoint is intentionally unauthenticated to support
-    load balancer health probes and container orchestration (Kubernetes,
-    Docker Compose, etc.). It returns only a static "OK" response and
-    does not expose any sensitive data. Rate limiting is applied globally
-    via the RateLimiter.
-    """
-    from starlette.responses import PlainTextResponse
-    return PlainTextResponse("OK")
+    # =============================================================================
+    # MCP APPS — Resource URIs and HTML view registration
+    # =============================================================================
+    from .ui.views import (
+        CITATION_RESULTS_HTML,
+        OA_CITATIONS_HTML,
+        STATISTICS_HTML,
+        USER_MANAGEMENT_HTML,
+    )
+
+    from .app_uris import (
+        CITATION_RESULTS_URI as _CITATION_RESULTS_URI,
+        OA_CITATIONS_URI as _OA_CITATIONS_URI,
+        STATISTICS_URI as _STATISTICS_URI,
+        USER_MANAGEMENT_URI as _USER_MANAGEMENT_URI,
+    )
+
+    _CSP = ResourceCSP(resource_domains=_build_csp_domains())
+
+    @server.resource(_CITATION_RESULTS_URI, app=AppConfig(csp=_CSP))
+    def citation_results_view() -> str:
+        return CITATION_RESULTS_HTML
+
+    @server.resource(_OA_CITATIONS_URI, app=AppConfig(csp=_CSP))
+    def oa_citations_view() -> str:
+        return OA_CITATIONS_HTML
+
+    @server.resource(_STATISTICS_URI, app=AppConfig(csp=_CSP))
+    def statistics_view() -> str:
+        return STATISTICS_HTML
+
+    @server.resource(_USER_MANAGEMENT_URI, app=AppConfig(csp=_CSP))
+    def user_management_view() -> str:
+        return USER_MANAGEMENT_HTML
+
+    @server.custom_route("/health", methods=["GET"])
+    async def health_check(request):
+        """
+        Health check endpoint for reverse proxy / Docker deployments.
+
+        NOTE: This endpoint is intentionally unauthenticated to support
+        load balancer health probes and container orchestration (Kubernetes,
+        Docker Compose, etc.). It returns only a static "OK" response and
+        does not expose any sensitive data. It is also exempt from the
+        per-identity inbound rate limit (middleware.InboundRateLimitMiddleware),
+        which meters every other request on the HTTP surface.
+        """
+        from starlette.responses import PlainTextResponse
+        return PlainTextResponse("OK")
+
+    # Register all prompt templates with the MCP server
+    # This must be done AFTER mcp is created to avoid circular imports
+    from .prompts import register_prompts
+    register_prompts(server)
+
+    # =============================================================================
+    # RUNTIME SINGLETONS + TOOL REGISTRATION (composition root)
+    # =============================================================================
+    # The service singletons + initialize_services() live in runtime.py; tool
+    # implementations live in tools/*. main.py wires them together and re-exports
+    # the public names so existing imports (tests, scripts) keep working.
+
+    from .tools import register_all
+    register_all(server, _AUTH_PROVIDER)
+
+    # All tools are registered above this line.
+    _pin_tool_titles(server)
+
+    # Attach per-identity admin scope checks last so the gate covers the full
+    # tool set (OAuth mode only).
+    if _AUTH_PROVIDER is not None:
+        _attach_admin_scope_checks(server)
+
+    return server
 
 
-# Register all prompt templates with the MCP server
-# This must be done AFTER mcp is created to avoid circular imports
-from .prompts import register_prompts  # noqa: E402
-register_prompts(mcp)
-
-# =============================================================================
-# RUNTIME SINGLETONS + TOOL REGISTRATION (composition root)
-# =============================================================================
-# The service singletons + initialize_services() live in runtime.py; tool
-# implementations live in tools/*. main.py wires them together and re-exports
-# the public names so existing imports (tests, scripts) keep working.
-
-from .tools import register_all  # noqa: E402
-register_all(mcp, _AUTH_PROVIDER)
-
-# All tools are registered above this line; attach per-identity admin scope
-# checks last so the gate covers the full tool set (OAuth mode only).
-if _AUTH_PROVIDER is not None:
-    _attach_admin_scope_checks(mcp)
+# Import-time construction, unchanged for back-compat: server_bootstrap,
+# the tests and the console script all reach main.mcp.
+mcp = build_server()
 
 
 def main():

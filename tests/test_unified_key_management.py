@@ -206,6 +206,63 @@ def test_environment_variables():
     print()
 
 
+def _probe_client(label, factory, expected_missing_key_message=None, show_key=True):
+    """Instantiate one sibling MCP's client and report what happened.
+
+    Extracted from test_mcp_integration, which was the single C901 violation
+    in the repo at 13 branches: four copies of this same try/except shape,
+    one per sibling MCP (code-quality-metrics-standards.md M-0).
+    """
+    try:
+        client = factory()
+    except Exception as e:
+        if expected_missing_key_message and expected_missing_key_message in str(e):
+            print(f"[WARN]  {label} client needs API key (expected if no key stored)")
+        else:
+            print(f"[FAIL] {label} client error: {e}")
+        return
+    print(f"[OK] {label} client initialized successfully")
+    if show_key:
+        print(f"   API key: {format_key_display(client.api_key)}")
+
+
+def _detect_sibling_mcps():
+    """Yield (label, factory, missing_key_message, show_key) for each sibling
+    MCP whose package is importable in this environment."""
+    probes = []
+
+    try:
+        from fpd_mcp.api.fpd_client import FPDClient
+
+        probes.append(
+            ("FPD (Final Petition Decisions)", FPDClient,
+             "USPTO API key is required", True)
+        )
+    except ImportError:
+        pass
+
+    try:
+        from patent_filewrapper_mcp.api.enhanced_client import EnhancedPatentClient
+
+        probes.append(
+            ("PFW (Patent File Wrapper)", EnhancedPatentClient,
+             "USPTO_API_KEY is required", True)
+        )
+    except ImportError:
+        pass
+
+    try:
+        from ptab_mcp.api.enhanced_client import EnhancedPTABClient
+
+        probes.append(
+            ("PTAB (Patent Trial and Appeal Board)", EnhancedPTABClient, None, False)
+        )
+    except ImportError:
+        pass
+
+    return probes
+
+
 def test_mcp_integration():
     """Test integration with current MCP."""
     print("=" * 60)
@@ -213,82 +270,18 @@ def test_mcp_integration():
     print("=" * 60)
 
     try:
-        # Determine which MCP we're in based on available imports
-        mcp_type = "Unknown"
+        probes = _detect_sibling_mcps()
+        for label, factory, missing_key_message, show_key in probes:
+            _probe_client(label, factory, missing_key_message, show_key)
 
-        # Try FPD
-        try:
-            from fpd_mcp.api.fpd_client import FPDClient
+        import importlib.util
 
-            mcp_type = "FPD (Final Petition Decisions)"
-
-            # Test client initialization
-            try:
-                client = FPDClient()
-                print(f"[OK] {mcp_type} client initialized successfully")
-                print(f"   API key: {format_key_display(client.api_key)}")
-            except Exception as e:
-                if "USPTO API key is required" in str(e):
-                    print(
-                        f"[WARN]  {mcp_type} client needs API key (expected if no key stored)"
-                    )
-                else:
-                    print(f"[FAIL] {mcp_type} client error: {e}")
-
-        except ImportError:
-            pass
-
-        # Try PFW
-        try:
-            from patent_filewrapper_mcp.api.enhanced_client import EnhancedPatentClient
-
-            mcp_type = "PFW (Patent File Wrapper)"
-
-            try:
-                client = EnhancedPatentClient()
-                print(f"[OK] {mcp_type} client initialized successfully")
-                print(f"   API key: {format_key_display(client.api_key)}")
-            except Exception as e:
-                if "USPTO_API_KEY is required" in str(e):
-                    print(
-                        f"[WARN]  {mcp_type} client needs API key (expected if no key stored)"
-                    )
-                else:
-                    print(f"[FAIL] {mcp_type} client error: {e}")
-
-        except ImportError:
-            pass
-
-        # Try PTAB
-        try:
-            from ptab_mcp.api.enhanced_client import EnhancedPTABClient
-
-            mcp_type = "PTAB (Patent Trial and Appeal Board)"
-
-            try:
-                client = EnhancedPTABClient()
-                print(f"[OK] {mcp_type} client initialized successfully")
-            except Exception as e:
-                print(f"[FAIL] {mcp_type} client error: {e}")
-
-        except ImportError:
-            pass
-
-        # Try Enriched Citations
-        try:
-            import importlib.util
-
-            if importlib.util.find_spec("uspto_enriched_citation_mcp.api.client"):
-                pass  # Module exists
-            mcp_type = "Enriched Citations"
-
-            # This MCP requires settings
-            print(f"[INFO]  {mcp_type} MCP detected (requires API key for full test)")
-
-        except ImportError:
-            pass
-
-        if mcp_type == "Unknown":
+        if importlib.util.find_spec("uspto_enriched_citation_mcp.api.client"):
+            print(
+                "[INFO]  Enriched Citations MCP detected "
+                "(requires API key for full test)"
+            )
+        elif not probes:
             print("[INFO]  Could not determine MCP type - generic test only")
 
     except Exception as e:

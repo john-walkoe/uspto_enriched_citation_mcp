@@ -69,7 +69,7 @@ class OACitationsClient(BaseCitationClient):
     _RECORDS_PATH = OA_CITATIONS_RECORDS_PATH
     _CACHE_KEY_PREFIX = "oa"
 
-    # Override get_fields / search_records to inherit base-class behaviour.
+    # Override get_fields / search_records to inherit base-class behavior.
     # The base class uses self._FIELDS_PATH, self._RECORDS_PATH, and
     # self._CACHE_KEY_PREFIX automatically.
     #

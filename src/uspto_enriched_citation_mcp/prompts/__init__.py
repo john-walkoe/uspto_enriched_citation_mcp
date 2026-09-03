@@ -19,7 +19,24 @@ Available Prompts:
 - patent_citation_analysis: Complete patent/application citation analysis
 - art_unit_citation_assessment: Art unit citation norms and examiner patterns
 - litigation_citation_research_PFW_PTAB: Comprehensive litigation research package
+
+Registration-gated by CITATIONS_ENABLE_PROMPTS (default off — matches the
+CITATIONS_ENABLE_USER_MANAGEMENT pattern: filtered at registration time, so
+the prompts never appear in prompts/list when off).
 """
+
+import os
+
+from ..util.logging import get_logger
+
+logger = get_logger(__name__)
+
+# Registration gate for the prompt templates (same pattern as
+# CITATIONS_ENABLE_USER_MANAGEMENT in tools/admin.py). Default OFF: prompts
+# are opt-in server-side.
+PROMPTS_ENABLED = (
+    os.getenv("CITATIONS_ENABLE_PROMPTS", "false").lower() == "true"
+)
 
 # Global mcp object set by register_prompts()
 mcp = None
@@ -32,10 +49,21 @@ def register_prompts(mcp_server):
     It sets the global mcp object and imports all prompt modules,
     which then register their prompts using the @mcp.prompt() decorator.
 
+    No-op unless CITATIONS_ENABLE_PROMPTS=true (default off), so no prompts
+    are registered on the server by default.
+
     Args:
         mcp_server: The initialized FastMCP server instance
     """
     global mcp
+
+    if not PROMPTS_ENABLED:
+        logger.info(
+            "Prompt templates not registered (CITATIONS_ENABLE_PROMPTS is "
+            "off; default)."
+        )
+        return
+
     mcp = mcp_server
 
     # Import all prompt modules to register them with the MCP server

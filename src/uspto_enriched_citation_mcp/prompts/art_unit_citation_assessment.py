@@ -42,15 +42,17 @@ date_start='2015-01-01'
 
 **Target Art Unit:** {art_unit}
 **Analysis Period:** {date_start} to present
-**Context:** Filing dates from {date_start} → Office actions from 2017-10-01+ (API availability)
+**Context:** Filing dates from {date_start} → both citation lanes documented as office actions 2017-10-01+ (older records observed in practice); query BOTH and report both volumes
 
 ## Step 1: Art Unit Citation Overview (Ultra-Minimal)
 
 ```python
-# Get citation patterns for this art unit
-# Note: Use 2015-01-01 filing context but citations only available from 2017-10-01+
-citations = search_citations_minimal(
-    criteria=f'groupArtUnitNumber:{art_unit} AND officeActionDate:[2017-10-01 TO *]',
+# Get citation patterns for this art unit (enriched lane).
+# Add "AND officeActionDate:[2017-10-01 TO *]" only to restrict to the
+# documented window - it otherwise discards ~44% of the records served.
+# Also run Citations_search_oa_citations_minimal(art_unit=...) and report both.
+citations = Citations_search_citations_minimal(
+    criteria=f'groupArtUnitNumber:{art_unit}',
     fields=['examinerCitedReferenceIndicator', 'citationCategoryCode', 'patentApplicationNumber'],
     rows=200
 )
@@ -99,7 +101,7 @@ print(f"\\nUnique Applications with Citations: {{len(apps_with_citations)}}")
 
 ```python
 # Get applications filed in this art unit (account for filing-to-OA lag)
-pfw_apps = pfw_search_applications_minimal(
+pfw_apps = PFW_search_applications_minimal(
     query=f'groupArtUnitNumber:{art_unit}* AND filingDate:[{date_start} TO *]',
     fields=['applicationNumberText', 'applicationMetaData.examinerNameText', 'applicationMetaData.groupArtUnitNumber'],
     limit=100
@@ -143,9 +145,10 @@ for examiner, stats in examiner_stats.items():
 ## Step 5: Art Unit Benchmarking
 
 ```python
-# Get detailed citation data for comparison
-detailed_citations = search_citations_balanced(
-    criteria=f'groupArtUnitNumber:{art_unit} AND officeActionDate:[2017-10-01 TO *]',
+# Get detailed citation data for comparison (enriched lane; pair with the
+# OA lane's Citations_search_oa_citations_balanced for statutory-basis mix)
+detailed_citations = Citations_search_citations_balanced(
+    criteria=f'groupArtUnitNumber:{art_unit}',
     rows=100
 )
 

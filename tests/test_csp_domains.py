@@ -73,3 +73,25 @@ def test_build_csp_domains_cdn_always_present():
     with mock.patch.dict(os.environ, {"MCP_APP_EXTRA_DOMAINS": ""}, clear=False):
         result = _build_csp_domains()
     assert result[0] == "https://cdn.jsdelivr.net"
+
+
+def test_build_server_is_callable_twice():
+    """The composition root used to be the module body, so the server could
+    not be constructed twice in one process and importing main.py did all of
+    it — including a RuntimeError path from _attach_admin_scope_checks (F-4).
+    """
+    from uspto_enriched_citation_mcp.main import build_server, mcp
+
+    second = build_server()
+
+    assert second is not mcp
+    names = {
+        c.name
+        for c in second.local_provider._components.values()
+        if hasattr(c, "name")
+    }
+    original = {
+        c.name for c in mcp.local_provider._components.values() if hasattr(c, "name")
+    }
+    assert names == original
+    assert "Citations_search_citations_minimal" in names

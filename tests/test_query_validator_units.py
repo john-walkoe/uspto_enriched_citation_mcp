@@ -173,7 +173,7 @@ class TestCheckFieldWhitelist:
         result = _check_field_whitelist("notAField:1600", VALID_FIELDS)
         assert result == (
             False,
-            "Invalid field name: notAField. Use get_available_fields tool for valid fields.",
+            "Invalid field name: notAField. Use Citations_get_available_fields tool for valid fields.",
         )
 
     def test_accepts_whitelisted_field(self):
@@ -312,7 +312,7 @@ INVALID_CASES = [
     # "Incomplete range expression" branch is exercised directly on the
     # helper above (test_rejects_incomplete_range).
     ("techCenter:[1600 TO", "Unbalanced brackets"),
-    ("notAField:1600", "Invalid field name: notAField. Use get_available_fields tool for valid fields."),
+    ("notAField:1600", "Invalid field name: notAField. Use Citations_get_available_fields tool for valid fields."),
     (
         " ".join(f"techCenter:[{i} TO {i + 1}]" for i in range(MAX_RANGE_QUERIES + 1)),
         f"Too many range queries (max {MAX_RANGE_QUERIES})",

@@ -55,13 +55,27 @@ const app = new App({ name: 'USPTO Citation Statistics', version: '1.0.0' });
 app.ontoolresult = (result) => {
   const text = result.content?.find(c => c.type === 'text')?.text;
   try {
-    render(JSON.parse(text));
+    let data = JSON.parse(text);
+    if (data && typeof data === 'object' && typeof data.result === 'string') {
+      try { data = JSON.parse(data.result); } catch (unwrapErr) { /* keep wrapper */ }
+    }
+    render(data);
   } catch {
     showError('Could not parse statistics results.');
   }
 };
 
 app.connect();
+
+// S-04: USPTO citation text (inventor names, passage locators, reference
+// identifiers, aggregation keys) is AI-extracted from office actions that
+// quote applicant-drafted text, and the markup below is built with
+// innerHTML. Same helper as user_management_view.py, which had it and used
+// it.
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 function render(data) {
   document.getElementById('loading').style.display = 'none';
@@ -96,15 +110,15 @@ function render(data) {
     const rows = entries.map(([label, count]) => {
       const pct = Math.round((count / maxVal) * 100);
       return `<div class="bar-row">
-        <div class="bar-label" title="${label}">${label}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
-        <div class="bar-count">${count.toLocaleString()}</div>
+        <div class="bar-label" title="${esc(label)}">${esc(label)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Number(pct)}%"></div></div>
+        <div class="bar-count">${Number(count).toLocaleString()}</div>
       </div>`;
     }).join('');
 
     container.innerHTML += `
       <div class="section">
-        <div class="section-title">${field.replace(/([A-Z])/g, ' $1').trim()}</div>
+        <div class="section-title">${esc(field.replace(/([A-Z])/g, ' $1').trim())}</div>
         ${rows}
       </div>`;
   }
@@ -113,12 +127,12 @@ function render(data) {
   const docs = data.response?.docs || data.sample_docs || [];
   if (docs.length > 0 && !data.breakdowns) {
     const keys = Object.keys(docs[0]).filter(k => !k.startsWith('_')).slice(0, 6);
-    const headerRow = keys.map(k => `<th>${k}</th>`).join('');
+    const headerRow = keys.map(k => `<th>${esc(k)}</th>`).join('');
     const bodyRows = docs.slice(0, 10).map(doc => {
       const cells = keys.map(k => {
         const v = doc[k];
         const display = Array.isArray(v) ? v[0]?.substring(0,40) : String(v||'').substring(0,40);
-        return `<td title="${String(v||'')}">${display}</td>`;
+        return `<td title="${esc(v)}">${esc(display)}</td>`;
       }).join('');
       return `<tr>${cells}</tr>`;
     }).join('');
@@ -131,7 +145,7 @@ function render(data) {
 
   // Fallback for raw JSON
   if (container.innerHTML.trim() === '') {
-    container.innerHTML = `<pre style="font-size:11px;white-space:pre-wrap;word-break:break-all">${JSON.stringify(data, null, 2)}</pre>`;
+    container.innerHTML = `<pre style="font-size:11px;white-space:pre-wrap;word-break:break-all">${esc(JSON.stringify(data, null, 2))}</pre>`;
   }
 
   document.getElementById('content').style.display = 'block';

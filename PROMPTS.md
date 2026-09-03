@@ -134,8 +134,8 @@ The MCP server includes AI-optimized prompt templates designed for patent attorn
 All prompt templates include **Enhanced Input Processing** capabilities:
 
 ### Flexible Identifier Support
-- **Patent Numbers**: "9049188", "US9049188B2", "9,049,188"
-- **Application Numbers**: "14171705", "14/171,705", "US14/171,705"
+- **Patent Numbers** (`patent_number`): "9049188", "9,049,188", "US 9049188". Commas, spaces and a leading `US` are stripped; a kind-code suffix is not accepted ("US9049188B2" is refused with a 400 naming the accepted forms).
+- **Application Numbers** (`application_number`): "14171705", digits only. A slashed or comma-separated serial ("14/171,705") is not a valid value for this parameter.
 - **Examiner Names**: "SMITH, JOHN", "Smith", partial names with wildcards
 - **Art Units**: "2854", "1759", "3600"
 - **Technology Keywords**: "machine learning", "wireless charging"
@@ -144,7 +144,7 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 - **Input type detection**: Automatically determines identifier format
 - **Format normalization**: Standardizes various input formats
 - **Validation guidance**: Provides helpful error messages and suggestions
-- **Date awareness**: Respects Oct 2017+ office action coverage
+- **Date awareness**: `officeActionDate` is an enriched-lane field only; the OA lane has no date field
 
 ### Context Optimization
 - **Progressive disclosure**: Minimal → balanced → detailed information retrieval
@@ -200,7 +200,7 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 ### For Research & Development
 - **Apply `/technology_citation_landscape_PFW`** for R&D planning and technology roadmaps
 - **Use `/art_unit_citation_assessment`** for understanding citation norms in target technology areas
-- **Leverage context reduction strategies** for budget-conscious research
+- **Leverage context reduction strategies** to keep large studies within a workable context window
 - **Employ ultra-minimal mode** with custom fields for maximum token efficiency
 
 ### Template Selection Guide
@@ -218,12 +218,13 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 ## 🔧 Important Data Coverage Notes
 
 ### Office Action Date Coverage
-- **Citations API**: Office actions from **October 1, 2017 to 30 days prior** to current date
-- **Filing Date Strategy**: Use `date_start='2015-01-01'` to account for 1-2 year lag between filing and first office action
-- **Date Filtering**: Always include `officeActionDate:[2017-10-01 TO *]` in queries
+- **Documented window**: USPTO documents both APIs as office actions mailed **October 1, 2017 through about 30 days prior** to the current date
+- **Observed coverage is wider**: both lanes return records older than that floor (measured on TC2100, roughly 44% of enriched records predate 2017-10-01, verified against PFW document dates back to 2010-2012)
+- **Filing Date Strategy**: Use `date_start='2015-01-01'` to account for the 1-2 year lag between filing and first office action
+- **Date Filtering**: add `officeActionDate:[2017-10-01 TO *]` only when you deliberately want the documented window. Adding it by reflex discards records the index actually serves. The OA lane has no date field and returns HTTP 400 for any `officeActionDate` clause.
 
 ### Field Limitations
-**Available Fields**: 22 total citation fields
+**Available Fields**: 22 enriched-lane fields (`Citations_get_available_fields`); the OA lane has its own 16 (`Citations_get_oa_citation_fields`) and the two reject each other's names with HTTP 400
 - Core: `citedDocumentIdentifier`, `patentApplicationNumber`, `publicationNumber`
 - Citations: `citationCategoryCode`, `examinerCitedReferenceIndicator`
 - Context: `passageLocationText`, `relatedClaimNumberText`, `officeActionCategory`
@@ -242,15 +243,15 @@ All prompt templates include **Enhanced Input Processing** capabilities:
 ## 🔄 Workflow Best Practices
 
 ### Progressive Disclosure Pattern
-1. **Start Minimal**: Use `search_citations_minimal` (8 fields, 90-95% reduction) for discovery
+1. **Start Minimal**: Use `Citations_search_citations_minimal` (8 fields, 90-95% reduction) for discovery
 2. **Filter Results**: Identify 10-20 most relevant citations
-3. **Get Details**: Use `search_citations_balanced` (18 fields, 80-85% reduction) for analysis
-4. **Deep Dive**: Use `get_citation_details` for 1-5 strategically important citations
+3. **Get Details**: Use `Citations_search_citations_balanced` (19 fields, 80-85% reduction) for analysis
+4. **Deep Dive**: Use `Citations_get_citation_details` for 1-5 strategically important citations
 
 ### Ultra-Minimal Mode (99% Reduction)
 ```python
 # Override preset fields for maximum efficiency
-citations = search_citations_minimal(
+citations = Citations_search_citations_minimal(
     criteria='patentApplicationNumber:14171705',
     fields=['citedDocumentIdentifier', 'citationCategoryCode'],  # Only 2 fields!
     rows=50

@@ -14,9 +14,9 @@ import os
 import re
 import sys
 import traceback
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 # Sensitive patterns to sanitize — single source of truth shared by
 # SanitizingFilter (log records) and shared/error_utils.py (error messages).
@@ -42,6 +42,80 @@ SENSITIVE_PATTERNS = [
         "[TOKEN_REDACTED]",
     ),  # Long urlsafe-base64 tokens (secrets.token_urlsafe(32) is 43 chars)
 ]
+
+
+class _ModePreservingMixin:
+    """Re-apply the file mode to the live log file and every backup.
+
+    The handlers were chmod'd exactly once, on the file that existed at setup
+    time. Rollover renames the current file and opens a fresh one through the
+    normal `open()` path at `0o666 & ~umask`, so `security.log` stayed 0600
+    while every one of its 90 backups landed world-readable, and the same for
+    the ten application.log backups (S-15).
+    """
+
+    baseFilename: str
+    file_mode: int
+
+    def _backup_paths(self) -> List[str]:
+        base = Path(self.baseFilename)
+        return [str(p) for p in base.parent.glob(base.name + ".*")]
+
+    def _apply_mode(self) -> None:
+        for path in [self.baseFilename] + self._backup_paths():
+            try:
+                if os.path.exists(path):
+                    os.chmod(path, self.file_mode)
+            except OSError:
+                # Windows ACLs, or a file another process is rotating. The
+                # log must not fail the request that wrote it.
+                pass
+
+    def doRollover(self) -> None:  # noqa: N802 - logging's own casing
+        super().doRollover()  # type: ignore[misc]
+        self._apply_mode()
+
+
+class ModePreservingRotatingFileHandler(_ModePreservingMixin, RotatingFileHandler):
+    """Size-triggered rotation that keeps its file mode across rollovers."""
+
+    def __init__(self, *args, file_mode: int = 0o600, **kwargs):
+        self.file_mode = file_mode
+        super().__init__(*args, **kwargs)
+        self._apply_mode()
+
+
+class ModePreservingTimedRotatingFileHandler(
+    _ModePreservingMixin, TimedRotatingFileHandler
+):
+    """Time-triggered rotation that keeps its file mode across rollovers.
+
+    Used for security.log, whose retention is stated in days and was enforced
+    in bytes (S-43).
+    """
+
+    def __init__(self, *args, file_mode: int = 0o600, **kwargs):
+        self.file_mode = file_mode
+        super().__init__(*args, **kwargs)
+        self._apply_mode()
+
+
+def attach_uvicorn_sanitizer() -> None:
+    """Put SanitizingFilter on uvicorn's own loggers and handlers.
+
+    `uvicorn.error` carries "Exception in ASGI application" with the full
+    traceback, through uvicorn's `default` handler, which is not one of ours
+    and has no filter. That is precisely the record class this repo's
+    redaction policy exists for: tracebacks embedding httpx request URLs and
+    filesystem paths (E-4).
+    """
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(name)
+        if not any(isinstance(f, SanitizingFilter) for f in uv_logger.filters):
+            uv_logger.addFilter(SanitizingFilter())
+        for handler in uv_logger.handlers:
+            if not any(isinstance(f, SanitizingFilter) for f in handler.filters):
+                handler.addFilter(SanitizingFilter())
 
 
 def prepare_log_dir(log_dir: Optional[str] = None, label: str = "") -> Tuple[Path, bool]:
@@ -238,35 +312,31 @@ def setup_logging(
         try:
             # Application log file (INFO and above)
             app_log_file = log_path / "application.log"
-            app_handler = RotatingFileHandler(
+            app_handler = ModePreservingRotatingFileHandler(
                 app_log_file,
                 maxBytes=max_bytes,
                 backupCount=backup_count,
                 encoding="utf-8",
+                file_mode=0o640,  # owner rw, group r — reapplied on rollover
             )
             app_handler.setLevel(logging.INFO)
             app_handler.addFilter(SanitizingFilter())
             app_handler.setFormatter(formatter)
             logger.addHandler(app_handler)
 
-            # Set secure permissions (owner rw, group r)
-            os.chmod(app_log_file, 0o640)
-
             # Error log file (WARNING and above)
             error_log_file = log_path / "error.log"
-            error_handler = RotatingFileHandler(
+            error_handler = ModePreservingRotatingFileHandler(
                 error_log_file,
                 maxBytes=max_bytes,
                 backupCount=backup_count,
                 encoding="utf-8",
+                file_mode=0o640,  # owner rw, group r — reapplied on rollover
             )
             error_handler.setLevel(logging.WARNING)
             error_handler.addFilter(SanitizingFilter())
             error_handler.setFormatter(formatter)
             logger.addHandler(error_handler)
-
-            # Set secure permissions (owner rw, group r)
-            os.chmod(error_log_file, 0o640)
 
             logger.info(f"File logging enabled: {log_path}")
             logger.info(f"Log rotation: {max_bytes:,} bytes, {backup_count} backups")
@@ -278,8 +348,10 @@ def setup_logging(
     logger.setLevel(getattr(logging, level.upper()))
 
     # Suppress noisy libraries — httpx/httpcore log full request URLs at
-    # INFO, and uvicorn access lines include request paths and client IPs
-    for noisy in ("httpx", "httpcore", "uvicorn.access"):
+    # INFO, and uvicorn access lines include request paths and client IPs.
+    # httpx2/httpcore2 are FastMCP 4's vendored fork of the same libraries
+    # with the same URL-bearing INFO lines, under their own logger names.
+    for noisy in ("httpx", "httpcore", "httpx2", "httpcore2", "uvicorn.access"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     return logger

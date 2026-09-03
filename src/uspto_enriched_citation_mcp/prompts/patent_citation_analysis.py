@@ -53,15 +53,23 @@ include_context='true'
 ```python
 # Search by patent or application number
 if "{patent_number}":
-    criteria = f'publicationNumber:{patent_number}'
+    # Pass patent_number as the TOOL PARAMETER, not a criteria clause: the
+    # server crosswalks a granted patent number to its application via the
+    # USPTO ODP applications API (7-8 digits = granted, 11 = publication)
+    # and self-reports the resolution in patent_number_resolution. A raw
+    # publicationNumber: clause returns zero for a granted patent number.
+    search_kwargs = {{"patent_number": "{patent_number}"}}
 else:
     criteria = f'patentApplicationNumber:{application_number}'
 
-# Add date constraint
-criteria += ' AND officeActionDate:[2017-10-01 TO *]'
+# Optional: restrict to the documented window (office actions mailed
+# 2017-10-01+). Left off by default — the clause discards records the index
+# actually serves. Also run Citations_search_oa_citations_minimal and union;
+# neither lane is a superset of the other.
+# criteria += ' AND officeActionDate:[2017-10-01 TO *]'
 
 # Get comprehensive citation data
-citations = search_citations_balanced(
+citations = Citations_search_citations_balanced(
     criteria=criteria,
     rows=100
 )
@@ -104,7 +112,7 @@ key_citations = citations['response']['docs'][:10]  # Top 10
 for i, citation in enumerate(key_citations):
     citation_id = citation.get('citationIdentifier')
     if citation_id:
-        details = get_citation_details(
+        details = Citations_get_citation_details(
             citation_id=citation_id,
             include_context=True
         )
@@ -132,7 +140,7 @@ if "{include_context}".lower() == 'true':
 
     if app_num:
         # Get prosecution documents
-        docs = pfw_get_application_documents(
+        docs = PFW_get_application_documents(
             app_number=app_num,
             document_code='NOA',  # Notice of Allowance
             limit=5
@@ -144,7 +152,7 @@ if "{include_context}".lower() == 'true':
         # Get examiner's reasoning from NOA
         if docs['documentBag']:
             noa_doc = docs['documentBag'][0]
-            noa_content = pfw_get_document_content(
+            noa_content = PFW_get_document_content_with_ocr(
                 app_number=app_num,
                 document_identifier=noa_doc['documentIdentifier']
             )

@@ -1,6 +1,6 @@
 """Settings management for USPTO Enriched Citation MCP."""
 
-import os
+import logging
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
@@ -25,6 +25,12 @@ from .constants import (
     MIN_API_KEY_LENGTH,
     MAX_API_KEY_LENGTH,
 )
+
+# Plain stdlib logger: util.logging pulls in this package, so binding
+# get_logger here would be an import cycle. The SanitizingFilter still
+# applies — this logger's records propagate to the 'uspto_ecitation'
+# handlers once setup_logging has run.
+logger = logging.getLogger("uspto_ecitation.config.settings")
 
 
 class Settings(BaseSettings):
@@ -108,11 +114,27 @@ class Settings(BaseSettings):
         default=None,
         validation_alias="CORS_EXTRA_ORIGIN"
     )
+    # Stateless streamable HTTP: no server-side session table, every request is
+    # self-contained. Required for clients that don't replay mcp-session-id
+    # (GitHub Copilot) and for load-balanced/multi-replica deploys. Stateful
+    # clients still work — they just get an ephemeral session per request.
+    fastmcp_stateless_http: bool = Field(
+        default=True,
+        validation_alias="FASTMCP_STATELESS_HTTP"
+    )
 
     # Logging & Security
     log_level: str = Field(
         default=DEFAULT_LOG_LEVEL,
         validation_alias="LOG_LEVEL"
+    )
+    # Metrics sink. "none" keeps the historical no-op collector; "logging"
+    # emits the existing MetricsCollector events through the application
+    # logger. The collector interface has always existed and was never wired
+    # to anything, so every record_request call was a no-op (S-17).
+    metrics_collector: str = Field(
+        default="none",
+        validation_alias="CITATIONS_METRICS_COLLECTOR"
     )
     request_id_header: str = Field(
         default=DEFAULT_REQUEST_ID_HEADER,
@@ -153,6 +175,10 @@ class Settings(BaseSettings):
         default="",  # static bearer for headless clients (internal gateways)
         validation_alias="CITATIONS_AUTH_INTERNAL_TOKEN",
     )
+    auth_internal_admin_token: str = Field(
+        default="",  # static bearer granting citations:admin too
+        validation_alias="CITATIONS_AUTH_INTERNAL_ADMIN_TOKEN",
+    )
     auth_register_url: str = Field(
         default="",  # "Request access" link on the Not-registered page
         validation_alias="CITATIONS_AUTH_REGISTER_URL",
@@ -187,20 +213,29 @@ class Settings(BaseSettings):
     @classmethod
     def load_from_env(cls):
         """Load settings from environment variables or unified secure storage."""
-        # Try to get API key from unified secure storage first (Windows only)
+        # Try to get API key from unified secure storage first
         api_key = None
         try:
             from ..shared_secure_storage import get_uspto_api_key
 
             api_key = get_uspto_api_key()
         except Exception:
-            # Secure storage not available or failed - will fall back to env var
-            pass
+            # Secure storage not available or failed - falling back to the
+            # environment variable. Observable at debug level: a backend that
+            # is present but BROKEN was previously indistinguishable from one
+            # that is absent, and the operator got no signal either way (X-4).
+            logger.debug(
+                "Secure storage unavailable; falling back to the environment",
+                exc_info=True,
+            )
 
-        # If we got a key from secure storage, set it in environment
-        # so Pydantic can pick it up
+        # Pass the decrypted key to the constructor rather than writing it
+        # into os.environ, which is the exact ambient state the storage module
+        # exists to avoid: readable from /proc/<pid>/environ by anything
+        # running as the same user, inherited by every child process, and
+        # present in crash dumps (S-34). `validation_alias` accepts it here.
         if api_key:
-            os.environ["USPTO_API_KEY"] = api_key
+            return cls(USPTO_API_KEY=api_key)
 
         return cls()
 

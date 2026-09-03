@@ -8,11 +8,29 @@ This module provides secure storage and retrieval of USPTO and Mistral API keys,
 plus the shared INTERNAL_AUTH_SECRET, using Windows Data Protection API (DPAPI)
 with single-key-per-file architecture.
 
+PLATFORM MATRIX — READ THIS BEFORE DECIDING A KEY IS SAFE HERE.
+
+The name "secure storage" describes the Windows path only. There are two
+implementations and they are not equivalent:
+
+- **Windows** (``sys.platform == "win32"``): the key is encrypted with DPAPI
+  under 32 bytes of per-file entropy. CWE-330 compliant entropy via
+  ``secrets.token_bytes(32)``.
+- **Linux / macOS** (every deployment target this fleet actually ships to —
+  Debian containers and Linux VPSes): the key is written as a **PLAINTEXT
+  file at mode 0600** and read back verbatim. There is no encryption on this
+  path and there never was. The module previously advertised a "graceful
+  fallback to environment variables on non-Windows"; that fallback does not
+  exist, and ``config/settings.py`` reads this store *in preference to* the
+  environment.
+
+0600 plus a single-service-user container is a real control and bounds the
+exposure, but it is file permissions, not cryptography: anything running as
+the same uid can read the key. On a shared box, prefer the environment
+variable (containers get secrets by env anyway) over this store.
+
 Key Features:
-- CWE-330 compliant: Uses secrets.token_bytes(32) for cryptographically secure entropy
-- DPAPI encryption: Per-user, per-machine encryption on Windows
 - Single responsibility: One file per key type
-- Cross-platform: Graceful fallback to environment variables on non-Windows
 - Simple API: get_uspto_key(), store_uspto_key(), get_mistral_key(), store_mistral_key()
 - Shared secret: ensure_internal_auth_secret() for cross-MCP authentication
 
@@ -22,8 +40,8 @@ File Locations:
 - Linux/macOS: ~/.uspto_api_key, ~/.mistral_api_key, ~/.uspto_internal_auth_secret
 
 File Format:
-- Bytes 0-31: Random entropy (32 bytes)
-- Bytes 32+: DPAPI encrypted key data
+- Windows: bytes 0-31 random entropy, bytes 32+ DPAPI-encrypted key data
+- Linux/macOS: the key, in the clear, mode 0600
 """
 
 import ctypes
@@ -414,7 +432,22 @@ class UnifiedSecureStorage:
                 logger.debug(f"Loaded {key_name} from: {path}")
                 return key
             else:
-                # Non-Windows: Read plain text (fallback)
+                # Non-Windows: the file is PLAINTEXT (see the module
+                # docstring's platform matrix). File permissions are the only
+                # control here, and they were set once at write time — so
+                # verify them on READ rather than trusting that nothing has
+                # loosened them since (S-07).
+                mode = path.stat().st_mode & 0o777
+                if mode & 0o077:
+                    logger.error(
+                        "Refusing to read %s: %s is mode %o, but it holds a "
+                        "plaintext credential and must be 0600. Fix the mode "
+                        "or supply the key by environment variable.",
+                        key_name,
+                        path.name,
+                        mode,
+                    )
+                    return None
                 key = path.read_text(encoding="utf-8").strip()
                 logger.debug(f"Loaded {key_name} from: {path}")
                 return key
@@ -505,6 +538,29 @@ def ensure_internal_auth_secret() -> str:
         RuntimeError: If secret generation or storage fails
     """
     return UnifiedSecureStorage().ensure_internal_auth_secret()
+
+
+def split_secret_candidates(secret: Optional[str]) -> list:
+    """Split a resolved INTERNAL_AUTH_SECRET into ordered rotation candidates.
+
+    The env var (and, since the rotation script writes it this way, the
+    secure-store value too) may hold a comma-separated list: the CURRENT
+    secret first, then any secret still being retired. Returns an
+    order-preserving, deduplicated list of non-empty, stripped candidates —
+    `[]` if `secret` is falsy. A single value with no comma round-trips as a
+    one-element list, so every existing caller of `get_internal_auth_secret`
+    keeps working unchanged.
+    """
+    if not secret:
+        return []
+    seen = set()
+    candidates = []
+    for part in secret.split(","):
+        part = part.strip()
+        if part and part not in seen:
+            seen.add(part)
+            candidates.append(part)
+    return candidates
 
 
 def has_secure_key(key_name: str) -> bool:

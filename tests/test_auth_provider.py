@@ -12,12 +12,17 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from mcp.server.auth.provider import AuthorizationParams, TokenError
+from mcp.server.auth.provider import (
+    AuthorizationParams,
+    RegistrationError,
+    TokenError,
+)
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.requests import Request
 
 from uspto_enriched_citation_mcp.auth.provider import (  # noqa: E402
+    _TXN_COOKIE,
     SCOPE_ADMIN,
     SCOPE_USER,
     CitationsAuthProvider,
@@ -127,16 +132,30 @@ def make_params(**overrides: Any) -> AuthorizationParams:
     return AuthorizationParams(**base)
 
 
-def get_request(path: str, query: str, path_params: dict[str, str]) -> Request:
+def get_request(
+    path: str,
+    query: str,
+    path_params: dict[str, str],
+    cookies: dict[str, str] | None = None,
+) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
+    if cookies:
+        jar = "; ".join(f"{k}={v}" for k, v in cookies.items())
+        headers.append((b"cookie", jar.encode()))
     scope = {
         "type": "http",
         "method": "GET",
         "path": path,
         "query_string": query.encode(),
-        "headers": [],
+        "headers": headers,
         "path_params": path_params,
     }
     return Request(scope)
+
+
+def txn_cookie(provider, txn_id: str) -> dict[str, str]:
+    """The binding cookie /auth/select and /auth/start set on the browser."""
+    return {_TXN_COOKIE: provider._txns[txn_id]["binding"]}
 
 
 # --------------------------------------------------------------------- config
@@ -188,8 +207,12 @@ async def test_authorize_returns_chooser_url_with_txn() -> None:
 async def test_authorize_single_idp_skips_chooser() -> None:
     provider, _ = make_provider(CITATIONS_AUTH_MS_CLIENT_ID="")
     url = await provider.authorize(make_client(), make_params())
-    assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
-    q = parse_qs(urlparse(url).query)
+    # The chooser page is still skipped, but the hop now goes through
+    # /auth/start so the transaction can be bound to this browser first.
+    assert url.startswith("https://mcp.example.com/auth/start/google?txn=")
+    txn = parse_qs(urlparse(url).query)["txn"][0]
+    upstream = provider._upstream_authorize_url("google", txn)
+    q = parse_qs(urlparse(upstream).query)
     assert q["client_id"] == ["google-client"]
     assert q["redirect_uri"] == ["https://mcp.example.com/auth/callback/google"]
 
@@ -238,7 +261,12 @@ async def run_callback(
 
     monkeypatch.setattr(provider, "_exchange_and_verify", fake_exchange)
     return await provider._callback_endpoint(
-        get_request(f"/auth/callback/{idp}", f"state={txn}&code=upstream", {"idp": idp})
+        get_request(
+            f"/auth/callback/{idp}",
+            f"state={txn}&code=upstream",
+            {"idp": idp},
+            cookies=txn_cookie(provider, txn),
+        )
     )
 
 
@@ -327,7 +355,10 @@ async def test_callback_replay_rejected(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(provider, "_exchange_and_verify", fake_exchange)
     req = get_request(
-        "/auth/callback/google", f"state={txn}&code=up", {"idp": "google"}
+        "/auth/callback/google",
+        f"state={txn}&code=up",
+        {"idp": "google"},
+        cookies=txn_cookie(provider, txn),
     )
     first = await provider._callback_endpoint(req)
     assert first.status_code == 302
@@ -391,12 +422,37 @@ async def test_load_access_token_rejects_garbage_and_internal() -> None:
     provider, _ = make_provider()
     assert await provider.load_access_token("garbage") is None
 
+    # The plain internal token grants citations:user ONLY — admin requires the
+    # separate *_AUTH_INTERNAL_ADMIN_TOKEN. It also carries a real expiry
+    # rather than expires_at=None.
     internal = await provider.load_access_token("internal-static-token")
     assert internal is not None
-    assert SCOPE_ADMIN in internal.scopes
+    assert internal.scopes == [SCOPE_USER]
+    assert SCOPE_ADMIN not in internal.scopes
+    assert internal.expires_at is not None
 
     no_internal, _ = make_provider(CITATIONS_AUTH_INTERNAL_TOKEN="")
     assert await no_internal.load_access_token("internal-static-token") is None
+
+
+@pytest.mark.asyncio
+async def test_internal_admin_token_grants_admin_scope() -> None:
+    """A separate internal admin token grants citations:user + citations:admin;
+    the plain internal token still only grants citations:user."""
+    provider, _ = make_provider(CITATIONS_AUTH_INTERNAL_ADMIN_TOKEN="internal-admin-token")
+
+    admin = await provider.load_access_token("internal-admin-token")
+    assert admin is not None
+    assert set(admin.scopes) == {SCOPE_USER, SCOPE_ADMIN}
+    assert admin.expires_at is not None
+
+    user = await provider.load_access_token("internal-static-token")
+    assert user is not None
+    assert user.scopes == [SCOPE_USER]
+
+    # Unset by default: no admin token configured -> no match.
+    no_admin, _ = make_provider()
+    assert await no_admin.load_access_token("internal-admin-token") is None
 
 
 @pytest.mark.asyncio
@@ -589,7 +645,7 @@ async def test_admin_tools_scope_gated() -> None:
     def citations_manage_users() -> str:  # same name as the real admin tool
         return "ok"
 
-    @mcp.tool
+    @mcp.tool(name="Citations_search_citations_minimal")
     def search_citations_minimal() -> str:
         return "ok"
 
@@ -601,7 +657,7 @@ async def test_admin_tools_scope_gated() -> None:
         if isinstance(c, Tool)
     }
     assert tools["citations_manage_users"].auth
-    assert not tools["search_citations_minimal"].auth
+    assert not tools["Citations_search_citations_minimal"].auth
 
     def token(scopes: list[str]) -> AccessToken:
         return AccessToken(token="t", client_id="c", scopes=scopes)
@@ -762,3 +818,135 @@ async def test_mode_none_stack_unchanged(monkeypatch: pytest.MonkeyPatch) -> Non
         assert (
             await http.get("/authorize", headers={"x-api-key": "shared-secret"})
         ).status_code == 404
+
+
+# ------------------------------------------------ DCR gate and txn binding
+
+
+@pytest.mark.asyncio
+async def test_register_client_refuses_foreign_redirect_host() -> None:
+    provider, _ = make_provider()
+    client = OAuthClientInformationFull(
+        client_id="attacker-client",
+        redirect_uris=[AnyUrl("https://attacker.example/cb")],
+    )
+    with pytest.raises(RegistrationError):
+        await provider.register_client(client)
+
+
+@pytest.mark.asyncio
+async def test_register_client_accepts_the_hosts_clients_actually_use() -> None:
+    provider, store = make_provider()
+    for index, uri in enumerate(
+        [
+            "https://claude.ai/api/mcp/auth_callback",
+            "https://claude.com/api/mcp/auth_callback",
+            "http://127.0.0.1:33418/callback",
+            "http://localhost:33418/callback",
+        ]
+    ):
+        client = OAuthClientInformationFull(
+            client_id=f"client-{index}", redirect_uris=[AnyUrl(uri)]
+        )
+        await provider.register_client(client)
+        assert await provider.get_client(f"client-{index}") is not None
+
+
+@pytest.mark.asyncio
+async def test_allowed_redirect_hosts_can_be_extended(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CITATIONS_AUTH_ALLOWED_REDIRECT_HOSTS", "partner.example")
+    provider, _ = make_provider()
+    client = OAuthClientInformationFull(
+        client_id="partner-client",
+        redirect_uris=[AnyUrl("https://app.partner.example/cb")],
+    )
+    await provider.register_client(client)
+    assert await provider.get_client("partner-client") is not None
+
+
+@pytest.mark.asyncio
+async def test_open_registration_opt_in_restores_the_old_behavior(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CITATIONS_AUTH_OPEN_REGISTRATION", "true")
+    provider, _ = make_provider()
+    client = OAuthClientInformationFull(
+        client_id="anything", redirect_uris=[AnyUrl("https://attacker.example/cb")]
+    )
+    await provider.register_client(client)
+    assert await provider.get_client("anything") is not None
+
+
+@pytest.mark.asyncio
+async def test_callback_without_the_binding_cookie_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A txn id captured out of band cannot be redeemed in another browser."""
+    provider, store = make_provider()
+    store.users["jane@firm.com"] = {
+        "email": "jane@firm.com", "role": "user", "active": True,
+        "display_name": None, "last_login_idp": None,
+    }
+    url = await provider.authorize(make_client(), make_params())
+    txn = parse_qs(urlparse(url).query)["txn"][0]
+
+    async def fake_exchange(idp_: str, code: str, nonce: str) -> dict[str, Any]:
+        return {"email": "jane@firm.com", "email_verified": True}
+
+    monkeypatch.setattr(provider, "_exchange_and_verify", fake_exchange)
+    resp = await provider._callback_endpoint(
+        get_request("/auth/callback/google", f"state={txn}&code=up", {"idp": "google"})
+    )
+
+    assert resp.status_code == 400
+    assert store.codes == {}
+
+
+@pytest.mark.asyncio
+async def test_callback_with_a_different_browsers_cookie_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider, store = make_provider()
+    store.users["jane@firm.com"] = {
+        "email": "jane@firm.com", "role": "user", "active": True,
+        "display_name": None, "last_login_idp": None,
+    }
+    url = await provider.authorize(make_client(), make_params())
+    txn = parse_qs(urlparse(url).query)["txn"][0]
+
+    async def fake_exchange(idp_: str, code: str, nonce: str) -> dict[str, Any]:
+        return {"email": "jane@firm.com", "email_verified": True}
+
+    monkeypatch.setattr(provider, "_exchange_and_verify", fake_exchange)
+    resp = await provider._callback_endpoint(
+        get_request(
+            "/auth/callback/google",
+            f"state={txn}&code=up",
+            {"idp": "google"},
+            cookies={_TXN_COOKIE: "some-other-browsers-binding"},
+        )
+    )
+
+    assert resp.status_code == 400
+    assert store.codes == {}
+
+
+@pytest.mark.asyncio
+async def test_start_endpoint_sets_the_binding_cookie() -> None:
+    provider, _ = make_provider()
+    url = await provider.authorize(make_client(), make_params())
+    txn = parse_qs(urlparse(url).query)["txn"][0]
+
+    resp = await provider._start_endpoint(
+        get_request(f"/auth/start/google?txn={txn}", f"txn={txn}", {"idp": "google"})
+    )
+
+    assert resp.status_code == 302
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert set_cookie.startswith(f"{_TXN_COOKIE}=")
+    assert provider._txns[txn]["binding"] in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "SameSite=lax" in set_cookie
+    assert "Path=/auth" in set_cookie

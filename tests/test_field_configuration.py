@@ -8,11 +8,13 @@ Run with: uv run pytest tests/test_field_configuration.py -v
 """
 
 import pytest
-from unittest.mock import patch, mock_open
-import yaml
 from pathlib import Path
 
-from uspto_enriched_citation_mcp.config.field_manager import FieldManager
+from uspto_enriched_citation_mcp.config.field_manager import (
+    FieldManager,
+    _check_not_in_sensitive_dir,
+)
+from uspto_enriched_citation_mcp.shared.exceptions import APIResponseError
 
 
 class TestFieldManager:
@@ -378,23 +380,34 @@ class TestValidateConfigPath:
         assert manager.config_path == config_path.resolve()
 
     def test_rejects_parent_directory_traversal(self):
-        """A literal '..' path segment is rejected outright."""
+        """A literal '..' path segment is rejected outright.
+
+        The validator's own ValueErrors now propagate unwrapped, so the
+        assertion matches the check's own message rather than the outer
+        catch-all's "Invalid configuration path" (X-2).
+        """
         config_path = Path(__file__).parent.parent / ".." / "field_configs.yaml"
-        with pytest.raises(ValueError, match="Invalid configuration path"):
+        with pytest.raises(ValueError, match="Path traversal detected"):
             FieldManager(config_path)
 
-    def test_rejects_path_outside_project_and_cwd(self, tmp_path):
-        """A path resolving outside both the project root and cwd is rejected."""
+    def test_rejects_path_outside_project(self, tmp_path):
+        """A path resolving outside the project root is rejected."""
         outside_path = tmp_path / "evil.yaml"
         outside_path.write_text("predefined_sets: {}")
-        with pytest.raises(ValueError, match="Invalid configuration path"):
+        with pytest.raises(ValueError, match="within the project directory"):
             FieldManager(outside_path)
 
     def test_rejects_bad_file_extension(self):
         """A non-.yaml/.yml path (even one that resolves inside the project) is rejected."""
         bad_ext_path = Path(__file__).parent / "_not_a_real_config.txt"
-        with pytest.raises(ValueError, match="Invalid configuration path"):
+        with pytest.raises(ValueError, match="Invalid file extension"):
             FieldManager(bad_ext_path)
+
+    def test_rejects_extensionless_path(self):
+        """An extension-less path is no longer admitted by the allowlist."""
+        no_ext_path = Path(__file__).parent / "_not_a_real_config"
+        with pytest.raises(ValueError, match="Invalid file extension"):
+            FieldManager(no_ext_path)
 
     def test_rejects_symlink_escaping_project(self, tmp_path):
         """A symlink is resolved before the in-project/in-cwd check, so pointing
@@ -408,8 +421,53 @@ class TestValidateConfigPath:
         except (OSError, NotImplementedError):
             pytest.skip("symlinks not supported on this platform")
 
-        with pytest.raises(ValueError, match="Invalid configuration path"):
+        with pytest.raises(ValueError, match="within the project directory"):
             FieldManager(link_path)
+
+
+class TestSensitiveDirectoryGuard:
+    """The guard at field_manager._check_not_in_sensitive_dir used to swallow
+    its own deliberate raise in the except clause that exists for
+    Path.relative_to's non-match signal, so it never fired (M-1 / X-1).
+    """
+
+    def test_rejects_path_under_etc(self):
+        if not Path("/etc").exists():
+            pytest.skip("/etc does not exist on this platform")
+        with pytest.raises(ValueError, match="system directory"):
+            _check_not_in_sensitive_dir(Path("/etc/passwd.yaml"))
+
+    def test_allows_path_outside_sensitive_dirs(self):
+        # No raise for an ordinary in-project path.
+        _check_not_in_sensitive_dir(Path(__file__).resolve())
+
+
+class TestFilteringFailsClosed:
+    """filter_response used to return the UNFILTERED upstream record when
+    anything went wrong, while query_info still reported the tier (X-3).
+    Neither USPTO citations API honors `fl`, so that made the tier a label
+    rather than a limit.
+    """
+
+    @pytest.fixture
+    def field_manager(self):
+        config_path = Path(__file__).parent.parent / "field_configs.yaml"
+        return FieldManager(config_path)
+
+    def test_docless_payload_passes_through(self, field_manager):
+        payload = {"responseHeader": {"status": 0}}
+        assert field_manager.filter_response(payload, "citations_minimal") == payload
+
+    def test_filter_failure_raises_instead_of_over_disclosing(self, field_manager):
+        # A doc that is not a mapping makes the per-field loop blow up.
+        payload = {"response": {"docs": [None]}}
+        with pytest.raises(APIResponseError):
+            field_manager.filter_response(payload, "citations_minimal")
+
+    def test_custom_filter_failure_raises(self, field_manager):
+        payload = {"response": {"docs": [None]}}
+        with pytest.raises(APIResponseError):
+            field_manager.filter_response_custom(payload, ["patentApplicationNumber"])
 
 
 if __name__ == "__main__":

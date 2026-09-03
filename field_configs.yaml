@@ -56,7 +56,7 @@ predefined_sets:
       - createDateTime                    # Citation creation timestamp
 
       # === OPTIONAL CONTEXT FIELDS (UNCOMMENT FOR DEEP ANALYSIS) ===
-      # - id                              # Unique citation record ID (used by get_citation_details)
+      # - id                              # Unique citation record ID (used by Citations_get_citation_details)
       # - createUserIdentifier            # ETL job identifier
       # - obsoleteDocumentIdentifier      # IFW repository document identifier
 
@@ -75,8 +75,8 @@ context_settings:
 
 # Usage Instructions:
 # 1. CITATION SEARCHES:
-#    - Edit 'citations_minimal' for search_citations_minimal
-#    - Edit 'citations_balanced' for search_citations_balanced
+#    - Edit 'citations_minimal' for Citations_search_citations_minimal
+#    - Edit 'citations_balanced' for Citations_search_citations_balanced
 # 2. Uncomment fields you want by removing # symbol
 # 3. After editing, restart Claude Desktop to reload configuration
 # 4 passageLocationText can be very long → use balanced tier cautiously
@@ -94,9 +94,9 @@ context_settings:
 # - inventorNameText: Inventor names from cited documents
 #
 # EXAMINER ANALYSIS WORKFLOW (examinerNameText NOT in API):
-# 1. Use PFW MCP: pfw_search_applications(examiner_name='Smith, John', limit=50)
+# 1. Use PFW MCP: PFW_search_applications(examiner_name='Smith, John', limit=50)
 # 2. Extract patentApplicationNumber from PFW results
-# 3. Use Citation MCP: search_citations_minimal(criteria='patentApplicationNumber:12345678')
+# 3. Use Citation MCP: Citations_search_citations_minimal(criteria='patentApplicationNumber:12345678')
 # 4. Aggregate citation patterns across examiner's applications
 #
 # CITATION CATEGORY CODES (WIPO ST.14 relevance ratings — not citation type):
@@ -123,8 +123,8 @@ context_settings:
 # (empty string also common — not all records have this populated)
 #
 # PROGRESSIVE DISCLOSURE WORKFLOW:
-# 1. Discovery: search_citations_minimal (identify patterns, cross-MCP links)
+# 1. Discovery: Citations_search_citations_minimal (identify patterns, cross-MCP links)
 # 2. Selection: User filters strategically important citations
-# 3. Analysis: search_citations_balanced (detailed citation study)
-# 4. Deep Dive: get_citation_details (full context with passages)
+# 3. Analysis: Citations_search_citations_balanced (detailed citation study)
+# 4. Deep Dive: Citations_get_citation_details (full context with passages)
 # 5. Integration: Cross-reference with PFW/PTAB MCPs using extracted IDs

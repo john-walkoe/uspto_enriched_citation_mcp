@@ -250,7 +250,7 @@ def log_api_error(error: Exception, request_id: str, api_endpoint: str):
 # ✅ Safe error messages
 "Authentication failed - check API key configuration"
 "API request timed out - please try again later"
-"Invalid query syntax - use validate_query tool for help"
+"Invalid query syntax - use Citations_validate_query tool for help"
 "Citation service temporarily unavailable"
 
 # ❌ Exposes internal information

@@ -33,19 +33,48 @@ dropped; updated below. Prior full validation: 2026-03-28 (29/29 PASS, both mode
 
 ---
 
-Feature branch: `feature/api-update-and-fastmcp-3`
 Last validated: 2026-03-28 (STDIO + HTTP, Claude Desktop, 29/29 PASS)
 
 Run in order. Tests marked ⭐ must complete before later tests that reference their output.
 
+> **⚠ Identifier formats (crosswalk added 2026-09-02):** `application_number` is
+> the application serial. `patent_number` now takes EITHER a granted patent number
+> (7-8 digits; commas, spaces and a `US` prefix accepted) or an 11-digit pre-grant
+> publication number, and **all four search tools resolve it themselves**: a granted
+> number is crosswalked to its application serial with one USPTO ODP
+> applications-search call and queried as `patentApplicationNumber`, while an
+> 11-digit value queries `publicationNumber` (enriched lane only — the OA lane has
+> no publication field and refuses it). Every response carries
+> `patent_number_resolution` {input, interpreted_as, resolved_application_number when
+> crosswalked, source}; assert on THAT first, since it is the part under test.
+> Failures are 400s naming the accepted forms, not zero-results: an unresolvable
+> number, a value that is neither 7-8 nor 11 digits, and a `patent_number` that
+> disagrees with an `application_number` passed alongside it.
+> **Fixture audit:** every 8-digit fixture in this suite is an APPLICATION serial
+> passed as `application_number` or as a `patentApplicationNumber:` criteria clause
+> (`11802002` Test 8, `12849948` Test 12, `13487597` OA Tests 5 and 10, `11588187`
+> OA Test 6), so none depends on a lane interpretation. State the namespace when
+> adding a fixture — an 8-digit value means a PATENT under `patent_number` and an
+> APPLICATION under `application_number`.
+
 ---
 
-## Enriched Citations (v3) — 18 Tests
+> **Tool visibility caveat (2026-09-02):** `defer_loading: false` is advisory
+> metadata that each client applies by its own policy, so an expected tool
+> being invisible in a given client is not, by itself, a server defect. If a
+> tool this suite calls does not appear, verify the server contract first
+> (direct stdio or in-container probe of `tools/list`) and record
+> "not surfaced in this client (server contract verified)" rather than
+> "tool missing". Load-bearing workflow content deliberately also rides in
+> per-tool docstrings and return-path notes for exactly this reason.
+
+
+## Enriched Citations (v3): 21 Tests
 
 ### Test 1: Tool Guidance
 
 ```
-citations_get_guidance
+Citations_get_guidance
 {
   "section": "tools"
 }
@@ -57,7 +86,7 @@ citations_get_guidance
 ### Test 2: Get Available Fields
 
 ```
-get_available_fields
+Citations_get_available_fields
 {
 }
 ```
@@ -68,7 +97,7 @@ get_available_fields
 ### Test 3: Minimal Search — Tech Center Discovery
 
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "criteria": "techCenter:2100",
   "rows": 5
@@ -81,7 +110,7 @@ search_citations_minimal
 ### Test 4: Minimal Search — Date Range Discovery
 
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "date_start": "2024-01-01",
   "date_end": "2024-12-31",
@@ -95,7 +124,7 @@ search_citations_minimal
 ### Test 5: Minimal Search — Art Unit Discovery
 
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "criteria": "groupArtUnitNumber:2128",
   "rows": 5
@@ -108,21 +137,21 @@ search_citations_minimal
 ### Test 5b: Minimal Search — examiner_cited + art_unit Convenience Parameters
 
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "art_unit": "2128",
   "examiner_cited": true,
   "rows": 5
 }
 ```
-**Expect:** ~39,000 numFound (subset of ~47,000 total for AU:2128 — examiner filter excludes applicant-cited records). All results show groupArtUnitNumber=2128 and examinerCitedReferenceIndicator=true. Tier = minimal. Note: examiner_cited and art_unit are convenience params on both search_citations_minimal and search_citations_balanced (parity added 2026-03-28).
+**Expect:** ~39,000 numFound (subset of ~47,000 total for AU:2128 — examiner filter excludes applicant-cited records). All results show groupArtUnitNumber=2128 and examinerCitedReferenceIndicator=true. Tier = minimal. Note: examiner_cited and art_unit are convenience params on both Citations_search_citations_minimal and Citations_search_citations_balanced (parity added 2026-03-28).
 
 ---
 
 ### Test 6: Minimal Search — Ultra-Minimal Custom Fields ⭐
 
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "criteria": "techCenter:2100 AND examinerCitedReferenceIndicator:true",
   "fields": ["citedDocumentIdentifier", "patentApplicationNumber"],
@@ -136,7 +165,7 @@ search_citations_minimal
 ### Test 7: Balanced Search — X-Category Detailed Analysis ⭐
 
 ```
-search_citations_balanced
+Citations_search_citations_balanced
 {
   "criteria": "citationCategoryCode:X AND techCenter:2100",
   "rows": 2
@@ -149,7 +178,7 @@ search_citations_balanced
 ### Test 8: Balanced Search — Application Number Lookup
 
 ```
-search_citations_balanced
+Citations_search_citations_balanced
 {
   "application_number": "11802002",
   "rows": 5
@@ -159,23 +188,69 @@ search_citations_balanced
 
 ---
 
-### Test 9: Balanced Search — Patent Number Lookup (confirmed in dataset)
+### Test 9: Balanced Search — Publication Number Lookup (confirmed in dataset)
 
 ```
-search_citations_balanced
+Citations_search_citations_balanced
 {
   "patent_number": "20060075466",
   "rows": 3
 }
 ```
-**Expect:** Results returned (this publicationNumber is confirmed present in dataset). Previously used patent 11788453 which had 0 results — that was a coverage gap, not a bug.
+**Expect:** ~5 numFound (live 2026-09-02), constructed_query `publicationNumber:20060075466`,
+and `patent_number_resolution` = {input `20060075466`, interpreted_as `publication`,
+queried_field `publicationNumber`} with NO `resolved_application_number` — an 11-digit
+value is queried directly, not crosswalked. Previously used patent 11788453 which had 0
+results — that was a coverage gap, not a bug.
+
+---
+
+### Test 9b: Balanced Search — Granted Patent Number Crosswalk ⭐
+
+```
+Citations_search_citations_balanced
+{
+  "patent_number": "7,971,071",
+  "rows": 3
+}
+```
+**Expect (primary assertion):** `patent_number_resolution` = {input `7,971,071`,
+interpreted_as `granted_patent`, resolved_application_number **`11752072`**,
+queried_field `patentApplicationNumber`, source `USPTO ODP applications search`}, and
+constructed_query `patentApplicationNumber:11752072`. Commas are stripped, so
+`7971071` and `US 7971071` must resolve identically.
+**Secondary:** ~5 numFound (live 2026-09-02). Citation counts are the softer assertion —
+the crosswalk is correct even if USPTO re-baselines the citation rows. Before the
+crosswalk this same call went to `publicationNumber:7971071` and returned a clean 0.
+
+Cross-check with an 8-digit granted number, where the shape collides with an
+application serial: `patent_number: "10000000"` must resolve to application
+**`14643719`** (~3 numFound enriched, ~2 OA, live 2026-09-02).
+
+---
+
+### Test 9c: Balanced Search — Unresolvable Patent Number Is an Error
+
+```
+Citations_search_citations_balanced
+{
+  "patent_number": "99999999"
+}
+```
+**Expect:** `status: "error"`, `code: 400`, and an `error` naming all three accepted
+forms (granted patent number, 11-digit publication number, application serial). No
+search is issued. A 400 here is the point of the test: the old behavior was a
+successful search with 0 rows, which reads as "this patent was never cited".
+Same 400 class for `patent_number: "123456"` (wrong digit count) and for
+`patent_number: "7971071"` passed together with `application_number: "16816197"`
+(the two name different applications).
 
 ---
 
 ### Test 10: Balanced Search — Office Action Type Filter (CTNF)
 
 ```
-search_citations_balanced
+Citations_search_citations_balanced
 {
   "decision_type": "CTNF",
   "rows": 5
@@ -188,7 +263,7 @@ search_citations_balanced
 ### Test 11: Balanced Search — NPL via nplIndicator (corrected from citationCategoryCode:NPL)
 
 ```
-search_citations_balanced
+Citations_search_citations_balanced
 {
   "criteria": "nplIndicator:true AND techCenter:2100",
   "rows": 3
@@ -201,7 +276,7 @@ search_citations_balanced
 ### Test 12: Get Citation Details — Full Record
 
 ```
-get_citation_details
+Citations_get_citation_details
 {
   "citation_id": "0de7ea10c59e03dab218a40dece9dffd",
   "include_context": true
@@ -214,7 +289,7 @@ get_citation_details
 ### Test 13: Validate Query — Valid Lucene Syntax
 
 ```
-validate_query
+Citations_validate_query
 {
   "query": "citedDocumentIdentifier:US* AND officeActionDate:[2024-01-01 TO 2024-12-31]",
   "field_set": "citations_minimal"
@@ -227,7 +302,7 @@ validate_query
 ### Test 14: Validate Query — Invalid Syntax Detection
 
 ```
-validate_query
+Citations_validate_query
 {
   "query": "techCenter 2100 AND missingField:value"
 }
@@ -239,7 +314,7 @@ validate_query
 ### Test 15: Citation Statistics — Date-Scoped Aggregation
 
 ```
-get_citation_statistics
+Citations_get_citation_statistics
 {
   "criteria": "techCenter:2100 AND officeActionDate:[2024-01-01 TO 2024-12-31]"
 }
@@ -251,7 +326,7 @@ get_citation_statistics
 ### Test 16: Citation Statistics — Multi-Art-Unit OR Query
 
 ```
-get_citation_statistics
+Citations_get_citation_statistics
 {
   "criteria": "groupArtUnitNumber:(2128 OR 2854) AND examinerCitedReferenceIndicator:true"
 }
@@ -263,7 +338,7 @@ get_citation_statistics
 ### Test 17: Minimal Search — Complex Multi-Field Boolean
 
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "criteria": "(techCenter:2100 OR techCenter:2800) AND citationCategoryCode:X AND examinerCitedReferenceIndicator:true AND officeActionDate:[2023-01-01 TO 2024-12-31]",
   "rows": 5
@@ -276,7 +351,7 @@ search_citations_minimal
 ### Test 18: Minimal Search — Pagination (Two Pages)
 
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "criteria": "techCenter:2100",
   "rows": 5,
@@ -285,7 +360,7 @@ search_citations_minimal
 ```
 Then:
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "criteria": "techCenter:2100",
   "rows": 5,
@@ -296,12 +371,12 @@ search_citations_minimal
 
 ---
 
-## Office Action Citations (v2) — 10 Tests
+## Office Action Citations (v2): 11 Tests
 
 ### OA Test 1: Field Discovery
 
 ```
-get_oa_citation_fields
+Citations_get_oa_citation_fields
 {
 }
 ```
@@ -312,7 +387,7 @@ get_oa_citation_fields
 ### OA Test 2: Minimal Search — Tech Center Discovery
 
 ```
-search_oa_citations_minimal
+Citations_search_oa_citations_minimal
 {
   "criteria": "techCenter:2600",
   "rows": 5
@@ -325,7 +400,7 @@ search_oa_citations_minimal
 ### OA Test 3: Minimal Search — Art Unit + Examiner-Cited Convenience Params
 
 ```
-search_oa_citations_minimal
+Citations_search_oa_citations_minimal
 {
   "art_unit": "2626",
   "examiner_cited": true,
@@ -339,7 +414,7 @@ search_oa_citations_minimal
 ### OA Test 4: Minimal Search — Legal Section Code Filter (§103)
 
 ```
-search_oa_citations_minimal
+Citations_search_oa_citations_minimal
 {
   "criteria": "legalSectionCode:103 AND techCenter:2600",
   "rows": 5
@@ -352,7 +427,7 @@ search_oa_citations_minimal
 ### OA Test 5: Minimal Search — Application Number Lookup ⭐
 
 ```
-search_oa_citations_minimal
+Citations_search_oa_citations_minimal
 {
   "criteria": "patentApplicationNumber:13487597",
   "rows": 10
@@ -365,20 +440,25 @@ search_oa_citations_minimal
 ### OA Test 6: Balanced Search — Full Record Analysis
 
 ```
-search_oa_citations_balanced
+Citations_search_oa_citations_balanced
 {
-  "criteria": "patentApplicationNumber:14633232",
+  "criteria": "patentApplicationNumber:11588187 AND legalSectionCode:112",
   "rows": 5
 }
 ```
-**Expect:** Full 16-field records. legalSectionCode, paragraphNumber, parsedReferenceIdentifier, workGroup all populated where available. App 14633232 has §112 rejections confirmed in test data.
+**Expect:** `numFound = 6`, all records legalSectionCode = 112 (art unit 2646, TC2600). Unfiltered `patentApplicationNumber:11588187` returns 18 rows, so the section filter demonstrably narrows. Full 16-field records with legalSectionCode, parsedReferenceIdentifier, workGroup populated where available; `paragraphNumber` is sparsely populated across the whole OA dataset and may be absent on every row (normal, not a defect).
+
+> Re-anchored 2026-09-02: the previous fixture (app 14633232, "has §112
+> rejections confirmed in test data") no longer holds after the upstream OA
+> re-baseline; that app now carries 10 rows, all §103, and
+> `legalSectionCode:112` on it returns numFound = 0 (verified live).
 
 ---
 
 ### OA Test 7: Balanced Search — Rejected §103 Filter
 
 ```
-search_oa_citations_balanced
+Citations_search_oa_citations_balanced
 {
   "criteria": "actionTypeCategory:rejected AND legalSectionCode:103 AND techCenter:2600",
   "rows": 3
@@ -391,21 +471,21 @@ search_oa_citations_balanced
 ### OA Test 8: Minimal Search — Custom Fields (Ultra-Minimal, confirms OA-5 fix)
 
 ```
-search_oa_citations_minimal
+Citations_search_oa_citations_minimal
 {
   "criteria": "legalSectionCode:102 AND techCenter:2600",
   "fields": ["patentApplicationNumber", "referenceIdentifier", "legalSectionCode"],
   "rows": 5
 }
 ```
-**Expect:** Each doc contains ONLY patentApplicationNumber, referenceIdentifier, legalSectionCode (plus possibly id). Previously bug: API ignored fl parameter; fix does client-side field filtering in oa_citation_service.py. Tier = custom in query_info.
+**Expect:** Each doc contains patentApplicationNumber, referenceIdentifier, legalSectionCode (plus possibly id) AND a per-row `_pfw_link`. The `_pfw_link` on a CUSTOM `fields` list is DELIBERATE, not leakage: the 2026-08-30 dedupe moved the PFW hand-off to a single envelope `pfw_link` for default-shape responses, but a caller who chose the doc shape keeps the established inline per-row annotation (pinned by eval `tr-hp-07`). Previously bug: API ignored fl parameter; fix does client-side field filtering in oa_citation_service.py. Tier = custom in query_info.
 
 ---
 
 ### OA Test 9: Minimal Search — Date Range
 
 ```
-search_oa_citations_minimal
+Citations_search_oa_citations_minimal
 {
   "criteria": "techCenter:2600 AND createDateTime:[2025-01-01T00:00:00Z TO 2025-12-31T23:59:59Z]",
   "rows": 5
@@ -419,7 +499,7 @@ search_oa_citations_minimal
 
 Step 1 — get enriched citations for an application:
 ```
-search_citations_minimal
+Citations_search_citations_minimal
 {
   "application_number": "13487597",
   "rows": 10
@@ -428,13 +508,38 @@ search_citations_minimal
 
 Step 2 — get OA citations for same application:
 ```
-search_oa_citations_minimal
+Citations_search_oa_citations_minimal
 {
   "criteria": "patentApplicationNumber:13487597",
   "rows": 10
 }
 ```
 **Expect:** OA v2 should return more raw citations than enriched v3 (broader coverage, includes citations not yet AI-processed). Compare referenceIdentifier / citedDocumentIdentifier values between the two datasets. This validates the cross-check workflow documented in the guidance.
+
+---
+
+### OA Test 11: Minimal Search — Granted Patent Number Crosswalk
+
+```
+Citations_search_oa_citations_minimal
+{
+  "patent_number": "7971071",
+  "rows": 10
+}
+```
+**Expect (primary assertion):** `patent_number_resolution` = {input `7971071`,
+interpreted_as `granted_patent`, resolved_application_number **`11752072`**,
+queried_field `patentApplicationNumber`, source `USPTO ODP applications search`}, and
+constructed_query `patentApplicationNumber:11752072`. This lane had no patent-number
+path at all before the crosswalk (`publicationNumber` returns 400 as a field, and still
+does — the parameter is the only way in).
+**Secondary:** ~5 numFound (live 2026-09-02), all rows on application 11752072.
+
+Two refusals to spot-check, both `code: 400` with no search issued:
+`patent_number: "20060075466"` (an 11-digit publication number, which this index cannot
+search — the message points at Citations_search_citations_minimal) and
+`patent_number: "7971071"` together with `application_number: "16816197"` (conflicting
+identifiers).
 
 ---
 

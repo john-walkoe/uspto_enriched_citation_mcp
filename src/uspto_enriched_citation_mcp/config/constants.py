@@ -25,6 +25,11 @@ DEFAULT_BALANCED_SEARCH_ROWS = 20
 MAX_MINIMAL_SEARCH_ROWS = 100
 MAX_BALANCED_SEARCH_ROWS = 50
 
+# Deep-paging ceiling. `rows` was capped in three places and `start` in none,
+# so start=50000000 forced a deep page upstream and minted a fresh cache key
+# every time.
+MAX_PAGINATION_START = 10000
+
 # === QUERY VALIDATION ===
 # Maximum query length (characters)
 MAX_QUERY_LENGTH = 5000
@@ -49,6 +54,11 @@ ENRICHED_CITATIONS_RECORDS_PATH = "/api/v1/patent/oa/enriched_cited_reference_me
 # Office Action Citations v2 endpoint paths
 OA_CITATIONS_FIELDS_PATH = "/api/v1/patent/oa/oa_citations/v2/fields"
 OA_CITATIONS_RECORDS_PATH = "/api/v1/patent/oa/oa_citations/v2/records"
+
+# ODP applications search — used ONLY by the granted-patent-number crosswalk
+# (patent number -> application serial). Same api.uspto.gov host and X-API-KEY
+# as the two citation APIs, so it goes through the same metered client stack.
+APPLICATIONS_SEARCH_PATH = "/api/v1/patent/applications/search"
 
 # === MCP SERVER ===
 # Default MCP server port
@@ -119,8 +129,11 @@ DEFAULT_FIELD_CONFIG_PATH = "field_configs.yaml"
 
 # === FIELD COUNTS ===
 # Expected field counts for validation
+# Pinned against field_configs.yaml by tests/test_field_counts.py; the
+# balanced value said 18 while the YAML held 19 and the module fallback 20
+# (D-11).
 MINIMAL_FIELD_COUNT = 8
-BALANCED_FIELD_COUNT = 18
+BALANCED_FIELD_COUNT = 19
 
 # === TOKEN EFFICIENCY ===
 # Expected context reduction percentages

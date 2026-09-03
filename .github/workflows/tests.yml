@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  test:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run ruff
+        # Advisory for now: the repo carries a pre-existing C901 complexity
+        # backlog that is tracked separately. New violations still show up here.
+        continue-on-error: true
+        run: uv run ruff check src tests
+
+      - name: Run pytest
+        run: uv run pytest -q

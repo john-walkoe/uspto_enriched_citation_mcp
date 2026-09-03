@@ -31,21 +31,61 @@
     "f1180f869f9ca5acd899aa92a2e71aa9243db342a07fc3a297b6fb87afb02c9b": {
       "line": 351,
       "match": "prompt"
+    },
+    "f4e452533ce880fd00b705b2338d37dc805ce50781e2bb47c3282bb12754c9dd": {
+      "line": 535,
+      "match": "prompt"
     }
   },
   "src/uspto_enriched_citation_mcp/config/field_manager.py": {
     "179d4ad89ba72ba129f927f8c76bf3ae47f33e0f659ad646f95532d7a6ce7468": {
       "line": 69,
       "match": "system"
+    },
+    "a76b16287320bba9875e289743866a263da76f28832b3021decada7ab41bbf57": {
+      "line": 83,
+      "match": "system"
     }
   },
   "src/uspto_enriched_citation_mcp/main.py": {
+    "4fedde39a8dee969c742cd3b050f365c5c5f7c8868c67698d111318a2783ffde": {
+      "line": 233,
+      "match": "prompt"
+    },
+    "e2119b0ea99c72796651c388a40a02c925be478405c4c87a5c841dfff79d0c7f": {
+      "line": 242,
+      "match": "instructions"
+    },
     "e24e87d5d2874b6cb1940f3d591385fd527e0fe634211159968e3d267cfffb7d": {
       "line": 118,
       "match": "instructions"
     }
   },
   "src/uspto_enriched_citation_mcp/prompts/__init__.py": {
+    "0e7e3b3108ba0ac363e38d7fae126489dc6352fb77ac53ffae65bf6bfb6fd7b5": {
+      "line": 50,
+      "match": "prompts"
+    },
+    "14d15d6203d3f73818f7028d82195bfa207849ad88b46711e2178097f1dbd0d8": {
+      "line": 25,
+      "match": "prompts"
+    },
+    "1ef73a21f72af70f2be7a4c347d1afde6cb42d98cedccc7e9494efdf23e19ea7": {
+      "line": 50,
+      "match": "prompt"
+    },
+    "285b9f70532f35ca33112f2e15b127151ebc77b951b4fcb2fd683ae7710542e8": {
+      "line": 62,
+      "match": "Prompt"
+    },
+    "3461d74828cb90fc05c04b006cfb1eb5109a0ef68561b199a1f96cea59119e19": {
+      "line": 49,
+      "match": "prompt"
+    },
+    "39811bfb2f0dba668a178d2687f9113022e5b0aa21584a32a1b06d06bc141959": {
+      "line": 52,
+      "match": "prompts"
+    },
     "398f4fc2918170efdf566fd6d9e2141253637573ef4cbe508180360bea2e7562": {
       "line": 33,
       "match": "prompts"
@@ -118,8 +158,16 @@
     }
   },
   "src/uspto_enriched_citation_mcp/prompts/templates/enhanced_examiner_behavior_intelligence.md": {
+    "01473779f95ac187fdd5e4e614e1c6e3a10f7a130b83858c1ada02e1b411f2da": {
+      "line": 1480,
+      "match": "prompt"
+    },
     "50670c2a898b9d517cf4eec471a06846d1348dd934882ed9d5cf0a43ab6ced45": {
       "line": 283,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "8f6a7762e9488aa90d39befc55386e658988f037981510b7d3280925e5b8d679": {
+      "line": 295,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
     "b916f082cd3aa07204b6b04c8692f1806e9ab5eb220babe4e2f7b1faf129a96f": {
@@ -131,6 +179,10 @@
     "5029e75b32453932fc0c780fee9cf9e872255e77006d673ec6aeedc4957a126e": {
       "line": 61,
       "match": "system"
+    },
+    "9c474fdcb915cd40e3276526408032a3b20daad94e13a534fa7557f8cf21443c": {
+      "line": 101,
+      "match": "system"
     }
   },
   "src/uspto_enriched_citation_mcp/shared/error_utils.py": {
@@ -138,8 +190,20 @@
       "line": 40,
       "match": "System"
     },
+    "3a0a6faff329e91aea0f622f7dfe59e51beab0cc6601e80e9350139e94207c4d": {
+      "line": 224,
+      "match": "system"
+    },
+    "4d3b64c5f16d3f77ae44091832b19d8494501a0ddfa0c95244646e0e8803bb2b": {
+      "line": 43,
+      "match": "System"
+    },
     "8459fc3c791524380300be132305bfec9d05e8db00f57ee7247ac04582872050": {
       "line": 47,
+      "match": "System"
+    },
+    "900b0c3695d55d16e098d93e0d0ea094324ee455885316975045bbd65fc7cd98": {
+      "line": 50,
       "match": "System"
     },
     "ff5a120d80b0a92fe36f947c1e91c102a80d806d675d2ffc71f8db3ba7d27648": {
@@ -164,6 +228,10 @@
       "line": 33,
       "match": "prompt"
     },
+    "1e8d8e42dc55ca1f13aef39e3d3bad09e0e319c4749bdcf60a47d58031dc8af2": {
+      "line": 110,
+      "match": "ignore previous instructions"
+    },
     "38026145c886f824c62ea5b4ab1dfa5d82a45b66aa0d1d26a0b4fd47a6da8eb3": {
       "line": 97,
       "match": "instruction"
@@ -182,6 +250,10 @@
     },
     "64620cafec3899e869b98308a95d36a07c828935c2346cc94846553b1a2b516b": {
       "line": 33,
+      "match": "instructions"
+    },
+    "65a863d7898313266bacd1306b62bfac1858ff38c31c9b4175879a2540799bad": {
+      "line": 110,
       "match": "instructions"
     },
     "6c17a0fd54ba35347deed8b5893b32c4668be10189d38b369ed5257e45aeffa1": {
@@ -232,13 +304,25 @@
       "line": 30,
       "match": "prompt"
     },
+    "94d7c79bd2b3ab4814c548bb89d67e70948df6e6bcd195318f9a07b66b995e3f": {
+      "line": 106,
+      "match": "INSTRUCTIONS"
+    },
     "a2042bc06dd92fbe4c915216d6fcf40795e3add172336c165c2d007dd20caf95": {
       "line": 79,
       "match": "instructions"
     },
+    "a2cf93950c77e46315dde8977120b27040e47c81df941a3fcf32b706d590ccc0": {
+      "line": 110,
+      "match": "ignore"
+    },
     "a6c2bf639dda8e4b6e2390fa2fefc0c6f2f3ba9d588f1ae7d18cdf022dd777f7": {
       "line": 42,
       "match": "instructions"
+    },
+    "a977b0c20fb564a819fea45ebf43a264a3dba6016bdd9f7e8224e91e238f6bee": {
+      "line": 109,
+      "match": "instruction"
     },
     "affe94b55292e0cf41b213d414e2cad4509e8585d719fe7e43261fb4bccf555d": {
       "line": 5,
@@ -261,7 +345,21 @@
       "match": "instructions"
     }
   },
+  "src/uspto_enriched_citation_mcp/tools/oa.py": {
+    "4b29dc596163e2966240bf1ef3aad94b222a1701c0356eaab8282763a1442645": {
+      "line": 255,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "71db5e4da5156126c6ec1706f0e2c75d3426f832963c436fde743de779a2ebc4": {
+      "line": 248,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
   "src/uspto_enriched_citation_mcp/ui/views/citation_results_view.py": {
+    "b402a6fad8b94fe6a8e2841d38777a67579881eeb0765172b8dc471b2cc39bb1": {
+      "line": 14,
+      "match": "system"
+    },
     "f523eec07121ec649db0007845758fd60d1c544e1eceab26b28d0d1b55daae42": {
       "line": 12,
       "match": "system"
@@ -270,6 +368,10 @@
   "src/uspto_enriched_citation_mcp/ui/views/oa_citations_view.py": {
     "04f50cd7e6718dc42a2746d82c7710c2c58c98e1dd7893fa01eeb60cdc58dea5": {
       "line": 12,
+      "match": "system"
+    },
+    "c9ee2e3d8098dec26590a9491f99c09af9520d26871c82bff416a90d929e8e3a": {
+      "line": 14,
       "match": "system"
     }
   },
@@ -313,6 +415,10 @@
     "b16235d3c413cd3ffbbcc370a0d749e39d88007c4cb4abdfbd0036b468d257e3": {
       "line": 4,
       "match": "system"
+    },
+    "defaf743038123ec5e184c89ed251212adcd6b734edfe198808492cd819744a7": {
+      "line": 437,
+      "match": "system"
     }
   },
   "tests/test_injection_scan.py": {
@@ -340,13 +446,29 @@
       "line": 20,
       "match": "ignore the previous instructions"
     },
+    "a6822dca6c079a0bd3f9250cb49c72613aabf32cf99d2b6bf8822d35584526a3": {
+      "line": 237,
+      "match": "Ignore"
+    },
+    "afe681aeb0e612ec592efbe2075c6bafe45170cb2684ccbaed3f4ec142665afb": {
+      "line": 237,
+      "match": "instructions"
+    },
     "b8352bc44185df06c6f42713c8094354e9b24ab03b6cf48f33cab825186a2478": {
       "line": 20,
       "match": "system"
     },
+    "e14a24cfa79b1c39bf63b97dad5c552597a4a013bfafb6b265bf79dc1d19f4de": {
+      "line": 247,
+      "match": "Ignore"
+    },
     "f2ec5ae48f6897960d6dbe008d5744543e9329cf7296e57e6bfbe11f07f1d759": {
       "line": 20,
       "match": "ignore"
+    },
+    "fffba63a374dd693f70846c9e20822a66c46f9678dd59104945675521a51451d": {
+      "line": 237,
+      "match": "Ignore previous instructions"
     }
   },
   "tests/test_resilience.py": {

@@ -4,21 +4,28 @@ USPTO Enriched Citation API v3 client.
 Concrete client for the /enriched_cited_reference_metadata/v3 endpoint.
 Shares transport, caching, and resilience logic with OACitationsClient via
 BaseCitationClient. get_fields/search_records (including circuit-breaker and
-stale-cache fallback behaviour) and __init__ are fully inherited — this class
+stale-cache fallback behavior) and __init__ are fully inherited — this class
 adds only the enriched-citations-specific query helpers.
 """
 
-from typing import Dict, List, Optional, Tuple, Union
+import re
+from typing import Dict, List, Optional, Union
 
 from .base_citation_client import BaseCitationClient
 from ..config.constants import (
     ENRICHED_CITATIONS_FIELDS_PATH,
     ENRICHED_CITATIONS_RECORDS_PATH,
 )
+from ..config.field_manager import DEFAULT_MINIMAL_FIELDS
 from ..shared.enums import ContextLevel
 from ..util.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Enriched citation `id` values are 32 hex characters. Enforced here, at the
+# layer that builds the `id:<value>` Lucene clause, so a future caller
+# reaching the client directly cannot bypass the tool-layer check.
+_CITATION_ID_RE = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 
 
 class EnrichedCitationClient(BaseCitationClient):
@@ -45,6 +52,7 @@ class EnrichedCitationClient(BaseCitationClient):
         fields: Optional[List[str]] = None,
         start: int = 0,
         rows: int = 50,
+        charge_quota: bool = True,
     ) -> Dict:
         """
         Search citations (alias for search_records with 'fields' param name).
@@ -54,23 +62,23 @@ class EnrichedCitationClient(BaseCitationClient):
             fields: List of field names to return (optional)
             start: Starting offset for pagination
             rows: Number of results to return
+            charge_quota: False when the caller already charged the rate
+                limiter for a whole fan-out of sub-calls
 
         Returns:
             Dict with search results in format:
             {"response": {"start": X, "numFound": Y, "docs": [...]}}
         """
         return await self.search_records(
-            criteria=criteria, start=start, rows=rows, selected_fields=fields
+            criteria=criteria,
+            start=start,
+            rows=rows,
+            selected_fields=fields,
+            charge_quota=charge_quota,
         )
 
-    def validate_lucene_query(self, query: str) -> Tuple[bool, str]:
-        """Validate Lucene query syntax using utility."""
-        return self._validate_lucene_syntax(query)
-
-    @staticmethod
-    def _validate_lucene_syntax(query: str) -> Tuple[bool, str]:
-        from ..util.query_validator import validate_lucene_syntax
-        return validate_lucene_syntax(query)
+    # validate_lucene_query is inherited from BaseCitationClient, which is the
+    # same one-line passthrough to util.query_validator.validate_lucene_syntax.
 
     async def validate_query(self, query: str) -> Dict:
         """
@@ -124,12 +132,33 @@ class EnrichedCitationClient(BaseCitationClient):
                 "citation_id": citation_id,
             }
 
+        # The identifier guard lives here, at the sink that interpolates it
+        # into a Lucene clause, not only in tools/details.py one layer above
+        # (S-32). The tool check stays as a fast fail.
+        if not _CITATION_ID_RE.fullmatch(citation_id.strip()):
+            return {
+                "status": "error",
+                "error": (
+                    "Invalid citation ID format. Expected a 32-character "
+                    "hexadecimal identifier from a search result's `id` field."
+                ),
+                "citation_id": citation_id,
+            }
+
         try:
             # Search for the specific citation by ID
             criteria = f"id:{citation_id}"
             # Full context: pass None so API returns all fields.
-            # Minimal context: pass [] to get minimal field set.
-            selected_fields = None if context_level == ContextLevel.FULL else []
+            # Minimal context: pass the actual minimal field set. An empty
+            # list is NOT a request for no fields — Solr treats an empty `fl`
+            # as unset and returns the whole ~4KB record (passage blob and
+            # all) while the envelope still says context_level "minimal", so
+            # a caller budgeting context on the label under-counted by ~4x.
+            selected_fields = (
+                None
+                if context_level == ContextLevel.FULL
+                else list(DEFAULT_MINIMAL_FIELDS)
+            )
 
             result = await self.search_records(
                 criteria=criteria, start=0, rows=1, selected_fields=selected_fields
@@ -145,6 +174,15 @@ class EnrichedCitationClient(BaseCitationClient):
                 }
 
             citation = docs[0]
+
+            # The API ignores `fl` here the same way the OA v2 endpoint does
+            # (verified live 2026-08-30: the full 22-field record comes back
+            # for an 8-field request), so the minimal level only means
+            # anything if it is enforced on this side. `id` is kept for
+            # parity with the search tiers' filter.
+            if selected_fields is not None:
+                keep = set(selected_fields) | {"id"}
+                citation = {k: v for k, v in citation.items() if k in keep}
 
             return {
                 "status": "success",

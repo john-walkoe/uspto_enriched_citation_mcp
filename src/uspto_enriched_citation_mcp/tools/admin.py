@@ -5,7 +5,7 @@ the PFW/PTAB pattern / neo4j NEO4J_READ_ONLY approach)."""
 
 import os
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastmcp.apps import AppConfig
 
@@ -13,6 +13,8 @@ from ..app_uris import USER_MANAGEMENT_URI
 from ..config.settings import get_settings
 from ..shared.error_utils import format_error_response
 from ..util.logging import get_logger
+from ..util.request_context import RequestContext
+from ..util.security_logger import get_security_logger
 
 logger = get_logger(__name__)
 
@@ -43,6 +45,43 @@ def _get_user_store():
     from ..auth.store import McpUserStore
 
     return McpUserStore(get_settings().auth_db_path)
+
+
+def _actor() -> str:
+    """Authenticated identity of the caller, for the audit record.
+
+    Returns "local-process" outside OAuth mode, where the transport itself is
+    the identity."""
+    try:
+        from fastmcp.server.dependencies import get_access_token
+        token = get_access_token()
+        if token is not None:
+            claims = getattr(token, "claims", None) or {}
+            return claims.get("email") or getattr(token, "client_id", None) or "internal"
+    except Exception:
+        pass
+    return "local-process"
+
+
+def _audit_user_management(actor: str, action: str, target: str, role: str,
+                          success: bool, detail: Optional[str] = None) -> None:
+    """Emit a security-log record for every mcp_users mutation (S-22).
+
+    `list` is a read and is not audited. Never raises: a failed audit write
+    must not turn a successful grant into a tool error, but it is logged."""
+    if action == "list":
+        return
+    try:
+        get_security_logger().admin_action(
+            actor=actor,
+            action=action,
+            target=target,
+            success=success,
+            role=role if action in ("add", "set_role") else None,
+            detail=detail,
+        )
+    except Exception as audit_error:
+        logger.error("Admin audit write failed: %s", type(audit_error).__name__)
 
 
 # -----------------------------------------------------------------------
@@ -95,12 +134,22 @@ async def _handle_deactivate(store, email, role, display_name, notes):
     return await _set_active_message(store, email, False)
 
 
+async def _handle_delete(store, email, role, display_name, notes):
+    # Erasure, not deactivation (S-14): mcp_users holds the only PII in the
+    # system and 'deactivate' leaves the row, the notes and the login history
+    # behind, so there was no way to answer a data-subject erasure request.
+    if not await store.delete_user(email):
+        return None, {"error": f"no such user: {email}"}
+    return f"{email} and its refresh tokens were deleted.", None
+
+
 _MANAGE_USERS_ACTION_HANDLERS = {
     "list": _handle_list,
     "add": _handle_add,
     "set_role": _handle_set_role,
     "activate": _handle_activate,
     "deactivate": _handle_deactivate,
+    "delete": _handle_delete,
 }
 
 
@@ -112,14 +161,17 @@ async def citations_manage_users(
     notes: str = "",
 ) -> Dict[str, Any]:
     """Manage the registered-user list for OAuth sign-in (ADMIN ONLY).
+    Users, accounts, admin, permissions, roles, access, allowlist, add user, deactivate, sign-in.
 
-    Lists, adds, activates, deactivates, or changes the role of registered
-    users. A user may sign in via Google / Microsoft only while their row is
-    active; role 'admin' additionally grants this user-management tool.
+    Lists, adds, activates, deactivates, deletes, or changes the role of
+    registered users. A user may sign in via Google / Microsoft only while
+    their row is active; role 'admin' additionally grants this
+    user-management tool. 'delete' erases the row and its refresh tokens
+    outright, unlike 'deactivate' which keeps the record.
     Changes take effect at the user's next token refresh (up to 1 hour).
 
     Args:
-        action: One of: list, add, set_role, activate, deactivate
+        action: One of: list, add, set_role, activate, deactivate, delete
         email: Target user email (required for all actions except list)
         role: 'user' or 'admin' (for add / set_role)
         display_name: Optional display name (for add)
@@ -128,11 +180,19 @@ async def citations_manage_users(
     Returns:
         The full user table after the action, plus a confirmation message.
     """
-    valid_actions = ("list", "add", "set_role", "activate", "deactivate")
+    with RequestContext():
+        return await _manage_users_body(action, email, role, display_name, notes)
+
+
+async def _manage_users_body(
+    action: str, email: str, role: str, display_name: str, notes: str
+) -> Dict[str, Any]:
+    valid_actions = ("list", "add", "set_role", "activate", "deactivate", "delete")
     if action not in valid_actions:
         return {"error": f"action must be one of {valid_actions}, got {action!r}"}
 
     store = _get_user_store()
+    actor = _actor()
     try:
         if action != "list":
             email = email.strip().lower()
@@ -142,7 +202,9 @@ async def citations_manage_users(
         handler = _MANAGE_USERS_ACTION_HANDLERS[action]
         message, error = await handler(store, email, role, display_name, notes)
         if error is not None:
+            _audit_user_management(actor, action, email, role, False, error.get("error"))
             return error
+        _audit_user_management(actor, action, email, role, True)
 
         users = await store.list_users()
         return {
@@ -165,6 +227,7 @@ async def citations_manage_users(
             ],
         }
     except Exception as e:
+        _audit_user_management(actor, action, email, role, False, type(e).__name__)
         return format_error_response("User management failed", 500, exception=e)
 
 
@@ -173,21 +236,23 @@ def register(mcp, auth_provider=None) -> None:
     global _auth_provider
     _auth_provider = auth_provider
     if USER_MANAGEMENT_ENABLED:
+        if _auth_provider is None and os.getenv("FASTMCP_TRANSPORT", "stdio") == "http":
+            # Enabled on the HTTP surface without OAuth, the only protection on
+            # this tool would be the shared INTERNAL_AUTH_SECRET — anyone
+            # holding that ecosystem-wide secret could self-grant admin via the
+            # user DB. Refuse to start rather than register it ungated (this
+            # used to log a warning and continue). stdio stays allowed: there
+            # the OS process boundary is the gate.
+            raise RuntimeError(
+                "CITATIONS_ENABLE_USER_MANAGEMENT=true requires CITATIONS_AUTH_MODE=oauth "
+                "in HTTP mode; the shared INTERNAL_AUTH_SECRET is not a per-identity "
+                "gate. Use scripts/manage_mcp_users.py for out-of-band administration."
+            )
         mcp.tool(
             name="citations_manage_users",
             app=AppConfig(resource_uri=USER_MANAGEMENT_URI),
             annotations={"defer_loading": True},
         )(citations_manage_users)
-        if _auth_provider is None:
-            # Enabled without OAuth: the only protection on this tool is the
-            # transport itself (stdio) or the shared INTERNAL_AUTH_SECRET (HTTP
-            # mode=none) — anyone holding that ecosystem-wide secret could
-            # self-grant admin via the user DB.
-            logger.warning(
-                "citations_manage_users is ENABLED without OAuth per-identity gating "
-                "(CITATIONS_ENABLE_USER_MANAGEMENT=true, CITATIONS_AUTH_MODE!=oauth). "
-                "Recommended: leave it disabled and use scripts/manage_mcp_users.py."
-            )
     else:
         logger.info(
             "citations_manage_users not registered (CITATIONS_ENABLE_USER_MANAGEMENT is "
