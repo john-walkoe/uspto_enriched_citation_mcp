@@ -1,0 +1,26 @@
+# Dependency update surveillance. uv.lock pins a reproducible resolved set;
+# this is what tells the operator when one of those pins gains an advisory.
+# Security updates always; routine minor/patch bumps are grouped into one PR
+# to keep the noise down. Same file in all four USPTO MCP repos.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
