@@ -62,11 +62,13 @@ Run in order. Tests marked ⭐ must complete before later tests that reference t
 > **Tool visibility caveat (2026-09-02):** `defer_loading: false` is advisory
 > metadata that each client applies by its own policy, so an expected tool
 > being invisible in a given client is not, by itself, a server defect. If a
-> tool this suite calls does not appear, verify the server contract first
-> (direct stdio or in-container probe of `tools/list`) and record
-> "not surfaced in this client (server contract verified)" rather than
-> "tool missing". Load-bearing workflow content deliberately also rides in
-> per-tool docstrings and return-path notes for exactly this reason.
+> tool this suite calls does not appear in the client, record two facts
+> separately: whether the server lists it (direct stdio or in-container probe
+> of `tools/list`), and that this client did not. A tool the server does not
+> list is a server defect and must be reported as one; a tool the server lists
+> but the client hides is a client-visibility finding. Never fold one into the
+> other. Load-bearing workflow content deliberately also rides in per-tool
+> docstrings and return-path notes for exactly this reason.
 
 
 ## Enriched Citations (v3): 21 Tests
