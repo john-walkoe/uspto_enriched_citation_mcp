@@ -72,8 +72,9 @@ category_analysis = Counter()
 apps_with_citations = set()
 
 for citation in citations['response']['docs']:
-    # Track examiner vs applicant citations
-    if citation.get('examinerCitedReferenceIndicator') == 'true':
+    # Track examiner vs applicant citations. The indicator is a JSON BOOLEAN;
+    # comparing it to the string "true" made every reference applicant-cited.
+    if str(citation.get('examinerCitedReferenceIndicator')).lower() == 'true':
         source_analysis['Examiner Citations'] += 1
     else:
         source_analysis['Applicant Citations'] += 1

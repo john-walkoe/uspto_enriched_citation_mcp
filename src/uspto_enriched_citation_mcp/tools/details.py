@@ -6,6 +6,11 @@ from .. import runtime
 from ..api.enriched_client import _CITATION_ID_RE
 from ..shared.error_utils import format_error_response
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, scan_hits
+from ..util.reference_key import (
+    ENRICHED_REFERENCE_SOURCE_FIELDS,
+    REFERENCE_KEY_FIELD,
+    reference_key_for_doc,
+)
 from ..util.request_context import RequestContext
 from ..util.security_logger import get_security_logger
 from ._shared import run_with_deadline
@@ -119,6 +124,12 @@ async def _get_citation_details_body(
         # Add LLM guidance for document retrieval via PFW MCP
         # patentApplicationNumber is nested inside result["citation"], not at the top level
         citation_doc = result.get("citation", {}) if result else {}
+        # Same cross-lane join key the search tiers carry, so a detail record
+        # can be matched back to an OA row without re-deriving it.
+        if isinstance(citation_doc, dict) and citation_doc:
+            citation_doc[REFERENCE_KEY_FIELD] = reference_key_for_doc(
+                citation_doc, ENRICHED_REFERENCE_SOURCE_FIELDS
+            )
         if result and citation_doc.get("patentApplicationNumber"):
             app_number = citation_doc.get("patentApplicationNumber", "")
             oa_category = citation_doc.get("officeActionCategory", "")

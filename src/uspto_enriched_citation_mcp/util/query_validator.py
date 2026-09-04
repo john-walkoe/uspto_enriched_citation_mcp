@@ -182,6 +182,39 @@ def _check_malformed_boolean_or_range(query: str) -> _CheckResult:
     return None
 
 
+def _wrong_lane_hint(field: str, valid_fields: Set[str]) -> str:
+    """Name the OTHER lane when a rejected field is a real field over there.
+
+    The two indexes reject each other's field names, and the bare "invalid
+    field name" message reads as "this field does not exist anywhere", which
+    sends a caller looking for a synonym instead of to the tool that has it.
+    Membership is tested against both published whitelists rather than against
+    the identity of the set passed in, so the hint is correct whichever lane is
+    validating.
+    """
+    if field in OA_VALID_FIELDS and field not in valid_fields:
+        return (
+            " This field exists only on the Office Action Citations (v2) lane; "
+            "use Citations_search_oa_citations_minimal/balanced for it."
+        )
+    if field in VALID_FIELDS and field not in valid_fields:
+        # publicationNumber is the one that matters most: the raw upstream OA
+        # API answers it with HTTP 200 and numFound 0, which reads as "never
+        # cited", so this server's 400 is deliberate.
+        extra = (
+            " The raw upstream API answers publicationNumber on the OA lane with "
+            "HTTP 200 and numFound 0, which reads as 'never cited', so this "
+            "rejection is deliberate; pass the `patent_number` parameter instead."
+            if field == "publicationNumber"
+            else ""
+        )
+        return (
+            " This field exists only on the Enriched Citations (v3) lane; "
+            "use Citations_search_citations_minimal/balanced for it." + extra
+        )
+    return ""
+
+
 def _check_field_whitelist(query: str, valid_fields: Set[str]) -> _CheckResult:
     """Validate field names and values (security-critical). Logs invalid access."""
     # Colons inside "[...]" range bodies (ISO-8601 timestamps like
@@ -209,7 +242,9 @@ def _check_field_whitelist(query: str, valid_fields: Set[str]) -> _CheckResult:
             )
             return (
                 False,
-                f"Invalid field name: {field}. Use Citations_get_available_fields tool for valid fields.",
+                f"Invalid field name: {field}. Use Citations_get_available_fields "
+                f"tool for valid fields."
+                + _wrong_lane_hint(field, valid_fields),
             )
     return None
 

@@ -24,11 +24,22 @@ uspto_api_breaker = get_circuit_breaker(
 
 
 # OA Citations v2 field sets (kept here so callers can import them directly)
+#
+# `parsedReferenceIdentifier` was added to the minimal tier on 2026-09-04. The
+# tier previously carried only the raw Form 892 string in
+# `referenceIdentifier`, which arrives with the inventor name attached and in a
+# format that varies for the same patent, so a caller reading the discovery
+# tier had no normalised reference at all. Measured cost on a representative
+# row: 44 characters of serialised JSON, about 2,200 characters on a full
+# 50-row page; the `referenceKey` both lanes now carry adds a further 31
+# characters a row. The tier stays well under the balanced tier it is meant to
+# be cheaper than (8 fields against 16). Pinned by tests/test_field_counts.py.
 OA_CITATIONS_MINIMAL_FIELDS = [
     "patentApplicationNumber",
     "groupArtUnitNumber",
     "techCenter",
     "referenceIdentifier",
+    "parsedReferenceIdentifier",
     "actionTypeCategory",
     "examinerCitedReferenceIndicator",
     "createDateTime",

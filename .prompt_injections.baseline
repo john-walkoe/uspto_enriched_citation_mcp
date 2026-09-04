@@ -166,8 +166,16 @@
       "line": 283,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
+    "772481065fbe1aab701e30c2670b0062bff9258b5dd5b0920f592c9c387e3b11": {
+      "line": 1482,
+      "match": "prompt"
+    },
     "8f6a7762e9488aa90d39befc55386e658988f037981510b7d3280925e5b8d679": {
       "line": 295,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "a3e91af0e7521ae55b16983ffd342dd951ea703dda23a178c51a1f606af5c816": {
+      "line": 297,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
     "b916f082cd3aa07204b6b04c8692f1806e9ab5eb220babe4e2f7b1faf129a96f": {
@@ -346,12 +354,34 @@
     }
   },
   "src/uspto_enriched_citation_mcp/tools/oa.py": {
+    "49eb2ef652d907cf0a7223eb48b8e4204500b2b5be21abeab92b2b0ff267fa26": {
+      "line": 276,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
     "4b29dc596163e2966240bf1ef3aad94b222a1701c0356eaab8282763a1442645": {
       "line": 255,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
+    "5eb3e2eb7d80b93d4694928f7d852081350affa05ac62858e85e0ddfbe1dd242": {
+      "line": 355,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
     "71db5e4da5156126c6ec1706f0e2c75d3426f832963c436fde743de779a2ebc4": {
       "line": 248,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "8311f5655eb7383ffaf66dc07c50afbbabb5b756a6b8ad6bd0c91084c4a99ad4": {
+      "line": 289,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "f9ff2451ef90b3239107b61116fec8873d613d13e657269a55a2b41323bc7afe": {
+      "line": 232,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
+  "src/uspto_enriched_citation_mcp/tools/statistics.py": {
+    "0c14aa0ae595b695f548646eb25077b5bc4f1d546950652fb33cb0be12a56bf2": {
+      "line": 29,
       "match": "Variation Selector steganography detected (1 selectors)"
     }
   },
@@ -405,6 +435,36 @@
     "b2f33f2bf68efc096205e6353c646e342bef4661e8c4f5041b5dd4356a4939de": {
       "line": 20,
       "match": "prompt"
+    }
+  },
+  "tests/test_examiner_cited_indicator.py": {
+    "074906e57b5ad52bd80346b301114b768605a5b7dea0580667a571e569b4637c": {
+      "line": 7,
+      "match": "prompts"
+    },
+    "194853b863f11b063f2aee73c57cacc42acd8c4e9efec54d2189438b7575b596": {
+      "line": 11,
+      "match": "prompt"
+    },
+    "307d20c3435e6fd442a17076d2f3677a1e819bd07d1dc73dccd69a59e0e835ae": {
+      "line": 34,
+      "match": "prompts"
+    },
+    "b760329fbc501110320ae5fc759737d076a8e619bd631f19253d9e64e6543b86": {
+      "line": 29,
+      "match": "prompts"
+    },
+    "d3d8ab08f13f6f8acedf1fe7933e579259005413fcce827ecc49cc0f2ea64e60": {
+      "line": 22,
+      "match": "prompts"
+    },
+    "d9dbb9cdde2c8a0606e79f66e0285bd08222b61cbd7a3c54fb934318de1e91c8": {
+      "line": 3,
+      "match": "prompt"
+    },
+    "e0b008a2ead512f35ecc6e243fc6b141f1e24b650f2269f04c246b79a60590fd": {
+      "line": 30,
+      "match": "prompts"
     }
   },
   "tests/test_field_configuration.py": {

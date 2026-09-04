@@ -46,8 +46,10 @@ class TestOACitationServiceSearch:
                         "actionTypeCategory": "OA",
                         "examinerCitedReferenceIndicator": True,
                         "createDateTime": "2023-05-01T00:00:00Z",
-                        # These should be filtered out by client-side filtering
-                        "parsedReferenceIdentifier": "SHOULD_BE_REMOVED",
+                        # parsedReferenceIdentifier joined the minimal tier on
+                        # 2026-09-04 and is kept; legalSectionCode is still
+                        # balanced-only and must be filtered out.
+                        "parsedReferenceIdentifier": "20060075466",
                         "legalSectionCode": "SHOULD_BE_REMOVED",
                     },
                     {
@@ -58,7 +60,7 @@ class TestOACitationServiceSearch:
                         "actionTypeCategory": "FA",
                         "examinerCitedReferenceIndicator": False,
                         "createDateTime": "2023-05-02T00:00:00Z",
-                        "parsedReferenceIdentifier": "SHOULD_ALSO_BE_REMOVED",
+                        "parsedReferenceIdentifier": "9280610",
                     },
                 ]
             }
@@ -82,9 +84,15 @@ class TestOACitationServiceSearch:
         for doc in result["response"]["docs"]:
             assert "patentApplicationNumber" in doc
             assert "_pfw_link" not in doc
-            assert "parsedReferenceIdentifier" not in doc
+            assert "parsedReferenceIdentifier" in doc
             assert "legalSectionCode" not in doc
-            assert set(doc) <= set(OA_CITATIONS_MINIMAL_FIELDS)
+            assert set(doc) <= set(OA_CITATIONS_MINIMAL_FIELDS) | {"referenceKey"}
+
+        # The cross-lane join key is on every row of every tier.
+        assert [d["referenceKey"] for d in result["response"]["docs"]] == [
+            "20060075466",
+            "9280610",
+        ]
 
     @pytest.mark.asyncio
     async def test_search_minimal_custom_fields(self, service, mock_client):

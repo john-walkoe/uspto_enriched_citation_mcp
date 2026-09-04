@@ -15,6 +15,12 @@ from ..shared.error_utils import format_error_response
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, scan_hits
 from ..util.query_builder import QueryParameters, build_query
 from ..util.query_validator import validate_lucene_syntax
+from ..util.reference_key import (
+    ENRICHED_REFERENCE_SOURCE_FIELDS,
+    attach_reference_keys,
+    count_rows_without_reference,
+    reference_keys_for_docs,
+)
 from ..util.request_context import RequestContext
 from ..util.security_logger import get_security_logger
 from ._shared import (
@@ -131,11 +137,32 @@ async def _run_enriched_search_body(
                     str(result.get("error")) or "Upstream API error", 502
                 )
 
+            # The cross-lane join key is computed from the UNFILTERED upstream
+            # docs, before the tier's field set is applied: an ultra-minimal
+            # custom field list can drop both source fields, and the key would
+            # then be unavailable for exactly the caller who most needs to
+            # union the two lanes.
+            reference_keys = reference_keys_for_docs(
+                result.get("response", {}).get("docs"),
+                ENRICHED_REFERENCE_SOURCE_FIELDS,
+            )
+
             # Apply field filtering using centralized smart filter
             filtered = runtime.field_manager.filter_response_smart(
                 result,
                 field_set_name=field_set if fields is None else None,
                 custom_fields=fields,
+            )
+            attach_reference_keys(
+                filtered.get("response", {}).get("docs"), reference_keys
+            )
+            # Rows whose reference identifier is absent, null or empty (one
+            # state, see util/reference_key) are counted on the envelope rather
+            # than left for the caller to notice: measured 2 of 5 on 11752072,
+            # 4 of 8 on 12849948 and 4 of 26 on 18407147. The key is ALWAYS
+            # present, 0 included, so its absence cannot be read as "none".
+            filtered["rows_without_reference_identifier"] = (
+                count_rows_without_reference(reference_keys)
             )
             extra: Dict[str, Any] = {}
             if include_cross_mcp:
@@ -248,6 +275,26 @@ async def search_citations_minimal(
     lane is a superset of the other.
     See Citations_get_guidance(section='oa_citations').
 
+    CROSS-LANE JOIN KEY: every row carries `referenceKey`, the normalised reference
+    identifier, and it is the ONLY correct key for unioning this lane with the OA lane.
+    The two lanes write the same reference differently: on app 12849948 the OA
+    parsedReferenceIdentifier reads '20060075466' while the enriched
+    citedDocumentIdentifier reads 'US 2006/0075466 A1'. Joining those two raw fields
+    finds zero overlap on every application; the true answer there is four references in
+    both lanes. `referenceKey` is digits only (a leading US, spaces, slashes, hyphens and
+    the kind code stripped, series markers such as RE kept), derived from
+    publicationNumber first and citedDocumentIdentifier second, and carried on both lanes
+    at every tier including a custom `fields` list.
+
+    ROWS WITH NO REFERENCE: `referenceKey` is null when the row carries no usable
+    identifier, and the response envelope reports how many such rows the page holds as
+    `rows_without_reference_identifier` (always present, 0 included). An absent
+    citedDocumentIdentifier key, a null one and an empty string are ONE state, not three:
+    a row can carry an empty publicationNumber with the citedDocumentIdentifier key
+    missing from the JSON entirely. Measured: 2 of 5 on app 11752072, 4 of 8 on 12849948,
+    4 of 26 on 18407147. Those rows are real citations and must be reported as
+    unresolved, never dropped.
+
     IDENTIFIERS: `patent_number` takes either a GRANTED patent number (7-8 digits;
     commas, spaces and a `US` prefix are accepted) or an 11-digit pre-grant publication
     number. A granted patent number is crosswalked to its application serial with one
@@ -339,6 +386,26 @@ async def search_citations_balanced(
     - category_code: Citation relevance code — X (anticipatory §102/103), Y (combined §103), A (background)
     - examiner_cited: Boolean filter for examiner-cited references (true/false)
     - art_unit: Group art unit number (e.g., '2128', '3600')
+
+    CROSS-LANE JOIN KEY: every row carries `referenceKey`, the normalised reference
+    identifier, and it is the ONLY correct key for unioning this lane with the OA lane.
+    The two lanes write the same reference differently: on app 12849948 the OA
+    parsedReferenceIdentifier reads '20060075466' while the enriched
+    citedDocumentIdentifier reads 'US 2006/0075466 A1'. Joining those two raw fields
+    finds zero overlap on every application; the true answer there is four references in
+    both lanes. `referenceKey` is digits only (a leading US, spaces, slashes, hyphens and
+    the kind code stripped, series markers such as RE kept), derived from
+    publicationNumber first and citedDocumentIdentifier second, and carried on both lanes
+    at every tier including a custom `fields` list.
+
+    ROWS WITH NO REFERENCE: `referenceKey` is null when the row carries no usable
+    identifier, and the response envelope reports how many such rows the page holds as
+    `rows_without_reference_identifier` (always present, 0 included). An absent
+    citedDocumentIdentifier key, a null one and an empty string are ONE state, not three:
+    a row can carry an empty publicationNumber with the citedDocumentIdentifier key
+    missing from the JSON entirely. Measured: 2 of 5 on app 11752072, 4 of 8 on 12849948,
+    4 of 26 on 18407147. Those rows are real citations and must be reported as
+    unresolved, never dropped.
 
     IDENTIFIERS: `patent_number` takes either a GRANTED patent number (7-8 digits;
     commas, spaces and a `US` prefix are accepted) or an 11-digit pre-grant publication

@@ -632,7 +632,47 @@ capability:
 | Date-windowed query | **Enriched only** | OA has no date field at all |
 | Subject-patent lookup by parameter | **Both** | `patent_number` crosswalks a granted patent number to its application on either lane; enriched also takes an 11-digit publication number |
 | Reverse lookup of a cited reference | **Both** | enriched `citedDocumentIdentifier`, OA `parsedReferenceIdentifier` — both via `criteria` |
-| Everything else, especially "is this complete?" | **Both** | Union the results |
+| Everything else, especially "is this complete?" | **Both** | Union the results on `referenceKey` |
+
+### The union key is `referenceKey`, not the raw identifier fields
+
+**Both lanes carry a `referenceKey` on every row, at every tier. It is the only
+correct key for unioning them.**
+
+The two lanes write the same reference differently. Measured on application
+12849948, 2026-09-04:
+
+| Lane | Field | Value |
+|---|---|---|
+| OA (v2) | `parsedReferenceIdentifier` | `20060075466` |
+| Enriched (v3) | `citedDocumentIdentifier` | `US 2006/0075466 A1` |
+| Enriched (v3) | `publicationNumber` | `20060075466` |
+
+Joining `parsedReferenceIdentifier` against `citedDocumentIdentifier` therefore
+finds **zero** overlap on every application. The true answer on that
+application is four references present in both lanes. The OA **minimal** tier
+used to make it worse still: it carried no parsed identifier at all, only the
+raw Form 892 string with the inventor name attached. It now carries
+`parsedReferenceIdentifier` as well.
+
+`referenceKey` normalises all of those forms to one value: uppercase, a leading
+`US` dropped, spaces, slashes, hyphens, commas and periods dropped, the kind
+code (`A1`, `B2`, `E`, `S`) dropped, series markers such as `RE` kept. It is
+derived from `publicationNumber` then `citedDocumentIdentifier` on the enriched
+lane, and from `parsedReferenceIdentifier` then `referenceIdentifier` on the OA
+lane, and it is computed before the tier's field filter runs, so an
+ultra-minimal custom `fields` list still gets the best available key.
+
+**`referenceKey` is `null` when the row's identifier does not reduce to a
+document number** (non-patent literature, free text, a blank identifier). On
+the enriched lane the response envelope also carries
+`rows_without_reference_identifier`, always present and `0` included. An
+**absent** `citedDocumentIdentifier` key, a **null** one and an **empty
+string** are ONE state, not three: a row can carry an empty
+`publicationNumber` with the `citedDocumentIdentifier` key missing from the
+JSON entirely. Measured blank-identifier rows: 2 of 5 on app 11752072, 4 of 8
+on 12849948, 4 of 26 on 18407147. Those rows are real citations. Report them as
+unresolved; never drop them, and never let them vanish from a union.
 
 ### Measured coverage (Tech Center 2100, measured 2026-08)
 
@@ -651,10 +691,21 @@ capability:
    tech-center scale the gap is ~13%; on examiner-cited references alone it
    narrows to ~2.5%. The enriched index is *not* a thin sample of the examiner
    record — it captures the large majority of it.
-2. **Most of OA's surplus is applicant IDS citations.** OA carries ~1.16M
-   applicant-only (Form 1449) records in TC2100 vs ~0.70M in enriched. If the
-   question is "what did the applicant disclose", lean OA — but still check
-   enriched.
+2. **Most of OA's surplus is applicant IDS citations, but neither lane holds
+   the full 1449.** OA carries ~1.16M applicant-only (Form 1449) records in
+   TC2100 vs ~0.70M in enriched, so if the question is "what did the applicant
+   disclose", lean OA and still check enriched. **What you must not do is
+   report either count as the applicant's complete IDS.** Measured against the
+   patents' own References Cited pages, the union of BOTH lanes returns: US
+   7,971,071 5 of 91; US 9,496,922 1 of 251; US 9,135,462 0 of about 620 (both
+   lanes numFound 0); US 11,656,067, prosecuted 2021-2023 inside the documented
+   window, 3 of 15, all three the examiner's own double-patenting family
+   citations and none of the twelve references a later IPR petition relied on;
+   US 12,539,322 (2025 prosecution) omitted an applicant-cited reference. On
+   IDS-heavy files these lanes return close to what the examiner applied and
+   little else, in every era. A reference's absence is NO evidence the
+   applicant did not disclose it. For a complete 1449 record, read the IDS
+   documents themselves through the PFW MCP.
 3. **The direction can reverse on a specific application.** App 12849948
    returns 8 enriched records and only 4 OA records. Per-application, you
    cannot predict which lane wins. This is the single strongest argument for
@@ -709,10 +760,21 @@ oa = Citations_search_oa_citations_minimal(
     application_number='12849948', rows=100
 )   # note: NO date clause, NO publicationNumber — both 400 on this lane
 
-# Compare numFound from each, then union on the normalized reference id:
-#   enriched -> citedDocumentIdentifier / publicationNumber
-#   OA       -> parsedReferenceIdentifier
-# Report both totals and the union; say which lane contributed what.
+# Compare numFound from each, then union on referenceKey. The server computes
+# it on both lanes precisely so this join works:
+enriched_keys = {d["referenceKey"] for d in enriched["response"]["docs"]
+                 if d.get("referenceKey")}
+oa_keys = {d["referenceKey"] for d in oa["response"]["docs"]
+           if d.get("referenceKey")}
+union = enriched_keys | oa_keys
+both  = enriched_keys & oa_keys
+
+# Rows the union cannot carry, because they have no joinable identifier:
+unresolved = enriched["rows_without_reference_identifier"]
+
+# Report both totals, the union, the overlap, AND the unresolved count; say
+# which lane contributed what. Never join on the raw identifier fields, and
+# never report the union without the unresolved rows beside it.
 ```
 
 ### Field vocabulary does not transfer — hard failures
@@ -730,6 +792,10 @@ Citations_search_oa_citations_minimal(
 Citations_search_oa_citations_minimal(art_unit='2854')
 
 # ❌ ERRORS — publicationNumber does not exist in OA v2
+#    This server's 400 here is DELIBERATE and worth knowing about: the raw
+#    upstream API does NOT reject the clause, it answers HTTP 200 with
+#    numFound 0, which reads as "this patent was never cited" and is silently
+#    wrong. A refusal you can see beats a zero you cannot.
 Citations_search_oa_citations_minimal(criteria='publicationNumber:9049188')
 # ✅ The patent_number PARAMETER crosswalks to the application serial for you
 #    (the field still does not exist, so it can never go in `criteria`):
@@ -1148,7 +1214,36 @@ Citations_search_oa_citations_minimal(art_unit='2854')
 **Error**: `Invalid field name: legalSectionCode` on the enriched lane
 
 **Cause**: Statutory basis is OA-only. Move the query to
-`Citations_search_oa_citations_minimal`.
+`Citations_search_oa_citations_minimal`. The 400 message now names the lane
+that holds the field, in both directions.
+
+**Error**: `Invalid field name: legalSectionCode` from
+`Citations_get_citation_statistics`
+
+**Cause**: that tool aggregates the **enriched lane only**. It validates
+`criteria` against the enriched whitelist, it has no `lane` parameter, and the
+OA index has no statistics path on this server. This is a documented limit, not
+a clause to rephrase.
+
+**Solution**: count the OA lane yourself with the OA search tools and read
+`response.numFound`, which is the whole-result total, not the page size. One
+call per bucket reproduces the same breakdown shape:
+
+```python
+# ❌ WRONG: 400, and no rephrasing of the clause will help
+Citations_get_citation_statistics(criteria='techCenter:2100 AND legalSectionCode:103')
+
+# ✅ CORRECT: one cheap call per bucket, rows=1
+for section in ('102', '103', '112'):
+    r = Citations_search_oa_citations_minimal(
+        criteria=f'techCenter:2100 AND legalSectionCode:{section}', rows=1
+    )
+    print(section, r['response']['numFound'])
+```
+
+Always say which lane each number came from. The two indexes are independent
+and neither is a superset of the other, so an enriched statistic and an OA
+count are not interchangeable.
 
 ### Patent Numbers: the Crosswalk, and What Each Lane Actually Holds
 

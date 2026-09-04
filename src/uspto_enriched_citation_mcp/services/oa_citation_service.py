@@ -5,6 +5,11 @@ from typing import Dict, List, Optional
 from ..api.oa_citations_client import OACitationsClient, OA_CITATIONS_MINIMAL_FIELDS, OA_CITATIONS_ALL_FIELDS
 from ..shared.pfw_link import pfw_link_for
 from ..util.logging import get_logger
+from ..util.reference_key import (
+    OA_REFERENCE_SOURCE_FIELDS,
+    attach_reference_keys,
+    reference_keys_for_docs,
+)
 
 logger = get_logger(__name__)
 
@@ -36,6 +41,14 @@ class OACitationService:
 
         docs = result.get("response", {}).get("docs", [])
 
+        # The cross-lane join key is computed from the UNFILTERED upstream doc,
+        # before the tier's field set is applied: the minimal tier drops
+        # `parsedReferenceIdentifier`, and computing after the filter would
+        # force the key off the raw 892 string when the parsed one was right
+        # there. The key is attached after filtering so it survives every tier
+        # and every custom field list.
+        reference_keys = reference_keys_for_docs(docs, OA_REFERENCE_SOURCE_FIELDS)
+
         # The OA Citations API ignores `fl` and returns every field whatever
         # is asked for, so the tier's field set only means anything if it is
         # applied here. This used to run for a CUSTOM list only, which left
@@ -50,6 +63,7 @@ class OACitationService:
             for doc in docs
         ]
         docs = result["response"]["docs"]
+        attach_reference_keys(docs, reference_keys)
 
         # The per-row `_pfw_link` is the same sentence on every doc, differing
         # only in an app number the doc already carries — 1,476 chars of the

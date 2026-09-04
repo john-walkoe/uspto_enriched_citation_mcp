@@ -281,9 +281,11 @@ for i, app in enumerate(sample_apps, 1):
                 'oa_dates': list(set(oa_dates_formatted))  # Unique dates
             })
 
-            # Count examiner vs applicant citations
+            # Count examiner vs applicant citations. The indicator is a JSON
+            # BOOLEAN; comparing it to the string "true" made every reference
+            # applicant-cited.
             for cite in citation_records:
-                if cite.get('examinerCitedReferenceIndicator') == 'true':
+                if str(cite.get('examinerCitedReferenceIndicator')).lower() == 'true':
                     examiner_cited_count += 1
                 else:
                     applicant_cited_count += 1
@@ -412,7 +414,7 @@ if len(all_citations) > 0:
     print()
 
     # Category analysis (examiner-cited only)
-    examiner_citations = [c for c in all_citations if c.get('examinerCitedReferenceIndicator') == 'true']
+    examiner_citations = [c for c in all_citations if str(c.get('examinerCitedReferenceIndicator')).lower() == 'true']
 
     categories = Counter([
         c.get('citationCategoryCode', 'Unknown')

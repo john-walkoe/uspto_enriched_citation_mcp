@@ -99,8 +99,10 @@ for citation in citations['response']['docs']:
     # Track cited references for invalidity research
     key_prior_art[ref_id] += 1
 
-    # Separate examiner vs applicant citations
-    if citation.get('examinerCitedReferenceIndicator') == 'true':
+    # Separate examiner vs applicant citations. The indicator is a JSON
+    # BOOLEAN; comparing it to the string "true" made every reference
+    # applicant-cited, which reverses the invalidity read entirely.
+    if str(citation.get('examinerCitedReferenceIndicator')).lower() == 'true':
         examiner_citations.append(citation)
     else:
         applicant_citations.append(citation)
@@ -131,7 +133,7 @@ for citation in top_citations:
         litigation_citations.append({{
             'reference': citation.get('citedDocumentIdentifier'),
             'category': citation.get('citationCategoryCode'),
-            'source': 'Examiner' if citation.get('examinerCitedReferenceIndicator') == 'true' else 'Applicant',
+            'source': 'Examiner' if str(citation.get('examinerCitedReferenceIndicator')).lower() == 'true' else 'Applicant',
             'context': details.get('citingPassageText', 'No context available')[:300]
         }})
 

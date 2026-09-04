@@ -90,7 +90,11 @@ art_units = Counter()
 for citation in citations['response']['docs']:
     categories[citation.get('citationCategoryCode', 'Unknown')] += 1
 
-    if citation.get('examinerCitedReferenceIndicator') == 'true':
+    # examinerCitedReferenceIndicator is a JSON BOOLEAN (true/false), not the
+    # string "true". Comparing it to "true" made EVERY reference read as
+    # applicant-cited on every run; str().lower() reads the boolean and
+    # tolerates a string if the upstream shape ever changes.
+    if str(citation.get('examinerCitedReferenceIndicator')).lower() == 'true':
         sources['Examiner'] += 1
     else:
         sources['Applicant'] += 1
@@ -120,7 +124,7 @@ for i, citation in enumerate(key_citations):
         print(f"\\nCitation {{i+1}}:")
         print(f"  Reference: {{citation.get('citedDocumentIdentifier')}}")
         print(f"  Category: {{citation.get('citationCategoryCode')}}")
-        print(f"  Source: {{'Examiner' if citation.get('examinerCitedReferenceIndicator') == 'true' else 'Applicant'}}")
+        print(f"  Source: {{'Examiner' if str(citation.get('examinerCitedReferenceIndicator')).lower() == 'true' else 'Applicant'}}")
 
         if details.get('citingPassageText'):
             print(f"  Context: {{details['citingPassageText'][:200]}}...")

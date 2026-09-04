@@ -81,19 +81,24 @@ async def test_enriched_minimal_is_smaller_than_enriched_balanced(mock_runtime):
 
 
 @pytest.mark.asyncio
-async def test_oa_minimal_returns_only_its_seven_fields(mock_runtime):
+async def test_oa_minimal_returns_only_its_eight_fields(mock_runtime):
+    """Eight since 2026-09-04: `parsedReferenceIdentifier` joined the tier so
+    the discovery lane carries a normalised reference, plus the cross-lane
+    `referenceKey` the server derives for every row."""
     from uspto_enriched_citation_mcp.api.oa_citations_client import (
         OA_CITATIONS_MINIMAL_FIELDS,
     )
+    from uspto_enriched_citation_mcp.util.reference_key import REFERENCE_KEY_FIELD
 
     mock_runtime.oa_client.search_records.return_value = _fixture(
         OA_CITATIONS_ALL_FIELDS
     )
     result = await search_oa_citations_minimal(criteria="techCenter:2100")
 
-    allowed = set(OA_CITATIONS_MINIMAL_FIELDS) | {"id"}
+    allowed = set(OA_CITATIONS_MINIMAL_FIELDS) | {"id", REFERENCE_KEY_FIELD}
     for doc in result["response"]["docs"]:
         assert set(doc) <= allowed
+        assert REFERENCE_KEY_FIELD in doc
     # The PFW hand-off is on the envelope, not repeated on every row.
     assert result["pfw_link"]
     assert "_pfw_link" not in result["response"]["docs"][0]
@@ -101,14 +106,24 @@ async def test_oa_minimal_returns_only_its_seven_fields(mock_runtime):
 
 @pytest.mark.asyncio
 async def test_enriched_minimal_returns_only_its_eight_fields(mock_runtime):
+    from uspto_enriched_citation_mcp.util.reference_key import REFERENCE_KEY_FIELD
+
     mock_runtime.api_client.search_records.return_value = _fixture(
         DEFAULT_BALANCED_FIELDS
     )
     result = await search_citations_minimal(criteria="techCenter:2100")
 
-    allowed = set(DEFAULT_MINIMAL_FIELDS) | {"id", "_version_", "score"}
+    # The cross-lane join key rides on top of the tier's eight fields; it is
+    # the one thing this server adds to a row, and it is added at every tier.
+    allowed = set(DEFAULT_MINIMAL_FIELDS) | {
+        "id",
+        "_version_",
+        "score",
+        REFERENCE_KEY_FIELD,
+    }
     for doc in result["response"]["docs"]:
         assert set(doc) <= allowed
+        assert REFERENCE_KEY_FIELD in doc
 
 
 @pytest.mark.asyncio

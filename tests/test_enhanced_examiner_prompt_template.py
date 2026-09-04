@@ -46,10 +46,19 @@ from uspto_enriched_citation_mcp import prompts
 # was updated to the current PFW_get_document_content_with_ocr tool name. The
 # "empty" case renders a branch without the NOA-extraction block, so its anchor
 # is unchanged.
+# Anchors re-baselined 2026-09-04: `examinerCitedReferenceIndicator` is a JSON
+# BOOLEAN, and the template's two counting sites compared it to the string
+# "true". That comparison never matches, so every run of this prompt reported
+# 100 percent applicant-cited references and zero examiner-cited ones, which
+# is the opposite of the truth on an examiner-cited row and load-bearing in
+# the examiner-behavior read. Both sites now read the value through
+# str(...).lower(), which is boolean-tolerant. Pinned against a boolean row by
+# tests/test_examiner_cited_indicator.py. The "empty" case renders a branch
+# without the citation-counting block, so its anchor is unchanged.
 _EXPECTED_SHA256 = {
-    "full": "6f378004214a9453a5df43ff19685c9e8fec96833db368c89298f67a4fa1ecca",
+    "full": "277da5f1593dd6842866bdaae5eabd05d82508be2ccc461811cbe65a5a97dc77",
     "empty": "5483d7b477e5081a5b84c0ab1ce4370cd9ae14e200eb607baad415b097a2c10f",
-    "examiner_only": "1e41253f304379772a408793916d3a432a2c9acaa3f688419f82729f55201d61",
+    "examiner_only": "bc8cbf1a3f06dffe52cda980c25ef0805e8e1a1acbddb9eda0a1503a1abe38e6",
 }
 
 _CASES = {

@@ -24,7 +24,26 @@ security_logger = get_security_logger()
 # the honest fix is to stop advertising a dial that does not exist.
 async def get_citation_statistics(criteria: str = "") -> Dict[str, Any]:
     """Get database statistics and aggregations for strategic planning.
-    Counts, totals, aggregate, how many, distribution, breakdown by art unit or tech center, trends over time, citation volume."""
+    Counts, totals, aggregate, how many, distribution, breakdown by art unit or tech center, trends over time, citation volume.
+
+    ⚠️ ENRICHED LANE ONLY. This tool aggregates the Enriched Citations (v3) index and
+    nothing else. `criteria` is validated against the enriched field whitelist, so an
+    OA-only clause (legalSectionCode, actionTypeCategory, paragraphNumber,
+    referenceIdentifier, parsedReferenceIdentifier, workGroup) is a 400 here rather than
+    a wrong answer, and there is no `lane` parameter: the OA Citations (v2) index has no
+    statistics path on this server. That is a documented limit, not a bug to work around
+    by rephrasing the clause.
+
+    To aggregate the OA lane, count it yourself with the OA search tools and read
+    `response.numFound`, which is the whole-result total and not the page size:
+        Citations_search_oa_citations_minimal(criteria='techCenter:2100 AND legalSectionCode:103', rows=1)
+    One call per bucket gives the same breakdown shape this tool returns for the enriched
+    lane. Any cross-lane comparison must state which lane each number came from; the two
+    indexes are independent and neither is a superset of the other.
+
+    Returns for the enriched lane: total_citations, examiner_cited_count,
+    applicant_cited_count, and breakdowns by citation category (X/Y/A) and by who cited.
+    """
     with RequestContext():
         try:
             runtime.initialize_services()

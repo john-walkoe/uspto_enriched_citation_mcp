@@ -220,7 +220,7 @@ async def search_oa_citations_minimal(
     fields: Optional[List[str]] = None,
     patent_number: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Search Office Action Citations (v2) for high-volume discovery (7 key fields).
+    """Search Office Action Citations (v2) for high-volume discovery (8 key fields).
 
     OA Citations v2 is the raw citation list transcribed from Form PTO-892 (examiner) and
     Form PTO-1449 (applicant IDS). Usually broader than the enriched lane in bulk
@@ -229,13 +229,41 @@ async def search_oa_citations_minimal(
     return more (measured: app 12849948 returns 4 here vs 8 enriched). For any
     completeness-sensitive question, run BOTH lanes and union the results.
 
+    ⚠️ APPLICANT-CITED (1449/IDS) COVERAGE IS PARTIAL. This lane is documented upstream as
+    transcribing Form 892 AND Form 1449, but on IDS-heavy files it returns close to what
+    the examiner applied and little else, in every era. Measured against the patents' own
+    References Cited pages (union of BOTH lanes):
+      US 7,971,071 -> 5 of 91
+      US 9,496,922 -> 1 of 251
+      US 9,135,462 -> 0 of about 620 (both lanes return zero)
+      US 11,656,067 -> 3 of 15, prosecuted 2021-2023 INSIDE the documented window, and
+        all three are the examiner's own double-patenting family citations, none of them
+        the twelve references a later IPR petition relied on.
+    Treat a reference's absence here as NO evidence that the applicant did not disclose
+    it, and never present a count from this lane as the applicant's full IDS. For a
+    complete 1449 record, read the IDS documents themselves through the PFW MCP.
+
     Key fields returned: patentApplicationNumber, groupArtUnitNumber, techCenter,
-    referenceIdentifier, actionTypeCategory, examinerCitedReferenceIndicator, createDateTime.
+    referenceIdentifier, parsedReferenceIdentifier, actionTypeCategory,
+    examinerCitedReferenceIndicator, createDateTime.
     The OA API ignores `fl`, so this set is enforced client-side — the tier really does
-    return only these seven. The PFW hand-off is stated once on the response
-    envelope as `pfw_link`, not repeated on every row. legalSectionCode,
-    paragraphNumber and parsedReferenceIdentifier are NOT here; use the balanced tier or
-    pass an explicit `fields` list for them.
+    return only these eight. The PFW hand-off is stated once on the response
+    envelope as `pfw_link`, not repeated on every row. legalSectionCode and
+    paragraphNumber are NOT here; use the balanced tier or pass an explicit `fields`
+    list for them.
+
+    CROSS-LANE JOIN KEY: every row carries `referenceKey`, the normalised reference
+    identifier, and it is the ONLY correct key for unioning this lane with the enriched
+    lane. The two lanes write the same reference differently: on app 12849948 this lane's
+    parsedReferenceIdentifier reads '20060075466' while the enriched
+    citedDocumentIdentifier reads 'US 2006/0075466 A1'. Joining those two raw fields finds
+    zero overlap on every application; the true answer there is four references in both
+    lanes. `referenceKey` is digits only (a leading US, spaces, slashes, hyphens and the
+    kind code stripped, series markers such as RE kept), derived from
+    parsedReferenceIdentifier first and the raw referenceIdentifier second, and carried on
+    both lanes at every tier including a custom `fields` list. It is null on a row whose
+    identifier does not reduce to a document number, which is an unjoinable row rather
+    than a missing one.
 
     Solr/Lucene Query Examples:
     - By application: criteria='patentApplicationNumber:18180061'
@@ -246,11 +274,17 @@ async def search_oa_citations_minimal(
     - Where a patent was cited: criteria='parsedReferenceIdentifier:9280610'
 
     ⚠️ NO DATE FIELD. officeActionDate does not exist here and returns HTTP 400 — the
-    index already IS the 2017-10-01+ window, so omit any date clause. publicationNumber
-    also 400s, so never put a patent number in `criteria` — use the `patent_number`
-    parameter, which crosswalks to the application serial this index does hold.
+    index already IS the 2017-10-01+ window, so omit any date clause.
     createDateTime is an ETL load stamp, NOT the office action date — never present it
     as prosecution chronology.
+
+    ⚠️ publicationNumber IN `criteria` IS A DELIBERATE 400 HERE, AND THAT IS A FEATURE.
+    The raw upstream API does not reject that field: it answers HTTP 200 with
+    numFound 0, which reads exactly like "this patent was never cited" and is silently
+    wrong. This server refuses the clause instead so the mistake is visible. Use the
+    `patent_number` parameter, which crosswalks a granted patent number to the
+    application serial this index does hold, or query parsedReferenceIdentifier to find
+    where a patent was CITED.
 
     ⚠️ Use parsedReferenceIdentifier (normalized) rather than referenceIdentifier for
     reference lookups — the raw string format varies for the same patent.
@@ -318,9 +352,37 @@ async def search_oa_citations_balanced(
     statutory basis) and actionTypeCategory ('rejected') have no equivalent in the
     enriched lane, and paragraphNumber locates the citation within the office action.
 
+    ⚠️ APPLICANT-CITED (1449/IDS) COVERAGE IS PARTIAL. This lane is documented upstream as
+    transcribing Form 892 AND Form 1449, but on IDS-heavy files it returns close to what
+    the examiner applied and little else, in every era. Measured against the patents' own
+    References Cited pages (union of BOTH lanes):
+      US 7,971,071 -> 5 of 91
+      US 9,496,922 -> 1 of 251
+      US 9,135,462 -> 0 of about 620
+      US 11,656,067 -> 3 of 15, prosecuted 2021-2023 INSIDE the documented window
+    A reference's absence here is NO evidence that the applicant did not disclose it, and
+    a count from this lane is not the applicant's full IDS. For a complete 1449 record,
+    read the IDS documents through the PFW MCP.
+
+    CROSS-LANE JOIN KEY: every row carries `referenceKey`, the normalised reference
+    identifier, and it is the ONLY correct key for unioning this lane with the enriched
+    lane. On app 12849948 this lane's parsedReferenceIdentifier reads '20060075466' while
+    the enriched citedDocumentIdentifier reads 'US 2006/0075466 A1'; joining those two raw
+    fields finds zero overlap on every application, when the true answer there is four
+    references in both lanes. `referenceKey` is digits only (a leading US, spaces, slashes,
+    hyphens and the kind code stripped, series markers such as RE kept) and is carried on
+    both lanes at every tier. It is null on a row whose identifier does not reduce to a
+    document number.
+
     OA Citations v2 documented window: office actions mailed 2017-10-01 to ~30 days
     prior to today (older records have been observed in practice). No office-action date
     field exists — do not add an officeActionDate clause (HTTP 400).
+
+    ⚠️ publicationNumber IN `criteria` IS A DELIBERATE 400 HERE, AND THAT IS A FEATURE.
+    The raw upstream API answers that field with HTTP 200 and numFound 0, which reads as
+    "this patent was never cited" and is silently wrong. This server refuses the clause so
+    the mistake is visible. Use the `patent_number` parameter for the subject patent, or
+    parsedReferenceIdentifier to find where a patent was CITED.
 
     IDENTIFIERS: `application_number` is the APPLICATION serial. This index has no
     patent-number field (publicationNumber returns HTTP 400), so `patent_number` is

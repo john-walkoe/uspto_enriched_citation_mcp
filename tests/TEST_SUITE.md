@@ -106,6 +106,9 @@ Citations_search_citations_minimal
 }
 ```
 **Expect:** ~4.2M numFound, 5 records with minimal fields. Tier = minimal.
+Every record additionally carries `referenceKey` (added 2026-09-04), and the
+envelope carries `rows_without_reference_identifier` whatever its value,
+including 0.
 
 ---
 
@@ -160,7 +163,10 @@ Citations_search_citations_minimal
   "rows": 5
 }
 ```
-**Expect:** Tier = ultra-minimal. Each doc has exactly 2-3 keys (citedDocumentIdentifier, patentApplicationNumber, id). No other fields present.
+**Expect:** Tier = ultra-minimal. Each doc has exactly 3-4 keys
+(citedDocumentIdentifier, patentApplicationNumber, id, and `referenceKey`). No
+other fields present. `referenceKey` is derived before the field filter runs,
+so it is correct even when a custom list drops both source fields.
 
 ---
 
@@ -337,6 +343,23 @@ Citations_get_citation_statistics
 
 ---
 
+### Test 16b: Citation Statistics is Enriched Lane Only (documented limit)
+
+```
+Citations_get_citation_statistics
+{
+  "criteria": "techCenter:2100 AND legalSectionCode:103"
+}
+```
+**Expect:** `code: 400`, message `Invalid field name: legalSectionCode`
+followed by the lane hint naming Citations_search_oa_citations_minimal/balanced
+(added 2026-09-04). This tool aggregates the enriched lane only and has no
+`lane` parameter; the OA index has no statistics path on this server. The
+documented workaround is one OA search per bucket with `rows: 1`, reading
+`response.numFound`.
+
+---
+
 ### Test 17: Minimal Search — Complex Multi-Field Boolean
 
 ```
@@ -395,7 +418,7 @@ Citations_search_oa_citations_minimal
   "rows": 5
 }
 ```
-**Expect:** ~6.2M numFound (was ~14M before the ~2025-07 USPTO OA v2 dataset re-baseline; verified against the raw API 2026-07-09 — still larger than the enriched dataset). Records have referenceIdentifier, actionTypeCategory, legalSectionCode present where populated.
+**Expect:** ~6.2M numFound (was ~14M before the ~2025-07 USPTO OA v2 dataset re-baseline; verified against the raw API 2026-07-09 — still larger than the enriched dataset). Records have referenceIdentifier and actionTypeCategory present where populated, plus `parsedReferenceIdentifier` (added to the minimal tier 2026-09-04) and the derived `referenceKey`. `legalSectionCode` is balanced-only and must NOT appear on this tier.
 
 ---
 
@@ -422,7 +445,7 @@ Citations_search_oa_citations_minimal
   "rows": 5
 }
 ```
-**Expect:** All returned records show legalSectionCode = 103. numFound confirms §103 is most common rejection type.
+**Expect:** numFound confirms §103 is the most common rejection type. The clause filters server-side, but `legalSectionCode` is a balanced-tier field and is NOT returned on the minimal rows; to see the value, use `Citations_search_oa_citations_balanced` or pass an explicit `fields` list.
 
 ---
 
@@ -435,7 +458,7 @@ Citations_search_oa_citations_minimal
   "rows": 10
 }
 ```
-**Expect:** All results for app 13487597. Mix of examiner-cited and applicant-cited indicators. Multiple legalSectionCode values possible (102, 103, 112). Note total OA citation count for this application.
+**Expect:** All results for app 13487597. Mix of examiner-cited and applicant-cited indicators. Note total OA citation count for this application. `legalSectionCode` is NOT on this tier (balanced only), but `parsedReferenceIdentifier` and `referenceKey` are.
 
 ---
 
@@ -480,7 +503,7 @@ Citations_search_oa_citations_minimal
   "rows": 5
 }
 ```
-**Expect:** Each doc contains patentApplicationNumber, referenceIdentifier, legalSectionCode (plus possibly id) AND a per-row `_pfw_link`. The `_pfw_link` on a CUSTOM `fields` list is DELIBERATE, not leakage: the 2026-08-30 dedupe moved the PFW hand-off to a single envelope `pfw_link` for default-shape responses, but a caller who chose the doc shape keeps the established inline per-row annotation (pinned by eval `tr-hp-07`). Previously bug: API ignored fl parameter; fix does client-side field filtering in oa_citation_service.py. Tier = custom in query_info.
+**Expect:** Each doc contains patentApplicationNumber, referenceIdentifier, legalSectionCode (plus possibly id), the derived `referenceKey`, AND a per-row `_pfw_link`. The `_pfw_link` on a CUSTOM `fields` list is DELIBERATE, not leakage: the 2026-08-30 dedupe moved the PFW hand-off to a single envelope `pfw_link` for default-shape responses, but a caller who chose the doc shape keeps the established inline per-row annotation (pinned by eval `tr-hp-07`). Previously bug: API ignored fl parameter; fix does client-side field filtering in oa_citation_service.py. Tier = custom in query_info.
 
 ---
 
@@ -516,7 +539,7 @@ Citations_search_oa_citations_minimal
   "rows": 10
 }
 ```
-**Expect:** OA v2 should return more raw citations than enriched v3 (broader coverage, includes citations not yet AI-processed). Compare referenceIdentifier / citedDocumentIdentifier values between the two datasets. This validates the cross-check workflow documented in the guidance.
+**Expect:** OA v2 should return more raw citations than enriched v3 (broader coverage, includes citations not yet AI-processed). **Union the two lanes on `referenceKey`, never on the raw identifier fields.** Comparing OA `parsedReferenceIdentifier` against enriched `citedDocumentIdentifier` finds zero overlap on every application, because the lanes write the same reference differently (measured on app 12849948, 2026-09-04: `20060075466` against `US 2006/0075466 A1`, when four references are in fact in both lanes). Enriched rows whose `referenceKey` is null are counted on the envelope as `rows_without_reference_identifier`; report them as unresolved rather than dropping them. This validates the cross-check workflow documented in the guidance.
 
 ---
 
@@ -557,6 +580,10 @@ identifiers).
 | OA v2 `fl` parameter | API ignores it — client-side filtering applied in oa_citation_service.py |
 | OA dataset size | re-baselined ~2025-07: TC:2600 now ~6.2M (was ~14M); still broader raw coverage than enriched |
 | Applicant cited count | Often 0 in statistics — most IDS submissions are not coded in this dataset |
+| 1449/IDS undercount | Neither lane holds the applicant's full IDS, in any era. Union of BOTH lanes against the patents' own References Cited pages: US 7,971,071 5 of 91; US 9,496,922 1 of 251; US 9,135,462 0 of ~620; US 11,656,067 (2021-2023, inside the documented window) 3 of 15. Disclosed in both OA search tool descriptions since 2026-09-04. A reference's absence is not evidence it was not disclosed |
+| Cross-lane union key | `referenceKey` on every row of every tier on both lanes (2026-09-04). Digits only: a leading US, spaces, slashes, hyphens and the kind code stripped, series markers such as RE kept. Null when the identifier does not reduce to a document number |
+| Blank enriched references | Absent, null and empty `citedDocumentIdentifier` are ONE state, and can pair with an empty `publicationNumber`. Counted on the enriched envelope as `rows_without_reference_identifier` (2 of 5 on 11752072, 4 of 8 on 12849948, 4 of 26 on 18407147) |
+| OA `publicationNumber` 400 | Deliberate. The raw upstream API answers that field with HTTP 200 and numFound 0, which reads as "never cited". A visible refusal beats a silent zero |
 | Date coverage | officeActionDate from 2017-10-01 forward; pre-2017 dates in dataset may reflect filing/creation dates |
 | Patent lookup | Not all US patents appear — only those cited in an OA covered by the API |
 | OA legalSectionCode values | 102, 103, 112, **and "Other"** — filter pills should handle "Other" gracefully |
