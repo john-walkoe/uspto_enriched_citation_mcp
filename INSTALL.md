@@ -538,7 +538,8 @@ http://localhost:8000/mcp
 | `ECITATION_RATE_LIMIT` | No | `100` | Requests per minute |
 | `USPTO_SHARED_RATE_LIMIT_DIR` | No | *(none)* | Path to shared cross-process rate limiter directory (off unless set) |
 | `USPTO_SHARED_RATE_LIMIT_RPS` | No | `4.0` | Requests per second across all 4 USPTO MCPs (shared budget) |
-| `USPTO_SHARED_MAX_CONCURRENT` | No | `2` | Max concurrent in-flight requests (shared across MCPs) |
+| `USPTO_SHARED_MAX_CONCURRENT` | No | `1` | Max concurrent in-flight requests (shared across MCPs; USPTO allows a burst of 1 per key) |
+| `USPTO_SHARED_MAX_WAIT_SECONDS` | No | `45` | Queue wait ceiling per send; past it the tool answers at once with the 429 envelope |
 | `CITATIONS_AUTH_MODE` | No | `none` | OAuth mode: `none` (default) or `oauth` |
 | `CITATIONS_ENABLE_USER_MANAGEMENT` | No | `false` | Set to `true` to enable `citations_manage_users` admin tool (OAuth deployments) |
 | `CITATIONS_AUTH_BASE_URL` | No | — | Public HTTPS origin (required if `CITATIONS_AUTH_MODE=oauth`) |
@@ -559,7 +560,9 @@ http://localhost:8000/mcp
 | `CITATIONS_ENABLE_PROMPTS` | No | `false` | Set to `true` to register the 5 prompt templates. Default off, so no prompts appear in the client. |
 | `CITATIONS_INBOUND_RATE_LIMIT_RPM` | No | `100` | Per-identity inbound limit on the HTTP surface (bearer token or `x-api-key` fingerprint, else peer address). `/health` is exempt. |
 | `TRUSTED_PROXY_IPS` | No | `127.0.0.1` | Comma-separated proxy addresses whose forwarded-for header is trusted. `*` would let any client spoof its address. |
-| `CITATIONS_TOOL_DEADLINE` | No | `45.0` | Per-call deadline in seconds. |
+| `CITATIONS_TOOL_DEADLINE` | No | `45.0` | Per-call deadline in seconds (every tool except `Citations_get_citation_statistics`). |
+| `CITATIONS_CONTENT_DEADLINE_SECONDS` | No | `85` | One end-to-end budget per `Citations_get_citation_statistics` call, under Cloudflare's ~100 s cut. Its six count queries and their retries share it; counts that return in time are kept (the rest are `null`, with `deadline_note`), and with none back the call returns a 504 "Deadline exceeded". |
+| `CITATIONS_OWNER_EMAILS` | No | *(none)* | Comma-separated owner accounts. When set, only these can hold `citations:admin` (stripped at bearer load from other tokens) and only they can grant the admin role. Unset keeps roster admins as admins and logs a startup warning in OAuth mode. Tokens carry the scope the client requested, intersected with what the account holds. |
 | `CITATIONS_DEV_CORS` | No | *(none)* | `1`/`true`/`yes` re-enables the permissive development CORS origins. Leave unset in production. |
 | `CITATIONS_METRICS_COLLECTOR` | No | `none` | `none` keeps the no-op collector; `logging` emits metrics events through the application logger. |
 | `LOG_DIR` | No | *(see note)* | Log directory. Resolution order: explicit argument, `LOG_DIR`, `/var/log/uspto_mcp`. |
@@ -1077,23 +1080,32 @@ can ask this server to do.
 
 **Inbound (clients to this server).** A per-identity limiter on the HTTP
 surface, `CITATIONS_INBOUND_RATE_LIMIT_RPM` (default 100). Identity is the
-bearer token or `x-api-key` fingerprint when present, otherwise the peer
-address — so one busy caller cannot consume the whole budget. `/health` is
-exempt by design: it is unauthenticated, returns a constant, and exists for
-load-balancer probes.
+verified bearer subject in OAuth mode, the `x-api-key` fingerprint otherwise,
+else the resolved client IP — so one busy caller cannot consume the whole
+budget. `/health` is exempt by design: it is unauthenticated, returns a
+constant, and exists for load-balancer probes.
+
+**`TRUSTED_PROXY_IPS` is a SINGLE-INSTANCE concern, not only a multi-replica
+one (CR-01, review 2026-09-28).** Any deployment behind a reverse proxy or
+tunnel — one instance or many — has every request's ASGI peer be the proxy's
+own address unless this is set: the OAuth-route limiters (`/authorize`,
+`/token`, `/auth/callback`, `/register`, `/revoke`) and the inbound `/mcp`
+limiter's IP fallback all key on that one shared address, so any
+unauthenticated sender can exhaust the budget and block every real user's
+sign-in and token refresh. For example, a container behind a Cloudflare
+tunnel and a reverse proxy on the docker network `172.18.0.0/16` sets
+`TRUSTED_PROXY_IPS=172.18.0.0/16`. Once the immediate peer is trusted,
+`CF-Connecting-IP` is read (it survives every intermediate hop, including a
+tunnel connector, unmodified) with `X-Forwarded-For`'s rightmost non-proxy
+hop as the fallback — never `*`, which would make `X-Forwarded-For`
+attacker-controlled and the limiter bypassable. Leave unset only for a
+deployment with no reverse proxy in front of it at all (the raw peer IS the
+real client then).
 
 If you run **multiple replicas** behind a load balancer, each process
 maintains its own independent buckets for both limiters, multiplying the
-effective totals by the number of replicas.
-
-For single-instance deployments (default, suitable for most use cases): no
-action needed.
-
-For multi-replica production deployments: enforce the hard ceiling at the
-reverse proxy or API gateway layer (nginx, Traefik, AWS ALB) as well. Set
-`TRUSTED_PROXY_IPS` to the proxy's address so the OAuth limiter sees the real
-client address rather than the proxy's — never `*`, which would make
-`X-Forwarded-For` attacker-controlled and the limiter bypassable.
+effective totals by the number of replicas; enforce the hard ceiling at the
+load balancer layer as well.
 
 ### Rotating the auth secrets
 

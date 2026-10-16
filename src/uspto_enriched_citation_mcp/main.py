@@ -59,7 +59,10 @@ ENRICHED CITATIONS (v3) - AI-extracted analysis of a subset of office actions:
 - Citations_get_citation_details - Full record for specific citation (pass the record's `id`)
 - Citations_get_citation_statistics - Aggregations and trend analysis
 - Citations_get_available_fields - Enriched Citations field discovery
-- Only lane with: passageLocationText (column/line/figure/claim locators),
+- Only lane with: passageLocationText (intended as column/line/figure/claim
+  locators, but on measured records it often holds one token bag per office
+  action, e.g. "c. 103|section 102|claim 1"; check it before quoting it as a
+  pinpoint),
   relatedClaimNumberText (claim mapping), qualitySummaryText, nplIndicator,
   officeActionDate (date filtering), and 11-digit publication-number lookup.
 

@@ -106,9 +106,11 @@ Citations_search_citations_minimal
 }
 ```
 **Expect:** ~4.2M numFound, 5 records with minimal fields. Tier = minimal.
-Every record additionally carries `referenceKey` (added 2026-09-04), and the
-envelope carries `rows_without_reference_identifier` whatever its value,
-including 0.
+Every record additionally carries `referenceKey` (added 2026-09-04) and one
+link, `cite_as`, in the compact autolink form (`<https://patents.google.com/patent/...>`,
+or null); no `application_cite_as` on this tier (2026-09-11). The envelope
+carries `rows_without_reference_identifier` whatever its value, including 0,
+and a short `citation_note`.
 
 ---
 
@@ -163,10 +165,14 @@ Citations_search_citations_minimal
   "rows": 5
 }
 ```
-**Expect:** Tier = ultra-minimal. Each doc has exactly 3-4 keys
-(citedDocumentIdentifier, patentApplicationNumber, id, and `referenceKey`). No
-other fields present. `referenceKey` is derived before the field filter runs,
-so it is correct even when a custom list drops both source fields.
+**Expect:** Tier = ultra-minimal. Each doc has exactly the fields named plus
+`id` and `cite_as` (compact autolink or null): citedDocumentIdentifier,
+patentApplicationNumber, id, cite_as. No other fields present, and in
+particular no `referenceKey` or `application_cite_as` unless the list names
+them (2026-09-11: before that a two-field request came back with six fields per
+row). Add "referenceKey" to the list and it appears; it is derived before the
+field filter runs, so it is correct even when the list drops both source
+fields.
 
 ---
 
@@ -503,7 +509,7 @@ Citations_search_oa_citations_minimal
   "rows": 5
 }
 ```
-**Expect:** Each doc contains patentApplicationNumber, referenceIdentifier, legalSectionCode (plus possibly id), the derived `referenceKey`, AND a per-row `_pfw_link`. The `_pfw_link` on a CUSTOM `fields` list is DELIBERATE, not leakage: the 2026-08-30 dedupe moved the PFW hand-off to a single envelope `pfw_link` for default-shape responses, but a caller who chose the doc shape keeps the established inline per-row annotation (pinned by eval `tr-hp-07`). Previously bug: API ignored fl parameter; fix does client-side field filtering in oa_citation_service.py. Tier = custom in query_info.
+**Expect:** Each doc contains patentApplicationNumber, referenceIdentifier, legalSectionCode (plus possibly id), a compact `cite_as`, AND a per-row `_pfw_link` (no `referenceKey` unless the list names it, since 2026-09-11). The `_pfw_link` on a CUSTOM `fields` list is DELIBERATE, not leakage: the 2026-08-30 dedupe moved the PFW hand-off to a single envelope `pfw_link` for default-shape responses, but a caller who chose the doc shape keeps the established inline per-row annotation (pinned by eval `tr-hp-07`). Previously bug: API ignored fl parameter; fix does client-side field filtering in oa_citation_service.py. Tier = custom in query_info.
 
 ---
 
@@ -581,7 +587,7 @@ identifiers).
 | OA dataset size | re-baselined ~2025-07: TC:2600 now ~6.2M (was ~14M); still broader raw coverage than enriched |
 | Applicant cited count | Often 0 in statistics — most IDS submissions are not coded in this dataset |
 | 1449/IDS undercount | Neither lane holds the applicant's full IDS, in any era. Union of BOTH lanes against the patents' own References Cited pages: US 7,971,071 5 of 91; US 9,496,922 1 of 251; US 9,135,462 0 of ~620; US 11,656,067 (2021-2023, inside the documented window) 3 of 15. Disclosed in both OA search tool descriptions since 2026-09-04. A reference's absence is not evidence it was not disclosed |
-| Cross-lane union key | `referenceKey` on every row of every tier on both lanes (2026-09-04). Digits only: a leading US, spaces, slashes, hyphens and the kind code stripped, series markers such as RE kept. Null when the identifier does not reduce to a document number |
+| Cross-lane union key | `referenceKey` on every row of every default tier on both lanes (2026-09-04); on a custom `fields` list only when the list names it (2026-09-11). Digits only: a leading US, spaces, slashes, hyphens and the kind code stripped, series markers such as RE kept. Null when the identifier does not reduce to a document number |
 | Blank enriched references | Absent, null and empty `citedDocumentIdentifier` are ONE state, and can pair with an empty `publicationNumber`. Counted on the enriched envelope as `rows_without_reference_identifier` (2 of 5 on 11752072, 4 of 8 on 12849948, 4 of 26 on 18407147) |
 | OA `publicationNumber` 400 | Deliberate. The raw upstream API answers that field with HTTP 200 and numFound 0, which reads as "never cited". A visible refusal beats a silent zero |
 | Date coverage | officeActionDate from 2017-10-01 forward; pre-2017 dates in dataset may reflect filing/creation dates |

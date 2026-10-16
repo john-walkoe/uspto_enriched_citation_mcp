@@ -9,9 +9,11 @@ from ..app_uris import OA_CITATIONS_URI
 from ..config.constants import MAX_BALANCED_SEARCH_ROWS, MAX_MINIMAL_SEARCH_ROWS
 from ..shared.error_utils import format_error_response
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, scan_hits
+from ..util.citation_links import citation_note, wants_application_link
 from ..util.query_builder import (
     ALNUM_PARAM,
     DIGITS_PARAM,
+    normalize_application_number,
     validate_string_param,
 )
 from ..util.query_validator import OA_VALID_FIELDS, validate_lucene_syntax
@@ -73,7 +75,7 @@ def _build_oa_query(
     # were concatenated raw into the query while only `criteria` went through
     # the Lucene whitelist (S-12).
     for value, max_len, field_name, pattern in (
-        (application_number, 20, "patentApplicationNumber", DIGITS_PARAM),
+        (normalize_application_number(application_number), 20, "patentApplicationNumber", DIGITS_PARAM),
         (tech_center, 10, "techCenter", ALNUM_PARAM),
         (art_unit, 10, "groupArtUnitNumber", ALNUM_PARAM),
     ):
@@ -176,6 +178,9 @@ async def _run_oa_search_body(
             # custom `fields` list keeps the envelope shape, so the scan stays
             # wired for consistency with the v3 search tools.
             result["provenance_note"] = RETRIEVED_TEXT_NOTE
+            result["citation_note"] = citation_note(
+                wants_application_link(tier, fields)
+            )
             injection = scan_hits(result.get("response", {}).get("docs", []))
             if injection:
                 result["injection_scan"] = injection
@@ -252,6 +257,21 @@ async def search_oa_citations_minimal(
     paragraphNumber are NOT here; use the balanced tier or pass an explicit `fields`
     list for them.
 
+    CITATIONS ARE LINKS: every row carries `cite_as`, the verified Google Patents link
+    for the cited reference as a markdown autolink, e.g.
+    "<https://patents.google.com/patent/US20060075466>". This tier and any custom
+    `fields` list carry that one link per row and no label, to keep high-volume pages
+    small; Citations_search_oa_citations_balanced carries the labelled form ("KAWAI,
+    US 2006/0075466") plus `application_cite_as` (the application on USPTO Patent
+    Center). Paste a row's `cite_as` when you name that reference in an answer, a table
+    or a memo: a bare number is not a citation here, because the reader cannot click
+    through to the public record. `cite_as` is null when no verified URL can be built for
+    the row (non-patent literature, or an identifier that does not
+    reduce to a patent or publication number). Report those by the identifier the
+    record carries, say no public record link was available, and never assemble a patent
+    URL yourself. A custom `fields` list gets the fields you named, `_pfw_link` and
+    `cite_as`; name 'referenceKey' or 'application_cite_as' in the list to get those too.
+
     CROSS-LANE JOIN KEY: every row carries `referenceKey`, the normalised reference
     identifier, and it is the ONLY correct key for unioning this lane with the enriched
     lane. The two lanes write the same reference differently: on app 12849948 this lane's
@@ -261,9 +281,9 @@ async def search_oa_citations_minimal(
     lanes. `referenceKey` is digits only (a leading US, spaces, slashes, hyphens and the
     kind code stripped, series markers such as RE kept), derived from
     parsedReferenceIdentifier first and the raw referenceIdentifier second, and carried on
-    both lanes at every tier including a custom `fields` list. It is null on a row whose
-    identifier does not reduce to a document number, which is an unjoinable row rather
-    than a missing one.
+    both lanes on every default tier; a custom `fields` list carries it when the list
+    names it. It is null on a row whose identifier does not reduce to a document number,
+    which is an unjoinable row rather than a missing one.
 
     Solr/Lucene Query Examples:
     - By application: criteria='patentApplicationNumber:18180061'
@@ -274,7 +294,8 @@ async def search_oa_citations_minimal(
     - Where a patent was cited: criteria='parsedReferenceIdentifier:9280610'
 
     ⚠️ NO DATE FIELD. officeActionDate does not exist here and returns HTTP 400 — the
-    index already IS the 2017-10-01+ window, so omit any date clause.
+    lane has no date field at all (it is documented from 2017-10-01, and older
+    office actions are served too), so omit any date clause.
     createDateTime is an ETL load stamp, NOT the office action date — never present it
     as prosecution chronology.
 
@@ -364,6 +385,18 @@ async def search_oa_citations_balanced(
     a count from this lane is not the applicant's full IDS. For a complete 1449 record,
     read the IDS documents through the PFW MCP.
 
+    CITATIONS ARE LINKS: every row carries `cite_as`, a ready-made markdown link
+    whose label names the cited reference ("KAWAI, US 2006/0075466") and whose target is
+    that reference on Google Patents, and `application_cite_as`, the same for the
+    application the office action belongs to on USPTO Patent Center. Paste a row's
+    `cite_as` when you name that reference in an answer, a table or a memo: a bare
+    number is not a citation here, because the reader cannot click through to the public
+    record. Both keys are null when no verified URL can be built for the row (non-patent
+    literature, or an identifier that does not reduce to a patent or publication
+    number). Report those by the identifier the record carries, say no public
+    record link was available, and never assemble a patent URL yourself. A custom
+    `fields` list switches to the narrow shape: one compact `cite_as` per row.
+
     CROSS-LANE JOIN KEY: every row carries `referenceKey`, the normalised reference
     identifier, and it is the ONLY correct key for unioning this lane with the enriched
     lane. On app 12849948 this lane's parsedReferenceIdentifier reads '20060075466' while
@@ -371,8 +404,8 @@ async def search_oa_citations_balanced(
     fields finds zero overlap on every application, when the true answer there is four
     references in both lanes. `referenceKey` is digits only (a leading US, spaces, slashes,
     hyphens and the kind code stripped, series markers such as RE kept) and is carried on
-    both lanes at every tier. It is null on a row whose identifier does not reduce to a
-    document number.
+    both lanes on every default tier (a custom `fields` list carries it when the list
+    names it). It is null on a row whose identifier does not reduce to a document number.
 
     OA Citations v2 documented window: office actions mailed 2017-10-01 to ~30 days
     prior to today (older records have been observed in practice). No office-action date

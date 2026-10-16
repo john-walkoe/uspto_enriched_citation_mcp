@@ -1,0 +1,370 @@
+{
+ "response": {
+  "start": 0,
+  "numFound": 33,
+  "docs": [
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20030159618 A1",
+    "id": "00000000000000000000000000000001",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20030159618"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20130023601 A1",
+    "id": "00000000000000000000000000000002",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20130023601"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "WO-2010098305-A1",
+    "id": "00000000000000000000000000000003",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "2010098305"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20080085948 A1",
+    "id": "00000000000000000000000000000004",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20080085948"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20160038380 A1",
+    "id": "00000000000000000000000000000005",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20160038380"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "WO-2010098305-A1",
+    "id": "00000000000000000000000000000006",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "2010098305"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20160038380 A1",
+    "id": "00000000000000000000000000000007",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20160038380"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20030159618 A1",
+    "id": "00000000000000000000000000000008",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20030159618"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20190060523 A1",
+    "id": "00000000000000000000000000000009",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20190060523"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20080085948 A1",
+    "id": "0000000000000000000000000000000a",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20080085948"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20160038380 A1",
+    "id": "0000000000000000000000000000000b",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20160038380"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20160038380 A1",
+    "id": "0000000000000000000000000000000c",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20160038380"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "WO-2018014120-A1",
+    "id": "0000000000000000000000000000000d",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "2018014120"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20030159618 A1",
+    "id": "0000000000000000000000000000000e",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20030159618"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "",
+    "id": "0000000000000000000000000000000f",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": false,
+    "publicationNumber": ""
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20080085948 A1",
+    "id": "00000000000000000000000000000010",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20080085948"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "id": "00000000000000000000000000000011",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": false,
+    "publicationNumber": ""
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "",
+    "id": "00000000000000000000000000000012",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": ""
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20080085948 A1",
+    "id": "00000000000000000000000000000013",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20080085948"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20140248322 A1",
+    "id": "00000000000000000000000000000014",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20140248322"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20160038380 A1",
+    "id": "00000000000000000000000000000015",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20160038380"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "WO-2018164436-A1",
+    "id": "00000000000000000000000000000016",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "2018164436"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "",
+    "id": "00000000000000000000000000000017",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": ""
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20030159618 A1",
+    "id": "00000000000000000000000000000018",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20030159618"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "",
+    "id": "00000000000000000000000000000019",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": ""
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20200009021 A1",
+    "id": "0000000000000000000000000000001a",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20200009021"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "",
+    "id": "0000000000000000000000000000001b",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": ""
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20030159618 A1",
+    "id": "0000000000000000000000000000001c",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20030159618"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 6002065 A",
+    "id": "0000000000000000000000000000001d",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "6002065"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "WO-2018164436-A1",
+    "id": "0000000000000000000000000000001e",
+    "citationCategoryCode": "X",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "2018164436"
+   },
+   {
+    "officeActionDate": "2022-09-12T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20190060523 A1",
+    "id": "0000000000000000000000000000001f",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20190060523"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "US 20080085948 A1",
+    "id": "00000000000000000000000000000020",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "20080085948"
+   },
+   {
+    "officeActionDate": "2022-02-17T00:00:00",
+    "patentApplicationNumber": "16816197",
+    "groupArtUnitNumber": "1767",
+    "techCenter": "1700",
+    "citedDocumentIdentifier": "WO-2018164436-A1",
+    "id": "00000000000000000000000000000021",
+    "citationCategoryCode": "Y",
+    "examinerCitedReferenceIndicator": true,
+    "publicationNumber": "2018164436"
+   }
+  ]
+ }
+}

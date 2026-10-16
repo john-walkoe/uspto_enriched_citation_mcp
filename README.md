@@ -742,6 +742,7 @@ uspto_enriched_citation_mcp/
 │   ├── test_resilience.py             # Circuit breaker and rate limiting tests
 │   ├── test_security.py               # Injection detection + input validation tests
 │   ├── test_shared_rate_limiter.py    # Cross-process shared rate limiter tests
+│   ├── test_odp_429_handling.py       # Upstream 429 one-retry rule, shared-limiter refusal
 │   ├── test_statistics_tool.py        # Citation statistics tests
 │   ├── test_patent_crosswalk.py       # Granted-patent-number crosswalk (normalizer, client, tool wiring)
 │   ├── test_unified_key_management.py # API key storage tests (excluded by default, see below)
@@ -938,11 +939,14 @@ on the **same box**, serving multiple users, under **one** USPTO API key,
 each server's own in-process limiter can't see what the other 3 processes
 are doing — and USPTO's documented limits are per-key (burst=1, 4-15
 req/sec depending on call type, plus weekly quotas), not per-process. Point
-all 4 containers at one bind-mounted directory and they share a single
-cross-process token bucket + a bounded pool of in-flight-request slots,
+all 4 containers at one bind-mounted directory and they share a FIFO queue,
+a single cross-process token bucket (capacity 1, so consecutive sends are
+always >= 1/RPS apart) and a bounded pool of in-flight-request slots,
 arbitrated via POSIX file locks (crash-safe — a dead process's lock is
-released by the kernel). Single-MCP or STDIO deployments need nothing; the
-limiter is off unless the directory variable is set.
+released by the kernel). A 429 seen by any process is written to
+`cooldown.json` in that directory and every process on the key waits
+max(5 s, Retry-After) before its next send. Single-MCP or STDIO deployments
+need nothing; the limiter is off unless the directory variable is set.
 
 ```yaml
 # docker-compose.yml (excerpt, all 4 USPTO MCP services)
@@ -955,13 +959,20 @@ services:
     environment:
       USPTO_SHARED_RATE_LIMIT_DIR: /var/run/uspto-shared-rate-limit
       USPTO_SHARED_RATE_LIMIT_RPS: "4"       # default; total across ALL 4 MCPs
-      USPTO_SHARED_MAX_CONCURRENT: "2"       # default; shared in-flight slots
+      USPTO_SHARED_MAX_CONCURRENT: "1"       # default; USPTO's burst=1 per key
+      USPTO_SHARED_MAX_WAIT_SECONDS: "45"    # default; queue wait ceiling per send
 ```
 
-One token bucket and 2 concurrency slots are shared across every process
-mounting the directory — a heavier MCP naturally draws more of the budget
-under load, and a long PDF download occupies a slot for its full duration
-(not just connection setup), per USPTO's burst=1 guidance.
+One token bucket and one concurrency slot are shared across every process
+mounting the directory, served in arrival order; a heavier MCP naturally
+draws more of the budget under load. A send that gets no slot within
+`USPTO_SHARED_MAX_WAIT_SECONDS` is answered at once with this server's 429
+error envelope (`details.rate_limit_source = "shared_limiter"`,
+`details.retry_after = 5`), not retried. An upstream 429 is retried once
+after max(5 s, Retry-After) when that wait is at most 10 s; otherwise the
+429 envelope carries `details.retry_after = max(5, Retry-After)` and
+`details.rate_limit_source = "upstream"`. The local 100/min bucket
+(`details.rate_limit_source = "local_bucket"`) is unchanged.
 
 ## OAuth sign-in (optional)
 

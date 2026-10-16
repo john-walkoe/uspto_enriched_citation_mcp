@@ -11,6 +11,7 @@ from ..shared.error_utils import format_error_response
 from ..util.request_context import RequestContext
 from ..util.logging import get_logger
 from ..util.security_logger import get_security_logger
+from ._shared import run_with_deadline
 
 logger = get_logger(__name__)
 security_logger = get_security_logger()
@@ -26,38 +27,46 @@ async def get_available_fields() -> Dict[str, Any]:  # no UI view — utility to
     For field selection strategies and Solr/Lucene syntax examples, use Citations_get_guidance(section='fields').
     """
     with RequestContext():
-        try:
-            runtime.initialize_services()
-            fields = await runtime.api_client.get_fields()
-            return {
-                "status": "success",
-                "total_fields": len(fields.get("fields", [])),
-                "fields": fields.get("fields", []),
-                "usage_guidance": {
-                    "query_syntax": "Use field:value format (e.g., techCenter:2100, patentApplicationNumber:18180061)",
-                    "predefined_sets": {
-                    # Derived, not asserted. A hardcoded literal sat next to
-                    # len(BALANCED_FIELDS) here and the two disagreed, so this
-                    # string shipped a count and its own contradiction to the
-                    # model in one breath (D-11).
-                        "citations_minimal": f"{len(MINIMAL_FIELDS)} essential fields",
-                        "citations_balanced": f"{len(BALANCED_FIELDS)} comprehensive fields",
-                    },
-                    "best_practices": [
-                        "Always use field-specific searches for precision",
-                        "Check field types before building queries",
-                        "Use Citations_validate_query for complex syntax",
-                    ],
+        # CR-02 (review 2026-09-28): the one other tool with no whole-call
+        # deadline — same wrapper statistics.py and details.py use, so a
+        # slow upstream returns an honest 504 before a reverse proxy cuts
+        # the connection first.
+        return await run_with_deadline(_get_available_fields_body, "Field discovery")
+
+
+async def _get_available_fields_body() -> Dict[str, Any]:
+    try:
+        runtime.initialize_services()
+        fields = await runtime.api_client.get_fields()
+        return {
+            "status": "success",
+            "total_fields": len(fields.get("fields", [])),
+            "fields": fields.get("fields", []),
+            "usage_guidance": {
+                "query_syntax": "Use field:value format (e.g., techCenter:2100, patentApplicationNumber:18180061)",
+                "predefined_sets": {
+                # Derived, not asserted. A hardcoded literal sat next to
+                # len(BALANCED_FIELDS) here and the two disagreed, so this
+                # string shipped a count and its own contradiction to the
+                # model in one breath (D-11).
+                    "citations_minimal": f"{len(MINIMAL_FIELDS)} essential fields",
+                    "citations_balanced": f"{len(BALANCED_FIELDS)} comprehensive fields",
                 },
-            }
-        except Exception as e:
-            # Log API error for monitoring
-            security_logger.api_error(
-                endpoint="get_available_fields",
-                error_code=500,
-                error_type=type(e).__name__
-            )
-            return format_error_response("Field retrieval failed", 500, exception=e)
+                "best_practices": [
+                    "Always use field-specific searches for precision",
+                    "Check field types before building queries",
+                    "Use Citations_validate_query for complex syntax",
+                ],
+            },
+        }
+    except Exception as e:
+        # Log API error for monitoring
+        security_logger.api_error(
+            endpoint="get_available_fields",
+            error_code=500,
+            error_type=type(e).__name__
+        )
+        return format_error_response("Field retrieval failed", 500, exception=e)
 
 
 async def validate_query(
@@ -132,6 +141,20 @@ async def citations_get_guidance(section: str = "overview") -> str:
     - tools: Tool-specific guidance and parameters
     - errors: Common error patterns and troubleshooting
     - cost: Cost optimization strategies
+
+    CITATIONS ARE LINKS: every record the search and detail tools return carries
+    `cite_as`, a ready-made markdown link to the cited reference on Google Patents. The
+    balanced tiers and the details tool label it ("Pavlin, US 2001/0056539") and add
+    `application_cite_as`, the same for the application the office action belongs to on
+    USPTO Patent Center; the minimal tiers and any custom `fields` list carry `cite_as`
+    alone, as a markdown autolink, so high-volume pages stay small. Paste a record's
+    `cite_as` when you name that reference in an answer, a table or a memo: a bare number
+    is not a citation here, because the reader cannot click through to the public
+    record. A link is null when no verified URL can be built for the record (non-patent
+    literature, or an identifier that does not reduce to a patent or publication
+    number). Report those by the identifier the record carries, say no
+    public record link was available, and never assemble a patent URL yourself. The
+    full rules are in the overview section.
 
     Args:
         section: Which guidance section to retrieve (default: overview)

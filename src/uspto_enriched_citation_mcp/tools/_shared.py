@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from .. import runtime
 from ..config.constants import MAX_PAGINATION_START
 from ..shared.error_utils import format_error_response
+from ..util.deadline import Deadline
 # Re-exported for the tool modules that import it from here; the template
 # itself lives in shared/pfw_link.py so tools and services share one
 # definition rather than two copies of the same sentence (D-9).
@@ -73,21 +74,32 @@ def tool_deadline_seconds() -> float:
 
 
 async def run_with_deadline(
-    coro_factory: Callable[[], Awaitable[Dict[str, Any]]], label: str
+    coro_factory: Callable[[], Awaitable[Dict[str, Any]]],
+    label: str,
+    deadline: Optional[Deadline] = None,
 ) -> Dict[str, Any]:
     """Run a tool body under the whole-call deadline.
 
     Returns the body's result, or a 504 envelope naming the deadline. 504 is
     the honest code: the server gave up waiting on an upstream, which is what
     an agent should back off from rather than retry immediately.
+
+    `deadline` is a call's own end-to-end budget (util/deadline.Deadline,
+    created when the tool starts) for a tool whose body also spends it, such
+    as the statistics fan-out; this wrapper is then the backstop at the same
+    end time instead of a second, separate budget. Without one, the budget is
+    CITATIONS_TOOL_DEADLINE.
     """
-    deadline = tool_deadline_seconds()
+    if deadline is not None:
+        budget, timeout = deadline.seconds, deadline.remaining()
+    else:
+        budget = timeout = tool_deadline_seconds()
     try:
-        async with asyncio.timeout(deadline):
+        async with asyncio.timeout(timeout):
             return await coro_factory()
     except TimeoutError:
         return format_error_response(
-            f"{label} exceeded the {deadline:.0f}s server deadline. Narrow the "
+            f"{label} exceeded the {budget:.0f}s server deadline. Narrow the "
             f"query or retry; the upstream USPTO API did not answer in time.",
             504,
         )

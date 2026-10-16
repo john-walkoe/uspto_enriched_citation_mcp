@@ -371,21 +371,24 @@ class TestGetCitationDetailsSanitization:
 # ------------------------------------------------------------------------ 3.1
 
 
+class _AllowingLaneLimiter:
+    """CR-02 (review 2026-09-28): get_statistics charges the ENRICHED LANE's
+    own rate limiter (self.client.rate_limiter), not the process-wide
+    singleton — so a stub client for this service needs its own limiter."""
+
+    async def acquire(self, endpoint="default", tokens=1):
+        return True
+
+
 class TestGetStatisticsQueriesFailed:
     @pytest.mark.asyncio
-    async def test_partial_failure_surfaces_queries_failed(self, monkeypatch):
+    async def test_partial_failure_surfaces_queries_failed(self):
         from uspto_enriched_citation_mcp.services.citation_service import CitationService
-        from uspto_enriched_citation_mcp.util import rate_limiter as rl
-
-        rl.reset_rate_limiter()
-        limiter = rl.get_rate_limiter(rl.RateLimitConfig(requests_per_minute=60))
-
-        async def allow(endpoint="default", tokens=1):
-            return True
-
-        monkeypatch.setattr(limiter, "acquire", allow)
 
         class _FlakyClient:
+            _CACHE_KEY_PREFIX = "enriched"
+            rate_limiter = _AllowingLaneLimiter()
+
             async def search_citations(self, criteria, rows=0, **kwargs):
                 if "citationCategoryCode:X" in criteria or (
                     "examinerCitedReferenceIndicator:true" in criteria
@@ -403,22 +406,14 @@ class TestGetStatisticsQueriesFailed:
         assert result["breakdowns"]["Citation Category"]["X — Novel (§102)"] == 0
         assert result["examiner_cited_count"] == 0
 
-        rl.reset_rate_limiter()
-
     @pytest.mark.asyncio
-    async def test_no_queries_failed_key_when_all_succeed(self, monkeypatch):
+    async def test_no_queries_failed_key_when_all_succeed(self):
         from uspto_enriched_citation_mcp.services.citation_service import CitationService
-        from uspto_enriched_citation_mcp.util import rate_limiter as rl
-
-        rl.reset_rate_limiter()
-        limiter = rl.get_rate_limiter(rl.RateLimitConfig(requests_per_minute=60))
-
-        async def allow(endpoint="default", tokens=1):
-            return True
-
-        monkeypatch.setattr(limiter, "acquire", allow)
 
         class _HealthyClient:
+            _CACHE_KEY_PREFIX = "enriched"
+            rate_limiter = _AllowingLaneLimiter()
+
             async def search_citations(self, criteria, rows=0, **kwargs):
                 return {"response": {"numFound": 5}}
 
@@ -427,8 +422,6 @@ class TestGetStatisticsQueriesFailed:
 
         assert result["status"] == "success"
         assert "queries_failed" not in result
-
-        rl.reset_rate_limiter()
 
 
 # ------------------------------------------------------------------------- E1

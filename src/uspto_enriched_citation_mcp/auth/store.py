@@ -14,7 +14,7 @@ stored as SHA-256 hashes only.
 Backend is a single SQLite file (CITATIONS_AUTH_DB_PATH, default
 ``data/mcp_auth.db``) — zero-infrastructure for self-hosters. WAL mode +
 busy_timeout are enabled so the same file can be shared by several MCP
-containers on ONE host (the paid-tier PFW/PTAB/FPD deployment); a network
+containers on ONE host (a combined PFW/PTAB/FPD deployment); a network
 filesystem is NOT safe for this. Connections are opened per operation — auth
 traffic is a handful of queries per login/refresh, and per-call connections
 keep multi-process sharing robust.

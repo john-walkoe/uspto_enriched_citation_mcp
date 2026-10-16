@@ -16,7 +16,6 @@ import inspect
 
 import pytest
 
-from uspto_enriched_citation_mcp.services import citation_service as service_module
 from uspto_enriched_citation_mcp.tools.statistics import get_citation_statistics
 
 
@@ -118,18 +117,37 @@ async def test_invalid_lucene_is_a_400(mock_runtime):
 
 
 @pytest.mark.asyncio
-async def test_rate_limit_rejection_is_reported(mock_runtime, monkeypatch):
-    class _Full:
-        async def acquire(self, *args, **kwargs):
-            return False
-
-    monkeypatch.setattr(service_module, "get_rate_limiter", lambda: _Full())
+async def test_rate_limit_rejection_is_reported(mock_runtime):
+    """CR-02 (review 2026-09-28): the limiter that can deny this call is the
+    ENRICHED LANE's own (mock_runtime.api_client.rate_limiter), not the
+    process-wide singleton — patching the singleton (the old shape of this
+    test) could no longer see which limiter the tool actually charges, which
+    is exactly how the S-13 regression this fix closes went unnoticed."""
+    mock_runtime.api_client.rate_limiter.acquire.return_value = False
 
     result = await get_citation_statistics(criteria="techCenter:2100")
 
     assert result["status"] == "error"
     assert "Rate limit exceeded" in result["error"]
     mock_runtime.api_client.search_citations.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_statistics_charges_the_lane_limiter_six_tokens(mock_runtime):
+    """Reproduction: one statistics call charges the enriched lane's own
+    rate limiter for the full 6x fan-out cost (base query + 5 breakdowns),
+    on the same endpoint bucket search_citations draws from — not the
+    orphan process-wide singleton get_rate_limiter() returns, which
+    production never wires into any lane (runtime.py's per-lane
+    RateLimiter instances)."""
+    mock_runtime.api_client._CACHE_KEY_PREFIX = "enriched"  # real value; see api/enriched_client.py
+    mock_runtime.api_client.search_citations.side_effect = _counts(1, 1, 1, 1, 1, 1)
+
+    await get_citation_statistics(criteria="techCenter:2100")
+
+    mock_runtime.api_client.rate_limiter.acquire.assert_awaited_once_with(
+        endpoint="enriched_search_records", tokens=6
+    )
 
 
 def test_stats_fields_is_no_longer_published_in_the_tool_schema():

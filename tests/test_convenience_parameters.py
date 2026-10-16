@@ -1,7 +1,7 @@
 """
 Tests for convenience parameters in query construction.
 
-Tests verify that convenience parameters (tech_center, applicant_name,
+Tests verify that convenience parameters (tech_center, application_number,
 art_unit, category_code, examiner_cited, etc.) build correct Lucene queries.
 """
 
@@ -19,14 +19,6 @@ class TestConvenienceParameters:
 
         assert "techCenter:2100" in result.query
         assert result.params_used["tech_center"] == "2100"
-        assert len(result.warnings) == 0
-
-    def test_applicant_name_parameter(self):
-        """Test applicant_name builds correct phrase query with quotes."""
-        result = build_query(QueryParameters(applicant_name="Apple Inc."))
-
-        assert 'firstApplicantName:"Apple Inc."' in result.query
-        assert result.params_used["applicant_name"] == "Apple Inc."
         assert len(result.warnings) == 0
 
     def test_application_number_parameter(self):
@@ -149,12 +141,24 @@ class TestConvenienceParameters:
         assert "\\:" not in result.query  # No escaped colons
 
     def test_no_quote_escaping(self):
-        """Verify quotes in phrase queries are NOT escaped."""
-        result = build_query(QueryParameters(applicant_name="Apple Inc."))
+        """Verify quotes in a quoted phrase clause are NOT escaped.
 
-        # Should be firstApplicantName:"Apple Inc.", NOT firstApplicantName:\\"Apple Inc.\\"
-        assert 'firstApplicantName:"Apple Inc."' in result.query
-        assert '\\"' not in result.query  # No escaped quotes
+        applicant_name, the one convenience parameter that used to exercise
+        this path, was removed 2026-09-28 (MCP-2 / CQ-R-1: it queried
+        firstApplicantName, a field that does not exist on this API), so the
+        quoted/patternless shape `_append_simple_clause` builds is exercised
+        directly here instead.
+        """
+        from uspto_enriched_citation_mcp.util.query_builder import _append_simple_clause
+
+        parts: list = []
+        _append_simple_clause(
+            parts, {}, "Apple Inc.", 200, "someField", "some_param", quoted=True
+        )
+
+        # Should be someField:"Apple Inc.", NOT someField:\\"Apple Inc.\\"
+        assert 'someField:"Apple Inc."' in parts[0]
+        assert '\\"' not in parts[0]  # No escaped quotes
 
     def test_no_bracket_escaping_in_ranges(self):
         """Verify brackets in date ranges are NOT escaped."""
@@ -185,7 +189,9 @@ class TestConvenienceParameters:
     def test_parameter_validation_invalid_chars(self):
         """Test parameter validation rejects invalid characters."""
         with pytest.raises(ValueError, match="Invalid characters"):
-            build_query(QueryParameters(applicant_name='<script>alert("xss")</script>'))
+            # decision_type's 50-char cap (vs. tech_center's 10) leaves room
+            # for the char check to run before the length check would.
+            build_query(QueryParameters(decision_type='<script>alert("xss")</script>'))
 
     def test_at_least_one_criterion_required(self):
         """Test that build_query requires at least one parameter."""

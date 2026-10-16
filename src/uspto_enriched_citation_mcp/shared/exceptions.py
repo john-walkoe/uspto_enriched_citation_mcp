@@ -129,20 +129,48 @@ class CitationNotFoundError(NotFoundError):
 
 # === RATE LIMITING (429) ===
 
+# Where a RateLimitError came from (ODP rate-limit wave, 2026-10-11, plan
+# 4a). The three sources are answered differently by util/retry.py:
+#   local_bucket   this process's own 100/min token bucket said no; today's
+#                  retry behaviour (sleep its own interval, up to max_attempts)
+#   upstream       USPTO answered HTTP 429; ONE retry after max(5 s,
+#                  Retry-After) when that wait is <= 10 s, else the envelope
+#   shared_limiter the cross-process limiter gave no slot inside its wait
+#                  ceiling; the envelope at once, never a retry
+RATE_LIMIT_SOURCE_LOCAL_BUCKET = "local_bucket"
+RATE_LIMIT_SOURCE_UPSTREAM = "upstream"
+RATE_LIMIT_SOURCE_SHARED_LIMITER = "shared_limiter"
+
 
 class RateLimitError(USPTOCitationError):
-    """Rate limit exceeded (429 Too Many Requests)."""
+    """Rate limit exceeded (429 Too Many Requests).
+
+    `source` names which limiter rejected the call (one of the
+    RATE_LIMIT_SOURCE_* constants; default local_bucket, so every existing
+    caller that raises it bare is still read as a local rejection). It is
+    also carried in `details["rate_limit_source"]` so the error envelope a
+    tool returns says which one it was.
+    """
 
     def __init__(
         self,
         message: str = "Rate limit exceeded",
-        retry_after: Optional[int] = None,
+        retry_after: Optional[float] = None,
+        source: str = RATE_LIMIT_SOURCE_LOCAL_BUCKET,
         **kwargs,
     ):
         details = kwargs.pop("details", {})
         if retry_after:
             details["retry_after"] = retry_after
+        details["rate_limit_source"] = source
+        self.source = source
         super().__init__(message, status_code=429, details=details, **kwargs)
+
+    @property
+    def is_upstream(self) -> bool:
+        """True when USPTO itself answered 429 (not a local or shared-limiter
+        rejection)."""
+        return self.source == RATE_LIMIT_SOURCE_UPSTREAM
 
 
 # === API/NETWORK ERRORS (5xx) ===

@@ -8,9 +8,12 @@ from .. import runtime
 from ..app_uris import STATISTICS_URI
 from ..config.constants import MAX_QUERY_LENGTH
 from ..shared.error_utils import format_error_response
+from ..util.citation_links import STATISTICS_CITATION_NOTE
+from ..util.deadline import Deadline, content_deadline_seconds
 from ..util.query_validator import validate_lucene_syntax
 from ..util.request_context import RequestContext
 from ..util.security_logger import get_security_logger
+from ._shared import run_with_deadline
 
 security_logger = get_security_logger()
 
@@ -43,37 +46,73 @@ async def get_citation_statistics(criteria: str = "") -> Dict[str, Any]:
 
     Returns for the enriched lane: total_citations, examiner_cited_count,
     applicant_cited_count, and breakdowns by citation category (X/Y/A) and by who cited.
+
+    CITATIONS ARE LINKS: this tool returns counts, so it carries a `citation_note` and
+    no per-record `cite_as`. A count is not a citation and has no public record to point
+    at. To cite any of the citations behind a number here, re-run the same criteria
+    through Citations_search_citations_minimal or Citations_search_oa_citations_minimal,
+    whose rows each carry a ready-made `cite_as` link to the cited reference (the
+    balanced tiers add an `application_cite_as` link to the application).
     """
     with RequestContext():
-        try:
-            runtime.initialize_services()
-            if criteria and len(criteria) > MAX_QUERY_LENGTH:
-                return format_error_response(
-                    f"Query too long (max {MAX_QUERY_LENGTH} characters)", 400
-                )
-            if criteria:
-                is_valid, validation_msg = validate_lucene_syntax(criteria)
-                if not is_valid:
-                    return format_error_response(validation_msg, 400)
-            result = await runtime.citation_service.get_statistics(criteria)
-            return result
-        except ValueError as e:
-            # A caller mistake is a 400 here as it is on the search tools; it
-            # used to be the only tool that stamped build_query's ValueError
-            # as a 500, the class an agent retries.
-            security_logger.query_validation_failure(
-                query=criteria, reason=str(e), severity="medium"
-            )
-            return format_error_response("Invalid search parameters", 400, exception=e)
-        except Exception as e:
-            security_logger.api_error(
-                endpoint="get_citation_statistics",
-                error_code=500,
-                error_type=type(e).__name__,
-            )
+        # CR-02 (review 2026-09-28): this is the most expensive tool (base
+        # query plus five breakdowns, see services/citation_service.py) and
+        # was the one search-surface tool with no whole-call deadline, so a
+        # slow upstream ran past the ~100s Cloudflare cutoff with nothing
+        # returning an honest 504 first — same wrapper details.py uses.
+        #
+        # Wave 2 Part A item 5 (2026-10-06): ONE end-to-end budget per call,
+        # CITATIONS_CONTENT_DEADLINE_SECONDS (85 s, under the ~100 s cut),
+        # created here. The fan-out waits only for what is left of it and
+        # keeps the counts that returned in time (a deadline note names the
+        # rest); the wrapper is the backstop at the same end time.
+        deadline = Deadline(content_deadline_seconds())
+        return await run_with_deadline(
+            lambda: _get_citation_statistics_body(criteria, deadline),
+            "Statistics",
+            deadline=deadline,
+        )
+
+
+async def _get_citation_statistics_body(
+    criteria: str, deadline: Deadline
+) -> Dict[str, Any]:
+    try:
+        runtime.initialize_services()
+        if criteria and len(criteria) > MAX_QUERY_LENGTH:
             return format_error_response(
-                "Statistics retrieval failed", 500, exception=e
+                f"Query too long (max {MAX_QUERY_LENGTH} characters)", 400
             )
+        if criteria:
+            is_valid, validation_msg = validate_lucene_syntax(criteria)
+            if not is_valid:
+                return format_error_response(validation_msg, 400)
+        result = await runtime.citation_service.get_statistics(
+            criteria, deadline=deadline
+        )
+        # Counts, not records: this envelope carries the note and no
+        # per-row `cite_as`, because a number has no public record to
+        # link to (util/citation_links).
+        if isinstance(result, dict):
+            result["citation_note"] = STATISTICS_CITATION_NOTE
+        return result
+    except ValueError as e:
+        # A caller mistake is a 400 here as it is on the search tools; it
+        # used to be the only tool that stamped build_query's ValueError
+        # as a 500, the class an agent retries.
+        security_logger.query_validation_failure(
+            query=criteria, reason=str(e), severity="medium"
+        )
+        return format_error_response("Invalid search parameters", 400, exception=e)
+    except Exception as e:
+        security_logger.api_error(
+            endpoint="get_citation_statistics",
+            error_code=500,
+            error_type=type(e).__name__,
+        )
+        return format_error_response(
+            "Statistics retrieval failed", 500, exception=e
+        )
 
 
 def register(mcp) -> None:

@@ -43,6 +43,62 @@ claim mapping → enriched; `legalSectionCode` statutory filter → OA.
 Both lanes have also been observed serving records older than the documented
 window. Full detail and measured numbers: `oa_citations` section.
 
+### CITATIONS ARE LINKS
+
+Every record the search and detail tools return carries a ready-made markdown
+link, so an answer never has to assemble a URL:
+
+| key | what it points at | example |
+|---|---|---|
+| `cite_as` | the CITED REFERENCE on Google Patents | `[Pavlin, US 2001/0056539](https://patents.google.com/patent/US20010056539)` |
+| `application_cite_as` | the APPLICATION the office action belongs to, on USPTO Patent Center | `[Application 11752072](https://patentcenter.uspto.gov/applications/11752072)` |
+
+Which rows carry what:
+
+| request | `cite_as` | `application_cite_as` | `referenceKey` |
+|---|---|---|---|
+| balanced tiers, `Citations_get_citation_details` | labelled, as above | labelled | yes |
+| minimal tiers (no `fields`) | compact: `<https://patents.google.com/patent/US20010056539>` | no | yes |
+| any custom `fields` list | compact | only if the list names it | only if the list names it |
+
+The compact form is the same verified URL as a markdown autolink, with no label:
+it is still a clickable link, the URL itself names the record, and the row
+already carries the reference number a label would repeat. It exists so the
+high-volume tiers stay small (measured on app 16816197, 2026-09-11: a two-field
+custom list had grown from 5,914 to 13,834 characters once every row carried two
+labelled links, `referenceKey` and a long envelope note).
+
+Paste a record's `cite_as` after the sentence that names that reference. A bare
+reference number is not a citation here, because the reader cannot click through
+to the public record.
+
+A link is **null** when this server cannot build a verified URL for the row:
+non-patent literature, or an identifier that does not reduce to a patent or
+publication number. That is the honest outcome, not a gap to paper over. Report
+those references by the identifier the record carries and say that no public
+record link was available.
+
+A **foreign** reference is linked, at its own country's document rather than at
+a US number that happens to share its digits: `referenceKey` keeps the country
+prefix the written identifier carries, and `cite_as` targets
+`https://patents.google.com/patent/<CC><number>` (`JP2001123456` ->
+<https://patents.google.com/patent/JP2001123456>). Never build a patent URL by hand: the
+verified one is already on the row, and a hand-built link points at the wrong
+document as often as the right one.
+
+Patent Center shows an application only to a signed-in reader: without a free
+USPTO.gov account the link lands on its own front page rather than on the
+desired application. Whenever you paste an `application_cite_as`, or any other
+link whose target is patentcenter.uspto.gov, say in the same breath that opening
+it needs a free USPTO.gov account. A Google Patents link needs no account and no
+such warning.
+
+Every response that carries records also carries a short `citation_note` saying
+this in a few sentences; this section is the full set of rules.
+`Citations_get_citation_statistics` returns counts rather than records, so it
+carries a `citation_note` and no `cite_as`. To cite the citations behind a
+number, re-run the same criteria through a search tool.
+
 ### Available Sections:
 - **overview**: Available sections and tool summary (this section)
 - **oa_citations**: OA (v2) vs enriched (v3) routing rule, measured coverage, field matrix
@@ -636,8 +692,10 @@ capability:
 
 ### The union key is `referenceKey`, not the raw identifier fields
 
-**Both lanes carry a `referenceKey` on every row, at every tier. It is the only
-correct key for unioning them.**
+**Both lanes carry a `referenceKey` on every row of every default tier (and the
+details tool). It is the only correct key for unioning them.** A custom `fields`
+list carries it only when the list names `referenceKey`, so add it to the list
+whenever you intend to join lanes.
 
 The two lanes write the same reference differently. Measured on application
 12849948, 2026-09-04:
@@ -661,7 +719,8 @@ code (`A1`, `B2`, `E`, `S`) dropped, series markers such as `RE` kept. It is
 derived from `publicationNumber` then `citedDocumentIdentifier` on the enriched
 lane, and from `parsedReferenceIdentifier` then `referenceIdentifier` on the OA
 lane, and it is computed before the tier's field filter runs, so an
-ultra-minimal custom `fields` list still gets the best available key.
+ultra-minimal custom `fields` list that names `referenceKey` still gets the
+best available key.
 
 **`referenceKey` is `null` when the row's identifier does not reduce to a
 document number** (non-patent literature, free text, a blank identifier). On
@@ -1073,7 +1132,7 @@ All minimal fields plus:
 | Field used | Reality |
 |---|---|
 | `examinerNameText` | **In neither lane.** Go through PFW for examiner analysis. |
-| `firstApplicantName` / `firstApplicantNameText` | Not an enriched field. The `applicant_name` convenience param builds this query and **silently returns 0 results** — do not rely on it. |
+| `firstApplicantName` / `firstApplicantNameText` | Not an enriched field. There is no `applicant_name` convenience parameter on the search tools (removed 2026-09-28 — it built a query against this field and could only ever return 0 results); resolve applicants through PFW instead. |
 | `citingPassageText` | Enriched field is `passageLocationText`. |
 | `citationIdentifier` | Enriched field is `id`. |
 | `officeActionDate` on the OA lane | OA has no date field at all. |
@@ -1110,6 +1169,11 @@ Citations_search_citations_minimal(
 )
 # Token cost: ~20KB (vs ~800KB with preset minimal)
 ```
+
+Each row carries the fields you named, plus `id` and one compact `cite_as`
+link, and nothing else. Name `referenceKey` in the list whenever you intend to
+union the two lanes, and `application_cite_as` if you want the application's
+Patent Center link.
 
 ### Solr/Lucene Query Syntax
 
@@ -1334,12 +1398,12 @@ fields_info = Citations_get_available_fields()      # enriched v3 (22 fields)
 oa_fields   = Citations_get_oa_citation_fields()    # OA v2 (16 fields)
 ```
 
-### Silent Zero Results
+### Filtering by Applicant Name
 
-**Error**: `numFound: 0` with no error raised
-
-**Cause**: `applicant_name` builds a `firstApplicantName:` query against a field
-that does not exist on the enriched API — it returns zero rather than 400.
+**Cause**: `firstApplicantName` is not a field on the enriched API (see the
+table above), so there is no `applicant_name` search parameter on this MCP
+(removed 2026-09-28 — it used to build a query against that field and could
+only ever return 0 results with no error raised).
 
 **Solution**: Do not filter by applicant on this MCP. Resolve the applicant's
 applications through PFW, then query citations by application number.

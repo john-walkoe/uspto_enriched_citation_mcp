@@ -139,6 +139,26 @@ def get_safe_error_message(
     return default_message
 
 
+def retry_after_header_seconds(response) -> Optional[float]:
+    """The response's Retry-After header as seconds, or None.
+
+    USPTO sends the delta-seconds form; the HTTP-date form is not parsed
+    (None, so the caller applies its own floor). Shared by the 429 branch of
+    raise_http_exception and by BaseCitationClient._send, which notes the
+    same value on the shared key cooldown.
+    """
+    if response is None:
+        return None
+    raw = response.headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds > 0 else None
+
+
 def raise_http_exception(response, error_message: Optional[str] = None) -> None:
     """
     Raise appropriate exception for HTTP status code.
@@ -154,6 +174,7 @@ def raise_http_exception(response, error_message: Optional[str] = None) -> None:
         Appropriate USPTOCitationError subclass based on status code
     """
     from .exceptions import (
+        RATE_LIMIT_SOURCE_UPSTREAM,
         AuthenticationError,
         AuthorizationError,
         NotFoundError,
@@ -194,13 +215,15 @@ def raise_http_exception(response, error_message: Optional[str] = None) -> None:
     if status_code in status_map:
         exc_class, default_msg = status_map[status_code]
 
-        # Special handling for rate limit retry-after header
+        # A 429 from USPTO is marked UPSTREAM so util/retry.py applies the
+        # one-retry rule to it and not the local bucket's behaviour (ODP
+        # rate-limit wave, plan 4a). Retry-After rides along when given.
         if status_code == 429:
-            retry_after = response.headers.get("Retry-After")
-            retry_seconds = (
-                int(retry_after) if retry_after and retry_after.isdigit() else None
+            raise exc_class(
+                error_message or default_msg,
+                retry_after=retry_after_header_seconds(response),
+                source=RATE_LIMIT_SOURCE_UPSTREAM,
             )
-            raise exc_class(error_message or default_msg, retry_after=retry_seconds)
         else:
             raise exc_class(error_message or default_msg)
 

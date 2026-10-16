@@ -9,6 +9,13 @@ fact in both lanes. Separately, enriched rows can carry an empty
 `publicationNumber` with a null, empty or ABSENT `citedDocumentIdentifier`
 (2 of 5 on 11752072, 4 of 8 on 12849948, 4 of 26 on 18407147) and nothing on
 the envelope counted them.
+
+A second defect, fixed 2026-09-12: `publicationNumber` (bare digits) outranked
+`citedDocumentIdentifier` ("DE 10 2004 012345 A1"), so the country code was
+never seen, a German reference keyed as `102004012345`, and
+util/citation_links then built a Google Patents link to the US document with
+those digits. A key carrying a country prefix now outranks a bare-digit one on
+both lanes; a US key is unchanged, because the join depends on it.
 """
 
 import json
@@ -27,11 +34,13 @@ from uspto_enriched_citation_mcp.tools.search import (
     search_citations_balanced,
     search_citations_minimal,
 )
+from uspto_enriched_citation_mcp.util.citation_links import CITE_AS_FIELD
 from uspto_enriched_citation_mcp.util.reference_key import (
     ENRICHED_REFERENCE_SOURCE_FIELDS,
     OA_REFERENCE_SOURCE_FIELDS,
     REFERENCE_KEY_FIELD,
     count_rows_without_reference,
+    foreign_country_prefix,
     normalize_reference_key,
     reference_key_for_doc,
 )
@@ -126,6 +135,255 @@ class TestReferenceKeyForDoc:
     def test_count_rows_without_reference(self):
         assert count_rows_without_reference(["1", None, "2", None]) == 2
         assert count_rows_without_reference([]) == 0
+
+
+class TestForeignReferences:
+    """The country prefix has to survive, and has to outrank bare digits.
+
+    Written forms are the ones USPTO puts in `citedDocumentIdentifier`; the
+    keys are the shapes Google Patents was probed with on 2026-09-12 (see
+    util/citation_links).
+    """
+
+    @pytest.mark.parametrize(
+        "written,key",
+        [
+            ("DE 10 2004 012345 A1", "DE102004012345"),
+            ("JP 2001-123456 A", "JP2001123456"),
+            ("WO 2010/012345 A1", "WO2010012345"),
+            ("EP 1234567 B1", "EP1234567"),
+            ("KR 2010-0012345 A", "KR20100012345"),
+            ("CN 101234567 A", "CN101234567"),
+        ],
+    )
+    def test_a_written_foreign_identifier_keeps_its_country_prefix(self, written, key):
+        assert normalize_reference_key(written) == key
+
+    @pytest.mark.parametrize(
+        "written,digits,key",
+        [
+            ("DE 10 2004 012345 A1", "102004012345", "DE102004012345"),
+            ("JP 2001-123456 A", "2001123456", "JP2001123456"),
+            ("WO 2010/012345 A1", "2010012345", "WO2010012345"),
+            ("EP 1234567 B1", "1234567", "EP1234567"),
+            ("KR 2010-0012345 A", "20100012345", "KR20100012345"),
+            ("CN 101234567 A", "101234567", "CN101234567"),
+        ],
+    )
+    def test_the_prefix_outranks_a_digits_only_publication_number(
+        self, written, digits, key
+    ):
+        """THE DEFECT. `publicationNumber` is first in the source order and
+        carries no country code, so the digits used to win and the reference
+        keyed as a US document."""
+        doc = {"publicationNumber": digits, "citedDocumentIdentifier": written}
+        assert reference_key_for_doc(doc, ENRICHED_REFERENCE_SOURCE_FIELDS) == key
+
+    def test_a_us_row_still_takes_the_publication_number_first(self):
+        """The cross-lane join depends on this being byte-identical."""
+        doc = {
+            "publicationNumber": "20060075466",
+            "citedDocumentIdentifier": "US 2006/0075466 A1",
+        }
+        assert (
+            reference_key_for_doc(doc, ENRICHED_REFERENCE_SOURCE_FIELDS)
+            == "20060075466"
+        )
+
+    def test_a_null_cited_identifier_leaves_the_digits_a_us_key(self):
+        """Current behaviour, unchanged: with nothing to read a country code
+        off, digits are a US document."""
+        doc = {"publicationNumber": "20060075466", "citedDocumentIdentifier": None}
+        assert (
+            reference_key_for_doc(doc, ENRICHED_REFERENCE_SOURCE_FIELDS)
+            == "20060075466"
+        )
+
+    def test_the_oa_lane_reads_the_prefix_off_the_raw_892_string(self):
+        """Same rule on the OA lane, so both lanes key one foreign document
+        the same way."""
+        doc = {
+            "parsedReferenceIdentifier": "102004012345",
+            "referenceIdentifier": "DE 102004012345 A1 Mueller",
+        }
+        assert (
+            reference_key_for_doc(doc, OA_REFERENCE_SOURCE_FIELDS) == "DE102004012345"
+        )
+
+    @pytest.mark.parametrize(
+        "raw,key",
+        [
+            # 5 of the 18 rows recorded on app 16816197 are written this way:
+            # the inventor name FIRST, the reference at the end.
+            ("GOTO K WO-2010098305-A1", "WO2010098305"),
+            ("ALHALAWANI A M A D F WO-2018014120-A1", "WO2018014120"),
+            ("Mueller DE 102004012345 A1", "DE102004012345"),
+            ("Tanaka JP 2001-123456 A", "JP2001123456"),
+        ],
+    )
+    def test_a_country_coded_reference_is_read_off_the_end_of_a_raw_string(
+        self, raw, key
+    ):
+        assert normalize_reference_key(raw) == key
+
+    def test_a_trailing_us_number_is_still_not_read_off_the_end(self):
+        """Only a country-coded trailing span is trusted, so the US path is
+        byte-identical to before: the raw string yields nothing and the lane's
+        parsed field supplies the key."""
+        raw = "Karlinsey; Robert L. US 20140248322 A1"
+        assert normalize_reference_key(raw) is None
+        doc = {
+            "parsedReferenceIdentifier": "20140248322",
+            "referenceIdentifier": raw,
+        }
+        assert reference_key_for_doc(doc, OA_REFERENCE_SOURCE_FIELDS) == "20140248322"
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "Serial No. 12345678",
+            "See Application No. 12345678",
+            "Kokai No. 2001-123456",
+        ],
+    )
+    def test_an_abbreviation_is_not_a_country_code(self, raw):
+        """`No.` would key as Norwegian once a trailing span is read, and a
+        Japanese Kokai number would be linked to Norway."""
+        assert normalize_reference_key(raw) is None
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "Smith et al., 'Foo Bar', Journal of Things, 2006, pp. 123-145.",
+            "Moeller, Proc. SPIE vol. 4034, pp. 12-19, 2000",
+            "Anderson, 'Optical switching', IEEE J. 2003, pp. 1-9",
+        ],
+    )
+    def test_the_end_of_a_journal_citation_is_not_a_document(self, raw):
+        """What the country-code condition on the trailing span buys: these
+        end in `pp. 123-145` and `12-19, 2000`, which normalise to `PP123145`
+        and `12192000` and would be linked as US documents."""
+        assert normalize_reference_key(raw) is None
+
+    def test_the_two_lanes_agree_on_one_foreign_document(self):
+        enriched = {
+            "publicationNumber": "102004012345",
+            "citedDocumentIdentifier": "DE 10 2004 012345 A1",
+        }
+        oa = {
+            "parsedReferenceIdentifier": "102004012345",
+            "referenceIdentifier": "DE 102004012345 A1 Mueller",
+        }
+        assert reference_key_for_doc(
+            enriched, ENRICHED_REFERENCE_SOURCE_FIELDS
+        ) == reference_key_for_doc(oa, OA_REFERENCE_SOURCE_FIELDS)
+
+    def test_series_markers_are_not_country_codes(self):
+        """`RE` and `PP` lead a normalised key with two letters and are the
+        one shape that must not be read as a country."""
+        assert foreign_country_prefix("RE38124") is None
+        assert foreign_country_prefix("PP12345") is None
+        assert foreign_country_prefix("D456789") is None
+        assert foreign_country_prefix("20060075466") is None
+        assert foreign_country_prefix(None) is None
+        assert foreign_country_prefix("DE1234") is None  # under the digit floor
+        assert foreign_country_prefix("DE102004012345") == "DE"
+
+    def test_non_patent_literature_is_still_unjoinable(self):
+        """The `_KEY_SHAPE` floor is untouched: a country-looking word in
+        prose is not a document number."""
+        doc = {
+            "publicationNumber": "",
+            "citedDocumentIdentifier": (
+                "DE Patentschrift, in: Mueller, Optik 2004, pp. 12-19"
+            ),
+        }
+        assert reference_key_for_doc(doc, ENRICHED_REFERENCE_SOURCE_FIELDS) is None
+
+
+def _foreign_enriched_payload():
+    """Two foreign rows and one US row, in the enriched shape: bare digits in
+    `publicationNumber`, the written identifier in
+    `citedDocumentIdentifier`."""
+    return {
+        "response": {
+            "numFound": 3,
+            "start": 0,
+            "docs": [
+                {
+                    "id": "a" * 32,
+                    "patentApplicationNumber": "12849948",
+                    "publicationNumber": "102004012345",
+                    "citedDocumentIdentifier": "DE 10 2004 012345 A1",
+                    "inventorNameText": "MUELLER",
+                },
+                {
+                    "id": "b" * 32,
+                    "patentApplicationNumber": "12849948",
+                    "publicationNumber": "2001123456",
+                    "citedDocumentIdentifier": "JP 2001-123456 A",
+                },
+                {
+                    "id": "c" * 32,
+                    "patentApplicationNumber": "12849948",
+                    "publicationNumber": "20060075466",
+                    "citedDocumentIdentifier": "US 2006/0075466 A1",
+                },
+            ],
+        }
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool", [search_citations_minimal, search_citations_balanced]
+)
+async def test_enriched_rows_carry_the_foreign_key_and_a_country_link(
+    mock_runtime, tool
+):
+    """End to end: the served key keeps the prefix and the served link names
+    the foreign document, while the US row is unchanged."""
+    mock_runtime.api_client.search_records.return_value = _foreign_enriched_payload()
+
+    result = await tool(criteria="patentApplicationNumber:12849948")
+
+    docs = result["response"]["docs"]
+    assert [doc[REFERENCE_KEY_FIELD] for doc in docs] == [
+        "DE102004012345",
+        "JP2001123456",
+        "20060075466",
+    ]
+    assert "patents.google.com/patent/DE102004012345" in docs[0][CITE_AS_FIELD]
+    assert "patents.google.com/patent/JP2001123456" in docs[1][CITE_AS_FIELD]
+    assert "patents.google.com/patent/US20060075466" in docs[2][CITE_AS_FIELD]
+    assert result["rows_without_reference_identifier"] == 0
+
+
+@pytest.mark.asyncio
+async def test_oa_rows_carry_the_foreign_key_from_the_raw_892_string(mock_runtime):
+    mock_runtime.oa_client.search_records.return_value = {
+        "response": {
+            "numFound": 1,
+            "start": 0,
+            "docs": [
+                {
+                    "id": "e" * 32,
+                    "patentApplicationNumber": "12849948",
+                    "referenceIdentifier": "DE 102004012345 A1 Mueller",
+                    "parsedReferenceIdentifier": "102004012345",
+                    "createDateTime": "2025-03-11T00:00:00Z",
+                }
+            ],
+        }
+    }
+
+    result = await search_oa_citations_minimal(application_number="12849948")
+
+    doc = result["response"]["docs"][0]
+    assert doc[REFERENCE_KEY_FIELD] == "DE102004012345"
+    assert doc[CITE_AS_FIELD] == (
+        "<https://patents.google.com/patent/DE102004012345>"
+    )
 
 
 def _enriched_payload():
@@ -229,18 +487,35 @@ async def test_enriched_count_is_present_when_zero(mock_runtime):
 
 
 @pytest.mark.asyncio
-async def test_enriched_ultra_minimal_still_gets_the_best_key(mock_runtime):
+async def test_enriched_ultra_minimal_gets_the_best_key_when_it_names_it(mock_runtime):
     """A custom `fields` list can drop both source fields. The key is computed
-    from the UNFILTERED upstream doc, so it survives anyway."""
+    from the UNFILTERED upstream doc, so a list that names `referenceKey` still
+    gets the best one."""
+    mock_runtime.api_client.search_records.return_value = _enriched_payload()
+
+    result = await search_citations_minimal(
+        criteria="techCenter:2100",
+        fields=["patentApplicationNumber", REFERENCE_KEY_FIELD],
+    )
+
+    first = result["response"]["docs"][0]
+    assert set(first) == {"patentApplicationNumber", "id", REFERENCE_KEY_FIELD, "cite_as"}
+    assert first[REFERENCE_KEY_FIELD] == "20060075466"
+    assert result["rows_without_reference_identifier"] == 2
+
+
+@pytest.mark.asyncio
+async def test_enriched_ultra_minimal_without_the_key_named_does_not_carry_it(mock_runtime):
+    """A two-field request came back with six fields per row until 2026-09-11.
+    The key is only served on a custom list that asks for it; the envelope
+    count still reports the rows that could not be joined."""
     mock_runtime.api_client.search_records.return_value = _enriched_payload()
 
     result = await search_citations_minimal(
         criteria="techCenter:2100", fields=["patentApplicationNumber"]
     )
 
-    first = result["response"]["docs"][0]
-    assert set(first) <= {"patentApplicationNumber", "id", REFERENCE_KEY_FIELD}
-    assert first[REFERENCE_KEY_FIELD] == "20060075466"
+    assert all(REFERENCE_KEY_FIELD not in doc for doc in result["response"]["docs"])
     assert result["rows_without_reference_identifier"] == 2
 
 

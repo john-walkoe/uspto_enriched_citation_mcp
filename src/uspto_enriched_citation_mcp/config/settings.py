@@ -194,6 +194,20 @@ class Settings(BaseSettings):
         default="data/mcp_auth.db",  # SQLite: users + OAuth AS state
         validation_alias="CITATIONS_AUTH_DB_PATH",
     )
+    # Comma-separated owner emails (CITATIONS_OWNER_EMAILS). When set, only
+    # these accounts can hold citations:admin, and only they can grant the
+    # admin role. Empty keeps the pre-2026-10 behavior (any roster admin is
+    # admin here) and logs a startup warning in OAuth mode.
+    auth_owner_emails: str = Field(
+        default="", validation_alias="CITATIONS_OWNER_EMAILS"
+    )
+
+    @property
+    def owner_emails(self) -> frozenset:
+        """CITATIONS_OWNER_EMAILS parsed (lowercased); empty when unset."""
+        return frozenset(
+            e.strip().lower() for e in self.auth_owner_emails.split(",") if e.strip()
+        )
 
     @field_validator("uspto_ecitation_api_key", mode="after")
     @classmethod

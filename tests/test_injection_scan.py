@@ -82,6 +82,47 @@ def test_scan_hits_scans_only_named_text_keys():
     assert scan_hits([{"id": "X", "someOtherField": CANNED}]) is None
 
 
+# --------------------------------------- CR-09 (review 2026-09-28): list values
+
+
+def test_scan_hits_walks_a_list_of_strings():
+    out = scan_hits(
+        [{"id": "X", "passageLocationText": [CLEAN_PASSAGE, CANNED]}]
+    )
+    assert out is not None
+    assert "instruction_override" in out["flagged"][0]["kinds"]
+
+
+def test_scan_hits_walks_a_list_of_dicts():
+    """The shape passageLocationText and relatedClaimNumberText can carry: a
+    bag of dicts (per-locator/per-claim records), not a bag of bare strings."""
+    out = scan_hits(
+        [
+            {
+                "id": "X",
+                "passageLocationText": [
+                    {"passageLocationText": "col. 3, line 12"},
+                    {"passageLocationText": CANNED},
+                ],
+            }
+        ]
+    )
+    assert out is not None
+    assert "instruction_override" in out["flagged"][0]["kinds"]
+
+
+def test_scan_hits_clean_list_stays_clean():
+    assert scan_hits(
+        [{"id": "X", "passageLocationText": [CLEAN_PASSAGE, "col. 5, line 3"]}]
+    ) is None
+
+
+def test_scan_hits_ignores_non_string_non_list_values():
+    # Numbers, None: no crash, no false flag.
+    assert scan_hits([{"id": "X", "passageLocationText": 42}]) is None
+    assert scan_hits([{"id": "X", "passageLocationText": None}]) is None
+
+
 # ---------------------------------------------------------------------------
 # Tool wiring tests (envelope-level attachment)
 # ---------------------------------------------------------------------------

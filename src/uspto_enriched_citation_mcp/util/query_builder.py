@@ -26,7 +26,6 @@ class QueryParameters:
     """
 
     criteria: str = ""
-    applicant_name: Optional[str] = None
     application_number: Optional[str] = None
     patent_number: Optional[str] = None
     tech_center: Optional[str] = None
@@ -116,6 +115,21 @@ def validate_date_range(
 # colon, space, parenthesis, bracket, wildcard or a bare AND/OR/NOT, so the
 # assembled clause cannot carry Lucene syntax the whitelist never saw.
 DIGITS_PARAM = r"^[0-9]{1,20}$"
+
+
+def normalize_application_number(value: Optional[str]) -> Optional[str]:
+    """The printed serial form ("11/483,825") as the digits the index holds.
+
+    Only the separators of that form (slash, comma, spaces) are removed, and
+    only when what remains is all digits; anything else is returned unchanged
+    so DIGITS_PARAM still rejects it. PFW and PTAB accept the printed form, and
+    skills pass it through; this lane 400'd on it (skills tester round 2,
+    2026-10-07).
+    """
+    if not value:
+        return value
+    stripped = "".join(ch for ch in str(value) if ch not in "/, ")
+    return stripped if stripped.isdigit() else value
 ALNUM_PARAM = r"^[A-Za-z0-9]{1,15}$"
 CODE_PARAM = r"^[A-Za-z0-9_\-]{1,50}$"
 
@@ -126,8 +140,8 @@ def validate_string_param(
     """Validate and clean string parameter.
 
     `pattern`, when given, is a full-match structural shape for this
-    parameter. Omit it only for genuinely free text (an applicant name),
-    which is emitted as a quoted phrase and so cannot carry syntax out.
+    parameter. Omit it only for genuinely free text emitted as a quoted
+    phrase (`quoted=True`), which cannot carry syntax out that way.
     """
     clean = param.strip() if param else None
     if not clean:
@@ -227,13 +241,12 @@ def build_query(params: QueryParameters) -> QueryBuildResult:
         parts.append(f"({params.criteria})")
         params_used["base_criteria"] = params.criteria
 
-    _append_simple_clause(
-        parts, params_used, params.applicant_name, 200,
-        QueryFieldNames.FIRST_APPLICANT_NAME, "applicant_name", quoted=True,
-    )
+    # applicant_name removed (MCP-2 / CQ-R-1, review 2026-09-28): it built a
+    # query against firstApplicantName, a field that does not exist on this
+    # API — see api/field_constants.py.
 
     _append_simple_clause(
-        parts, params_used, params.application_number, 20,
+        parts, params_used, normalize_application_number(params.application_number), 20,
         QueryFieldNames.APPLICATION_NUMBER, "application_number",
         pattern=DIGITS_PARAM,
     )

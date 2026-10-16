@@ -158,7 +158,12 @@ def run_server():
                 "CITATIONS_AUTH_MODE=oauth: x-api-key guard disabled; the MCP "
                 "surface is protected by bearer tokens."
             )
-            app = SecurityHeadersMiddleware(InboundRateLimitMiddleware(inner))
+            # CR-06 (review 2026-09-28): the auth provider lets the inbound
+            # limiter verify a presented bearer before trusting it as an
+            # identity, instead of keying on the raw (unverified) token text.
+            app = SecurityHeadersMiddleware(
+                InboundRateLimitMiddleware(inner, auth_provider=_AUTH_PROVIDER)
+            )
         else:
             app = SecurityHeadersMiddleware(
                 APIKeyAuthMiddleware(InboundRateLimitMiddleware(inner))

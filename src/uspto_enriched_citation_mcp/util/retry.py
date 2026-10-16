@@ -3,6 +3,27 @@ Retry logic with exponential backoff for transient failure handling.
 
 Provides decorators and utilities for retrying failed operations with
 intelligent backoff strategies.
+
+Rate limits are the exception to the backoff (ODP rate-limit wave,
+2026-10-11, plan 2c / 4a): a RateLimitError is handled by WHERE it came from
+(shared/exceptions.py RATE_LIMIT_SOURCE_*):
+
+  upstream        USPTO answered 429. Wait max(5 s, Retry-After) and send ONCE
+                  more, only when that wait is <= 10 s; otherwise raise at
+                  once with details["retry_after"] = max(5, Retry-After).
+                  Never a second retry, whatever max_attempts says. 5 s is
+                  USPTO's own published floor for a retry after a 429.
+  shared_limiter  the cross-process limiter gave no slot inside its ceiling
+                  (SharedLimiterTimeoutError, mapped by the client). Raised
+                  at once: a retry would only queue behind the same backlog.
+  local_bucket    this process's own token bucket. Today's behaviour: sleep
+                  the bucket's own interval (or the backoff), up to
+                  max_attempts.
+
+The builtin TimeoutError is NOT in the default retryable set: the shared
+limiter's refusal is a TimeoutError subclass and must not be retried, and
+no transport path raises a bare one (httpx timeouts are mapped to
+APITimeoutError, which stays retryable).
 """
 
 import asyncio
@@ -13,6 +34,36 @@ from functools import wraps
 from .logging import get_logger
 
 logger = get_logger(__name__)
+
+# The 429 rule's two numbers. Floor: USPTO says no retry within 5 s
+# of a 429. Absorb ceiling: a single wait up to 10 s is held inside the tool
+# call (no shared slot is held while sleeping); anything longer is handed back
+# to the caller as the rate-limit envelope.
+RATE_LIMIT_FLOOR_SECONDS = 5.0
+RATE_LIMIT_ABSORB_CEILING_SECONDS = 10.0
+
+
+def upstream_retry_after(retry_after: Optional[float]) -> float:
+    """max(5 s, Retry-After): the wait an upstream 429 calls for."""
+    try:
+        value = float(retry_after) if retry_after is not None else 0.0
+    except (TypeError, ValueError):
+        value = 0.0
+    return max(RATE_LIMIT_FLOOR_SECONDS, value)
+
+
+def planned_429_wait(
+    retry_after: Optional[float], already_retried: bool
+) -> Optional[float]:
+    """The one wait to absorb before the single retry of an upstream 429, or
+    None when the caller must answer with the envelope instead: a second 429
+    in the same call, or a wait above the absorb ceiling."""
+    if already_retried:
+        return None
+    wait = upstream_retry_after(retry_after)
+    if wait > RATE_LIMIT_ABSORB_CEILING_SECONDS:
+        return None
+    return wait
 
 
 def calculate_backoff(
@@ -69,6 +120,67 @@ def retry_after_seconds(exception: Exception) -> Optional[float]:
     return seconds if seconds > 0 else None
 
 
+def _is_rate_limit_from(exception: Exception, source: str) -> bool:
+    """True when `exception` is a RateLimitError raised by `source`."""
+    return getattr(exception, "status_code", None) == 429 and (
+        getattr(exception, "source", None) == source
+    )
+
+
+def _retry_delay(
+    exception: Exception,
+    attempt: int,
+    base_delay: float,
+    max_delay: float,
+    exponential_base: float,
+    jitter: bool,
+) -> float:
+    """Honor the exception's own Retry-After when it carries one (a
+    local-bucket rejection says when its next token is due); our backoff is
+    only a guess about when the upstream will be ready."""
+    own_delay = retry_after_seconds(exception)
+    if own_delay is not None:
+        return min(own_delay, max_delay)
+    return calculate_backoff(
+        attempt=attempt,
+        base_delay=base_delay,
+        max_delay=max_delay,
+        exponential_base=exponential_base,
+        jitter=jitter,
+    )
+
+
+async def _absorb_rate_limit(
+    exception: Exception, already_retried: bool, is_last_attempt: bool, name: str
+) -> bool:
+    """Apply the shared-limiter and upstream-429 rules to `exception`.
+
+    Returns True after sleeping the one absorbed wait (the caller retries
+    once more), False when the exception is not one of those two sources.
+    Raises `exception` itself when the envelope is due: a shared-limiter
+    refusal, a second 429, a Retry-After above the absorb ceiling, or no
+    attempts left; the upstream envelope then carries
+    details["retry_after"] = max(5, Retry-After).
+    """
+    if _is_rate_limit_from(exception, "shared_limiter"):
+        logger.warning(f"Shared limiter refusal in {name}, answering at once")
+        raise exception
+    if not _is_rate_limit_from(exception, "upstream"):
+        return False
+    header = retry_after_seconds(exception)
+    wait = planned_429_wait(header, already_retried)
+    if wait is None or is_last_attempt:
+        exception.details["retry_after"] = upstream_retry_after(header)
+        logger.error(
+            f"Upstream 429 in {name}, answering with the envelope "
+            f"(retry_after={exception.details['retry_after']:.0f}s)"
+        )
+        raise exception
+    logger.warning(f"Upstream 429 in {name}, one retry in {wait:.0f}s")
+    await asyncio.sleep(wait)
+    return True
+
+
 def is_retryable_error(
     exception: Exception, retryable_exceptions: Tuple[Type[Exception], ...]
 ) -> bool:
@@ -121,19 +233,20 @@ def retry_async(
             RateLimitError,
         )
 
+        # The builtin TimeoutError is deliberately absent (module docstring).
         retryable_exceptions = (
             APIConnectionError,
             APITimeoutError,
             APIUnavailableError,
             RateLimitError,
             ConnectionError,
-            TimeoutError,
         )
 
     def decorator(func: Callable):
         @wraps(func)
         async def wrapper(*args, **kwargs):
             last_exception = None
+            retried_429 = False
 
             for attempt in range(max_attempts):
                 try:
@@ -150,6 +263,17 @@ def retry_async(
                         )
                         raise
 
+                    # The rate-limit sources with their own rule (module
+                    # docstring): raises when the envelope is due, sleeps and
+                    # returns True for the one upstream retry, False when `e`
+                    # is not one of them (a local-bucket rejection falls
+                    # through to the backoff below, as before).
+                    if await _absorb_rate_limit(
+                        e, retried_429, attempt >= max_attempts - 1, func.__name__
+                    ):
+                        retried_429 = True
+                        continue
+
                     # Check if we have attempts left
                     if attempt >= max_attempts - 1:
                         # Last attempt, raise the error
@@ -159,19 +283,9 @@ def retry_async(
                         )
                         raise
 
-                    # Honor the upstream's own Retry-After when it gave one;
-                    # our backoff is only a guess about when it will be ready.
-                    upstream_delay = retry_after_seconds(e)
-                    if upstream_delay is not None:
-                        delay = min(upstream_delay, max_delay)
-                    else:
-                        delay = calculate_backoff(
-                            attempt=attempt,
-                            base_delay=base_delay,
-                            max_delay=max_delay,
-                            exponential_base=exponential_base,
-                            jitter=jitter,
-                        )
+                    delay = _retry_delay(
+                        e, attempt, base_delay, max_delay, exponential_base, jitter
+                    )
 
                     logger.info(
                         f"Retrying {func.__name__} after {type(e).__name__} "

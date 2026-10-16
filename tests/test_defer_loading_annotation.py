@@ -71,6 +71,37 @@ def test_custom_annotation_survives_version_sieve(version):
     assert sieved["tools"][0]["annotations"]["readOnlyHint"] is True
 
 
+def test_shim_covers_every_shipped_surface_module():
+    """Every per-protocol-version surface package mcp-types ships is patched.
+
+    Enumerated from the installed package, independently of the SERVER_RESULTS
+    map the shim discovers from, so a new `_vYYYY_MM_DD` surface in a future
+    mcp-types fails here rather than silently stripping `defer_loading` on
+    that protocol era.
+    """
+    import importlib
+    import pkgutil
+    import re
+
+    import mcp_types
+
+    from uspto_enriched_citation_mcp.fastmcp_compat import _annotation_modules
+
+    shipped = {
+        f"mcp_types.{m.name}"
+        for m in pkgutil.iter_modules(mcp_types.__path__)
+        if re.fullmatch(r"_v\d{4}_\d{2}_\d{2}", m.name)
+    }
+    assert shipped, "found no per-version surface packages in mcp_types"
+    covered = {m.__name__ for m in _annotation_modules()}
+    assert (
+        shipped <= covered
+    ), f"surface modules the shim does not patch: {sorted(shipped - covered)}"
+    for name in sorted(shipped):
+        annotations_model = importlib.import_module(name).ToolAnnotations
+        assert annotations_model.model_config.get("extra") == "allow", name
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("version", _protocol_versions())
 async def test_registered_tools_keep_their_defer_flags(version):

@@ -1,0 +1,188 @@
+{
+ "response": {
+  "start": 0,
+  "numFound": 18,
+  "docs": [
+   {
+    "referenceIdentifier": "GOTO K WO-2010098305-A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "2010098305",
+    "examinerCitedReferenceIndicator": false
+   },
+   {
+    "referenceIdentifier": " Karlinsey; Robert L. US 20140248322 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20140248322",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "Primus, Carolyn M. US 20030159618 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20030159618",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "JIANG Z WO-2018164436-A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "2018164436",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "Primus; Carolyn M. US 20160038380 A1 ",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20160038380",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "Primus; Carolyn M. US 20080085948 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20080085948",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "Primus, Carolyn M. US 20030159618 A1 ",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20030159618",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "GOTO K WO-2010098305-A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "2010098305",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": " GOTO K WO-2010098305-A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "2010098305",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "Primus; Carolyn M. US 20160038380 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20160038380",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "ALHALAWANI A M A D F WO-2018014120-A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "2018014120",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": " Ogliari; Fabricio Aulo US 20130023601 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20130023601",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "BAKRY; Ahmed Samir Ibrahim US 20190060523 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20190060523",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "BAKRY; Ahmed Samir Ibrahim US 20190060523 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20190060523",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": " Constantz; Brent R. US 6002065 A",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "6002065",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": " Primus; Carolyn M. US 20080085948 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20080085948",
+    "examinerCitedReferenceIndicator": true
+   },
+   {
+    "referenceIdentifier": "BAKRY; Ahmed Samir Ibrahim US 20190060523 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "rejected",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "20190060523",
+    "examinerCitedReferenceIndicator": false
+   },
+   {
+    "referenceIdentifier": "OH; Myung-Hwan US 20200009021 A1",
+    "patentApplicationNumber": "16816197",
+    "actionTypeCategory": "",
+    "groupArtUnitNumber": "1767",
+    "createDateTime": "2025-07-04T05:37:35",
+    "techCenter": "1700",
+    "parsedReferenceIdentifier": "",
+    "examinerCitedReferenceIndicator": true
+   }
+  ]
+ }
+}

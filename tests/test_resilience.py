@@ -305,6 +305,55 @@ class TestCircuitBreaker:
         # Should be closed or transitioning to closed
         assert breaker.state in [CircuitState.CLOSED, CircuitState.HALF_OPEN]
 
+    @pytest.mark.asyncio
+    async def test_half_open_admits_only_one_concurrent_trial(self):
+        """CR-02 (review 2026-09-28): once the recovery timeout elapses,
+        HALF_OPEN must admit exactly one trial call at a time; a concurrent
+        caller fails fast rather than piling onto a probe the recovery
+        window assumes is a single request — get_citation_statistics'
+        six-call fan-out otherwise hits a burst-1 recovery window all at
+        once."""
+        breaker = CircuitBreaker(
+            failure_threshold=1, recovery_timeout=0.05, success_threshold=1
+        )
+
+        async def failing_call():
+            raise ConnectionError("Test failure")
+
+        with pytest.raises(ConnectionError):
+            await breaker.call(failing_call)
+        assert breaker.state == CircuitState.OPEN
+
+        await asyncio.sleep(0.1)
+
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_trial():
+            started.set()
+            await release.wait()
+            return "ok"
+
+        trial_task = asyncio.create_task(breaker.call(slow_trial))
+        await started.wait()
+
+        async def quick_call():
+            return "should not run while the trial is in flight"
+
+        # A second caller arriving while the trial is still in flight must
+        # fail fast, not queue behind it or be admitted alongside it.
+        with pytest.raises(CircuitBreakerError):
+            await breaker.call(quick_call)
+
+        release.set()
+        assert await trial_task == "ok"
+        # The trial succeeded (success_threshold=1), so a fresh call is a
+        # normal CLOSED pass-through now, not a second trial.
+        assert breaker.state == CircuitState.CLOSED
+        assert await breaker.call(quick_call) == (
+            "should not run while the trial is in flight"
+        )
+
     def test_circuit_breaker_decorator(self):
         """Test 3.7: Circuit breaker works as decorator."""
         test_breaker = circuit_breaker(failure_threshold=2, recovery_timeout=60.0)

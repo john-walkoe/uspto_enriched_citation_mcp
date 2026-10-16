@@ -66,6 +66,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 #error { background: #fde8e8; border: 1px solid #f5c6cb; color: #721c24; padding: 10px 14px; margin: 10px 14px; border-radius: 4px; }
 .note { background: #fff9e6; border: 1px solid #ffe08a; border-radius: 4px; padding: 7px 12px; margin-bottom: 8px; font-size: 11px; color: #6b5000; }
 .login-note { background: #fff9e6; border-bottom: 1px solid #ffe08a; padding: 5px 14px; font-size: 11px; color: #6b5000; }
+.pc-note { background: #f4f5f7; border-bottom: 1px solid #e3e5e9; padding: 5px 14px; font-size: 11px; color: #666; line-height: 1.5; }
 .no-match { text-align: center; padding: 24px; color: #888; display: none; }
 .no-match a { color: #5a8a3a; cursor: pointer; text-decoration: underline; }
 </style>
@@ -77,6 +78,7 @@ body { font-family: system-ui, -apple-system, sans-serif; font-size: 13px; backg
 </div>
 <div class="summary-bar" id="summary-bar" style="display:none"></div>
 <div class="login-note">Tip: <strong>Open citing application in Patent Center →</strong> opens the application that cited this reference (USPTO login required). <strong>View cited patent or application on Google Patents →</strong> opens the cited reference itself (no login needed).</div>
+<div class="pc-note">Patent Center shows an application only to a signed-in reader: without a free USPTO.gov account the link lands on its own front page rather than on the desired application. Google Patents needs no account.</div>
 <div class="filter-bar" id="filter-bar" style="display:none"></div>
 <div id="loading">Loading OA Citation results...</div>
 <div id="error" style="display:none"></div>

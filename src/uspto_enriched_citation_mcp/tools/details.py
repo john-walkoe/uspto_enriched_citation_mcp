@@ -6,6 +6,7 @@ from .. import runtime
 from ..api.enriched_client import _CITATION_ID_RE
 from ..shared.error_utils import format_error_response
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, scan_hits
+from ..util.citation_links import attach_citation_links_to_doc, citation_note
 from ..util.reference_key import (
     ENRICHED_REFERENCE_SOURCE_FIELDS,
     REFERENCE_KEY_FIELD,
@@ -82,6 +83,17 @@ async def get_citation_details(
     Use for deep analysis of strategically important citations.
     Full record with all fields and complete citing context.
 
+    CITATIONS ARE LINKS: the returned record carries `cite_as`, a ready-made markdown
+    link whose label names the cited reference ("Pavlin, US 2001/0056539") and whose
+    target is that reference on Google Patents, and `application_cite_as`, the same for
+    the application the office action belongs to on USPTO Patent Center. Paste the
+    record's `cite_as` when you name that reference in an answer, a table or a memo: a
+    bare number is not a citation here, because the reader cannot click through to the
+    public record. Both keys are null when no verified URL can be built for the record
+    (non-patent literature, or an identifier that does not reduce to a patent or
+    publication number). Report those by the identifier the record carries,
+    say no public record link was available, and never assemble a patent URL yourself.
+
     ⚠️ IMPORTANT: Returns citation METADATA only, NOT actual documents.
 
     2-STEP PFW MCP WORKFLOW:
@@ -130,6 +142,11 @@ async def _get_citation_details_body(
             citation_doc[REFERENCE_KEY_FIELD] = reference_key_for_doc(
                 citation_doc, ENRICHED_REFERENCE_SOURCE_FIELDS
             )
+            # The detail record is the one an answer most often quotes, so it
+            # carries the same ready-made links the search rows do.
+            attach_citation_links_to_doc(
+                citation_doc, citation_doc[REFERENCE_KEY_FIELD]
+            )
         if result and citation_doc.get("patentApplicationNumber"):
             app_number = citation_doc.get("patentApplicationNumber", "")
             oa_category = citation_doc.get("officeActionCategory", "")
@@ -148,6 +165,9 @@ async def _get_citation_details_body(
         # never modified).
         if result and "citation" in result:
             result["provenance_note"] = RETRIEVED_TEXT_NOTE
+            # Both labelled links ride on the one record, Patent Center
+            # included, so the sign-in rule rides with them.
+            result["citation_note"] = citation_note(application_links=True)
             injection = scan_hits([citation_doc])
             if injection:
                 result["injection_scan"] = injection

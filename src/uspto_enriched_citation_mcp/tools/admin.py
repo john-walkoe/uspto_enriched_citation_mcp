@@ -1,7 +1,14 @@
 """Registered-user management tool (citations:admin scope in OAuth mode).
 
 Registration-gated by CITATIONS_ENABLE_USER_MANAGEMENT (default off — matches
-the PFW/PTAB pattern / neo4j NEO4J_READ_ONLY approach)."""
+the PFW/PTAB pattern / neo4j NEO4J_READ_ONLY approach).
+
+Owner-only (2026-10-06): with CITATIONS_OWNER_EMAILS set, the provider
+withholds citations:admin from every non-owner token, so only an owner (or the
+operator's CITATIONS_AUTH_INTERNAL_ADMIN_TOKEN) reaches this tool at all. One
+rule is restated here at the action: only an owner EMAIL may grant the admin
+role. Under stdio there is no per-identity caller; the OS process boundary is
+the gate."""
 
 import os
 import re
@@ -34,6 +41,10 @@ _auth_provider = None
 # Basic shape check only (one "@", a dot in the domain, no whitespace) — the
 # authoritative identity comes from the IdP; this just rejects obvious typos.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+_VALID_ACTIONS = ("list", "add", "set_role", "activate", "deactivate", "delete")
+
+_OWNER_GRANT_ERROR = "only an owner of this deployment may grant the admin role"
 
 
 def _get_user_store():
@@ -84,6 +95,22 @@ def _audit_user_management(actor: str, action: str, target: str, role: str,
         logger.error("Admin audit write failed: %s", type(audit_error).__name__)
 
 
+def _caller_is_owner() -> bool:
+    """Is the caller an owner of this deployment?
+
+    True outside OAuth (no per-identity caller) and when no owner list is
+    configured (the scope gate already decided). Otherwise the caller's email
+    must be on CITATIONS_OWNER_EMAILS.
+    """
+    if _auth_provider is None:
+        return True
+    owners = getattr(_auth_provider, "owner_emails", None) or frozenset()
+    if not owners:
+        return True
+    caller = (_actor() or "").strip().lower()
+    return caller in owners
+
+
 # -----------------------------------------------------------------------
 # citations_manage_users action handlers.
 #
@@ -101,6 +128,8 @@ async def _handle_list(store, email, role, display_name, notes):
 async def _handle_add(store, email, role, display_name, notes):
     if role not in ("user", "admin"):
         return None, {"error": f"role must be 'user' or 'admin', got {role!r}"}
+    if role == "admin" and not _caller_is_owner():
+        return None, {"error": _OWNER_GRANT_ERROR}
     await store.upsert_user(
         email,
         role=role,
@@ -113,6 +142,8 @@ async def _handle_add(store, email, role, display_name, notes):
 async def _handle_set_role(store, email, role, display_name, notes):
     if role not in ("user", "admin"):
         return None, {"error": f"role must be 'user' or 'admin', got {role!r}"}
+    if role == "admin" and not _caller_is_owner():
+        return None, {"error": _OWNER_GRANT_ERROR}
     existing = await store.get_user(email)
     if existing is None:
         return None, {"error": f"no such user: {email}"}
@@ -166,8 +197,9 @@ async def citations_manage_users(
     Lists, adds, activates, deactivates, deletes, or changes the role of
     registered users. A user may sign in via Google / Microsoft only while
     their row is active; role 'admin' additionally grants this
-    user-management tool. 'delete' erases the row and its refresh tokens
-    outright, unlike 'deactivate' which keeps the record.
+    user-management tool (on a deployment with an owner list, only to an
+    owner, and only an owner may grant it). 'delete' erases the row and its
+    refresh tokens outright, unlike 'deactivate' which keeps the record.
     Changes take effect at the user's next token refresh (up to 1 hour).
 
     Args:
@@ -187,9 +219,8 @@ async def citations_manage_users(
 async def _manage_users_body(
     action: str, email: str, role: str, display_name: str, notes: str
 ) -> Dict[str, Any]:
-    valid_actions = ("list", "add", "set_role", "activate", "deactivate", "delete")
-    if action not in valid_actions:
-        return {"error": f"action must be one of {valid_actions}, got {action!r}"}
+    if action not in _VALID_ACTIONS:
+        return {"error": f"action must be one of {_VALID_ACTIONS}, got {action!r}"}
 
     store = _get_user_store()
     actor = _actor()

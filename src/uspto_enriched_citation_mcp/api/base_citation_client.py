@@ -28,12 +28,18 @@ from ..config.constants import (
     WARNING_RESPONSE_SIZE_BYTES,
 )
 from ..util.rate_limiter import get_rate_limiter, RateLimitConfig
-from ..util.retry import retry_async
+from ..util.retry import retry_async, upstream_retry_after
 from ..util.metrics import get_metrics_collector, MetricsCollector
 from ..util.cache import get_fields_cache, get_search_cache, generate_cache_key
 from ..shared.circuit_breaker import CircuitBreaker, CircuitBreakerError, get_circuit_breaker
-from ..shared.uspto_shared_rate_limiter import get_shared_limiter
+from ..shared.uspto_shared_rate_limiter import (
+    SharedLimiterTimeoutError,
+    get_shared_limiter,
+    note_429,
+)
+from ..shared.error_utils import retry_after_header_seconds
 from ..shared.exceptions import (
+    RATE_LIMIT_SOURCE_SHARED_LIMITER,
     RateLimitError,
     APIConnectionError,
     APITimeoutError,
@@ -182,12 +188,23 @@ class BaseCitationClient:
         each called once per retry attempt by their @retry_async-wrapped
         _impl methods, so this runs once per ATTEMPT.
 
-        Shared cross-process rate limiter (token + concurrency slot) — off
-        unless USPTO_SHARED_RATE_LIMIT_DIR is set. This coordinates ACROSS
-        processes on top of, not instead of, the existing per-instance
-        self.rate_limiter token bucket (which callers still acquire before
-        reaching here) — when both are enabled the shared limiter dominates
-        since it is the stricter, cross-process ceiling.
+        Shared cross-process rate limiter (FIFO queue + concurrency slot +
+        token + 429 cooldown), off unless USPTO_SHARED_RATE_LIMIT_DIR is
+        set. This coordinates ACROSS processes on top of, not instead of, the
+        existing per-instance self.rate_limiter token bucket (which callers
+        still acquire before reaching here); when both are enabled the
+        shared limiter dominates since it is the stricter, cross-process
+        ceiling.
+
+        Two ODP rate-limit rules live here
+        because this is the one place every key-bearing send passes:
+          - a 429 response is noted on the shared key cooldown (note_429) so
+            every process on the key waits it out, not just this one; the
+            typed RateLimitError is raised by _handle_http_error as today;
+          - the limiter giving no slot inside its wait ceiling
+            (SharedLimiterTimeoutError) becomes a RateLimitError marked
+            shared_limiter, which util/retry.py answers at once with the
+            rate-limit envelope instead of queueing again.
         """
         # The coroutine is built AFTER the limiter is acquired: if
         # limiter.__aenter__ raises (flock dir removed, state file corrupt) an
@@ -195,10 +212,24 @@ class BaseCitationClient:
         # surface as a bare RuntimeWarning with no link to this request.
         send = self.client.post if method.upper() == "POST" else self.client.get
         limiter = get_shared_limiter()
-        if limiter is not None:
-            async with limiter:
-                return await send(url, **kwargs)
-        return await send(url, **kwargs)
+        try:
+            if limiter is not None:
+                async with limiter:
+                    response = await send(url, **kwargs)
+            else:
+                response = await send(url, **kwargs)
+        except SharedLimiterTimeoutError as e:
+            raise RateLimitError(
+                "USPTO API is busy: no request slot within the shared limiter's "
+                "wait ceiling. Retry shortly.",
+                retry_after=upstream_retry_after(None),
+                source=RATE_LIMIT_SOURCE_SHARED_LIMITER,
+            ) from e
+        if response.status_code == 429:
+            # No slot is held any more (the context manager exited), so the
+            # cooldown and any retry wait happen with the key free.
+            note_429(retry_after_header_seconds(response))
+        return response
 
     def _validate_response_size(self, response: httpx.Response) -> None:
         content_length_header = response.headers.get("content-length")

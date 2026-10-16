@@ -211,10 +211,26 @@ class InboundRateLimitMiddleware:
     client could drive the whole per-key USPTO quota and the OCR-free
     search surface at will.
 
-    Identity is, in order of preference: the bearer token's fingerprint in
-    OAuth mode, the presented `x-api-key` fingerprint otherwise, else the
-    peer address. Only a truncated SHA-256 of a credential is ever used or
-    logged, never the credential.
+    Identity is, in order of preference: the VERIFIED bearer subject in
+    OAuth mode (CR-06, review 2026-09-28 — a bearer that does not verify no
+    longer mints its own bucket; see below), the presented `x-api-key`
+    fingerprint otherwise (already verified upstream by APIKeyAuthMiddleware
+    when x-api-key mode is wired — see server_bootstrap.py), else the
+    resolved client IP (CR-01: through TRUSTED_PROXY_IPS +
+    CF-Connecting-IP, not the raw peer, which behind a reverse proxy is one
+    address for every caller). Only a truncated SHA-256 of a credential is ever
+    used or logged, never the credential.
+
+    CR-06: an UNVERIFIED bearer used to be keyed on its own fingerprint —
+    any string starting with "Bearer " got a fresh, empty bucket, so a
+    caller with no real credential could reset its own limit on every
+    request just by varying the token text. A bearer is now verified
+    against the OAuth provider (`load_access_token`, cheap — a JWT
+    signature check or a constant-time compare against the two static
+    bearers, no DB round trip) when one is wired; verified tokens key on
+    the token's subject (stable across a refresh, unlike the token text
+    itself); anything that does not verify falls back to the resolved
+    client IP, same as presenting no credential at all.
 
     Buckets are the repo's own `util.rate_limiter.TokenBucket`, held in a
     dedicated `RateLimiter` instance (NOT the outbound singleton), and the
@@ -226,7 +242,7 @@ class InboundRateLimitMiddleware:
     #: dropped; an idle bucket is indistinguishable from a fresh one.
     MAX_TRACKED_IDENTITIES = 4096
 
-    def __init__(self, app, requests_per_minute: Optional[int] = None):
+    def __init__(self, app, requests_per_minute: Optional[int] = None, auth_provider=None):
         from .config.constants import DEFAULT_RATE_LIMIT_RPM
         from .util.rate_limiter import RateLimiter, RateLimitConfig
 
@@ -240,6 +256,10 @@ class InboundRateLimitMiddleware:
                 requests_per_minute = DEFAULT_RATE_LIMIT_RPM
         self.app = app
         self.requests_per_minute = requests_per_minute
+        # CR-06: the OAuth provider, when wired (OAuth mode only), so a
+        # presented bearer can be verified before it is trusted as an
+        # identity. None in mode=none — x-api-key is the credential there.
+        self._auth_provider = auth_provider
         # Per-identity buckets only: the shared global bucket is set wide
         # open so one busy caller cannot rate-limit everyone else.
         # endpoint_share_divisor=1.0: here the per-identity buckets ARE the
@@ -260,16 +280,36 @@ class InboundRateLimitMiddleware:
 
         return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
 
-    def _identity(self, scope) -> str:
+    async def _verify_bearer(self, token: str):
+        """The verified AccessToken for `token`, or None when it does not
+        verify or there is no provider to check it against. Never raises —
+        an unverifiable token just falls back to the IP key."""
+        if self._auth_provider is None:
+            return None
+        try:
+            return await self._auth_provider.load_access_token(token)
+        except Exception:
+            return None
+
+    async def _identity(self, scope) -> str:
+        from .shared.client_ip import client_ip_from_scope
+
         headers = {name: value for name, value in scope.get("headers", [])}
         authorization = headers.get(b"authorization", b"").decode("latin-1")
         if authorization.lower().startswith("bearer "):
-            return "bearer:" + self._fingerprint(authorization[7:].strip())
+            token = authorization[7:].strip()
+            access_token = await self._verify_bearer(token)
+            if access_token is not None:
+                subject = getattr(access_token, "subject", None) or getattr(
+                    access_token, "client_id", ""
+                )
+                return "identity:" + self._fingerprint(str(subject))
+            # CR-06: an unverified bearer must not mint its own bucket.
+            return "ip:" + client_ip_from_scope(scope)
         api_key = headers.get(b"x-api-key", b"").decode("latin-1")
         if api_key:
             return "key:" + self._fingerprint(api_key)
-        client = scope.get("client")
-        return "peer:" + (client[0] if client else "unknown")
+        return "ip:" + client_ip_from_scope(scope)
 
     def _prune(self) -> None:
         buckets = self._limiter.buckets
@@ -307,7 +347,7 @@ class InboundRateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        identity = self._identity(scope)
+        identity = await self._identity(scope)
         self._prune()
         if not await self._limiter.acquire(endpoint=identity):
             # Identity is a truncated hash or a peer address, never a

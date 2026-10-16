@@ -86,7 +86,11 @@ class TestOACitationServiceSearch:
             assert "_pfw_link" not in doc
             assert "parsedReferenceIdentifier" in doc
             assert "legalSectionCode" not in doc
-            assert set(doc) <= set(OA_CITATIONS_MINIMAL_FIELDS) | {"referenceKey"}
+            assert set(doc) <= set(OA_CITATIONS_MINIMAL_FIELDS) | {
+                "referenceKey",
+                "cite_as",
+                "application_cite_as",
+            }
 
         # The cross-lane join key is on every row of every tier.
         assert [d["referenceKey"] for d in result["response"]["docs"]] == [

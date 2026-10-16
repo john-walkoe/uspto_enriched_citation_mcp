@@ -44,7 +44,15 @@ class QueryFieldNames:
 
     # Reference metadata
     INVENTOR_NAME = "inventorNameText"
-    FIRST_APPLICANT_NAME = "firstApplicantName"  # May not be in API but used in code
+    # FIRST_APPLICANT_NAME removed (MCP-2 / CQ-R-1, review 2026-09-28):
+    # firstApplicantName is not a field on the enriched v3 API — field_configs.yaml
+    # lists it under "Fields NOT Available in API v3" — so the applicant_name
+    # convenience parameter that built a query against it could only ever
+    # return zero results. Removed from tools/search.py and query_builder.py
+    # rather than mapped, because no real field carries applicant/assignee
+    # name on this API (verified against field_configs.yaml, reference/README.md
+    # and reference/tool_guidance.md, none of which name a substitute); resolve
+    # applicants through PFW instead.
     EXAMINER_NAME = "examinerNameText"  # May not be in API but used in code
     COUNTRY_CODE = "countryCode"
     KIND_CODE = "kindCode"

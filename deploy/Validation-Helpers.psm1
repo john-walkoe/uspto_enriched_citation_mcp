@@ -111,10 +111,12 @@ function Test-MistralApiKey {
     Validates Mistral API key format
 
     .DESCRIPTION
-    Mistral API Key Format:
-    - Length: Exactly 32 characters
-    - Characters: Letters (a-z, A-Z) and numbers (0-9)
-    - Example: AbCdEfGh1234567890IjKlMnOp1234
+    Mistral API Key Format (two generations, both accepted):
+    - Classic (to 2026): exactly 32 characters, letters (a-z, A-Z) and numbers (0-9)
+      Example: AbCdEfGh1234567890IjKlMnOp1234
+    - Current (2026-09 accounts): a lowercase prefix, an underscore, 32 alphanumerics,
+      an underscore and a short alphanumeric suffix (45 characters as issued)
+      Example: mstrx_AbCdEfGh1234567890IjKlMnOp12345678_Ab12Cd
 
     .PARAMETER ApiKey
     The API key to validate (can be empty - Mistral is optional)
@@ -146,20 +148,14 @@ function Test-MistralApiKey {
         return $true
     }
 
-    # Check exact length (32 characters)
-    if ($ApiKey.Length -ne 32) {
+    # Either generation of the key shape (see .DESCRIPTION). The 2026-09 accounts
+    # issue prefix_<32 alphanumerics>_<suffix>; the older accounts a bare 32.
+    $classic = $ApiKey -match '^[a-zA-Z0-9]{32}$'
+    $current = $ApiKey -match '^[a-z]{2,8}_[a-zA-Z0-9]{32}_[a-zA-Z0-9]{4,8}$'
+    if (-not ($classic -or $current)) {
         if (-not $Silent) {
-            Write-Host "[ERROR] Mistral API key must be exactly 32 characters (got $($ApiKey.Length))" -ForegroundColor Red
-            Write-Host "        Expected format: 32 alphanumeric characters (a-z, A-Z, 0-9)" -ForegroundColor Yellow
-        }
-        return $false
-    }
-
-    # Check character set (letters and numbers only)
-    if ($ApiKey -notmatch '^[a-zA-Z0-9]{32}$') {
-        if (-not $Silent) {
-            Write-Host "[ERROR] Mistral API key must contain only letters (a-z, A-Z) and numbers (0-9)" -ForegroundColor Red
-            Write-Host "        Invalid characters detected in key" -ForegroundColor Yellow
+            Write-Host "[ERROR] Mistral API key has an unexpected shape (length $($ApiKey.Length))" -ForegroundColor Red
+            Write-Host "        Expected: 32 alphanumeric characters, or prefix_<32 alphanumerics>_<suffix> (45 characters)" -ForegroundColor Yellow
         }
         return $false
     }

@@ -4,11 +4,18 @@ from typing import Dict, List, Optional
 
 from ..api.oa_citations_client import OACitationsClient, OA_CITATIONS_MINIMAL_FIELDS, OA_CITATIONS_ALL_FIELDS
 from ..shared.pfw_link import pfw_link_for
+from ..util.citation_links import (
+    attach_citation_links,
+    citation_links_for_docs,
+    is_narrow,
+    wants_application_link,
+)
 from ..util.logging import get_logger
 from ..util.reference_key import (
     OA_REFERENCE_SOURCE_FIELDS,
     attach_reference_keys,
     reference_keys_for_docs,
+    wants_reference_key,
 )
 
 logger = get_logger(__name__)
@@ -27,12 +34,16 @@ class OACitationService:
         rows: int,
         custom_fields: Optional[List[str]],
         default_fields: List[str],
+        tier: str,
     ) -> Dict:
         """Shared search body for the minimal/balanced tiers.
 
         Runs the search with the tier's default field set (or the caller's
         custom set), applies client-side field filtering, and annotates docs
-        with PFW cross-MCP links.
+        with the cross-lane reference key, the ready-made citation links and
+        the PFW cross-MCP links. A narrow request (the minimal tier, or any
+        custom field list) gets one compact `cite_as` per row and only the
+        derived keys it asked for (util/citation_links, NARROW REQUESTS).
         """
         fields = custom_fields if custom_fields is not None else default_fields
         result = await self.client.search_records(criteria, start, rows, fields)
@@ -45,9 +56,16 @@ class OACitationService:
         # before the tier's field set is applied: the minimal tier drops
         # `parsedReferenceIdentifier`, and computing after the filter would
         # force the key off the raw 892 string when the parsed one was right
-        # there. The key is attached after filtering so it survives every tier
-        # and every custom field list.
+        # there. The key is attached after filtering so it survives every
+        # default tier, and a custom field list that names it.
         reference_keys = reference_keys_for_docs(docs, OA_REFERENCE_SOURCE_FIELDS)
+
+        # The cited reference's link label reads the inventor name off the raw
+        # Form 892 string, which a custom `fields` list can drop, so the links
+        # are computed from the unfiltered docs too and attached afterwards.
+        citation_links = citation_links_for_docs(
+            docs, reference_keys, compact=is_narrow(tier, custom_fields)
+        )
 
         # The OA Citations API ignores `fl` and returns every field whatever
         # is asked for, so the tier's field set only means anything if it is
@@ -63,7 +81,13 @@ class OACitationService:
             for doc in docs
         ]
         docs = result["response"]["docs"]
-        attach_reference_keys(docs, reference_keys)
+        if wants_reference_key(custom_fields):
+            attach_reference_keys(docs, reference_keys)
+        attach_citation_links(
+            docs,
+            citation_links,
+            application=wants_application_link(tier, custom_fields),
+        )
 
         # The per-row `_pfw_link` is the same sentence on every doc, differing
         # only in an app number the doc already carries — 1,476 chars of the
@@ -89,7 +113,8 @@ class OACitationService:
     ) -> Dict:
         """Search OA Citations with minimal field set for high-volume discovery."""
         return await self._search(
-            criteria, start, rows, custom_fields, OA_CITATIONS_MINIMAL_FIELDS
+            criteria, start, rows, custom_fields, OA_CITATIONS_MINIMAL_FIELDS,
+            tier="minimal",
         )
 
     async def search_balanced(
@@ -101,7 +126,8 @@ class OACitationService:
     ) -> Dict:
         """Search OA Citations with all available fields."""
         return await self._search(
-            criteria, start, rows, custom_fields, OA_CITATIONS_ALL_FIELDS
+            criteria, start, rows, custom_fields, OA_CITATIONS_ALL_FIELDS,
+            tier="balanced",
         )
 
     async def get_fields(self) -> Dict:

@@ -277,25 +277,31 @@ async def test_get_citation_details_accepts_well_formed_id_format(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_citation_service_get_statistics_charges_rate_limiter(monkeypatch):
+async def test_citation_service_get_statistics_charges_rate_limiter():
     """CitationService.get_statistics acquires the 6x fan-out cost from the
-    rate limiter up front and never issues a sub-query when denied."""
-    from uspto_enriched_citation_mcp.services.citation_service import CitationService
-    from uspto_enriched_citation_mcp.util import rate_limiter as rl
+    ENRICHED LANE's own rate limiter (self.client.rate_limiter) up front and
+    never issues a sub-query when denied.
 
-    rl.reset_rate_limiter()
-    limiter = rl.get_rate_limiter(rl.RateLimitConfig(requests_per_minute=60))
+    CR-02 (review 2026-09-28): this used to charge
+    util.rate_limiter.get_rate_limiter()'s process-wide singleton, which
+    b0531e2's per-lane RateLimiter split (runtime.py) left production never
+    wiring into anything — so the singleton being denied proved nothing about
+    what the enriched lane's own search calls were actually metered against.
+    Charging the lane limiter is what this test now proves."""
+    from uspto_enriched_citation_mcp.services.citation_service import CitationService
 
     acquired = {}
 
-    async def fake_acquire(endpoint="default", tokens=1):
-        acquired["endpoint"] = endpoint
-        acquired["tokens"] = tokens
-        return False  # simulate exhausted bucket
-
-    monkeypatch.setattr(limiter, "acquire", fake_acquire)
+    class _FakeLaneLimiter:
+        async def acquire(self, endpoint="default", tokens=1):
+            acquired["endpoint"] = endpoint
+            acquired["tokens"] = tokens
+            return False  # simulate exhausted bucket
 
     class _NoCallClient:
+        _CACHE_KEY_PREFIX = "enriched"
+        rate_limiter = _FakeLaneLimiter()
+
         async def search_citations(self, *args, **kwargs):
             raise AssertionError("must not fan out when the rate limiter denies")
 
@@ -303,10 +309,8 @@ async def test_citation_service_get_statistics_charges_rate_limiter(monkeypatch)
     result = await service.get_statistics(criteria="techCenter:2100")
 
     assert result["status"] == "error"
-    assert acquired["endpoint"] == "get_citation_statistics"
+    assert acquired["endpoint"] == "enriched_search_records"
     assert acquired["tokens"] == 6
-
-    rl.reset_rate_limiter()
 
 
 # --------------------------------------------------------------------- M6
@@ -440,3 +444,122 @@ async def test_authorize_and_token_routes_wrapped_with_rate_limiter():
     assert set(wrapped) == {"/authorize", "/token"}
     for app in wrapped.values():
         assert isinstance(app, _RateLimitedASGIApp)
+
+
+# -------------------------------------------------------------- CR-01 (M2)
+
+
+@pytest.mark.asyncio
+async def test_callback_endpoint_keys_on_cf_connecting_ip_from_a_trusted_peer(
+    monkeypatch,
+):
+    """CR-01 (review 2026-09-28): two callers behind the same trusted-proxy
+    peer, distinguished only by CF-Connecting-IP, must not share one
+    bucket — before this fix the raw peer (the reverse proxy's one address
+    for every caller) was the key for everyone."""
+    from uspto_enriched_citation_mcp.auth.provider import _FixedWindowRateLimiter
+
+    from .test_auth_provider import get_request
+
+    monkeypatch.setenv("TRUSTED_PROXY_IPS", "172.18.0.0/16")
+
+    provider, _ = _make_provider_for_m2()
+    provider._oauth_rate_limiter = _FixedWindowRateLimiter(
+        max_requests=1, window_seconds=60.0
+    )
+
+    req1 = get_request(
+        "/auth/callback/google", "state=nope&code=x", {"idp": "google"}
+    )
+    req1.scope["client"] = ("172.18.0.4", 12345)  # the proxy's address (trusted)
+    req1.scope["headers"] = [(b"cf-connecting-ip", b"203.0.113.9")]
+    first = await provider._callback_endpoint(req1)
+    assert first.status_code == 400  # unknown txn — but allowed past the limiter
+
+    req2 = get_request(
+        "/auth/callback/google", "state=nope2&code=y", {"idp": "google"}
+    )
+    req2.scope["client"] = ("172.18.0.4", 12345)  # same proxy peer
+    req2.scope["headers"] = [(b"cf-connecting-ip", b"203.0.113.50")]  # a different caller
+    second = await provider._callback_endpoint(req2)
+    assert second.status_code == 400  # a DIFFERENT bucket, not the 429 for sharing the proxy's peer
+
+
+@pytest.mark.asyncio
+async def test_callback_endpoint_ignores_forwarded_headers_from_an_untrusted_peer(
+    monkeypatch,
+):
+    """Without a declared trust CIDR, a caller cannot spoof CF-Connecting-IP
+    to dodge the limiter — behavior is unchanged from before this fix."""
+    from uspto_enriched_citation_mcp.auth.provider import _FixedWindowRateLimiter
+
+    from .test_auth_provider import get_request
+
+    monkeypatch.delenv("TRUSTED_PROXY_IPS", raising=False)
+
+    provider, _ = _make_provider_for_m2()
+    provider._oauth_rate_limiter = _FixedWindowRateLimiter(
+        max_requests=1, window_seconds=60.0
+    )
+
+    req1 = get_request(
+        "/auth/callback/google", "state=nope&code=x", {"idp": "google"}
+    )
+    req1.scope["client"] = ("9.9.9.9", 12345)
+    req1.scope["headers"] = [(b"cf-connecting-ip", b"203.0.113.9")]
+    first = await provider._callback_endpoint(req1)
+    assert first.status_code == 400
+
+    req2 = get_request(
+        "/auth/callback/google", "state=nope2&code=y", {"idp": "google"}
+    )
+    req2.scope["client"] = ("9.9.9.9", 12345)
+    req2.scope["headers"] = [(b"cf-connecting-ip", b"1.2.3.4")]  # attacker-supplied
+    second = await provider._callback_endpoint(req2)
+    assert second.status_code == 429  # same bucket: peer is not a trusted proxy
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_asgi_app_keys_on_cf_connecting_ip_from_a_trusted_peer(
+    monkeypatch,
+):
+    """Same rule at the /authorize + /token wrapper (_RateLimitedASGIApp),
+    which reads a raw ASGI scope rather than a Starlette Request."""
+    from uspto_enriched_citation_mcp.auth.provider import (
+        _FixedWindowRateLimiter,
+        _RateLimitedASGIApp,
+    )
+
+    monkeypatch.setenv("TRUSTED_PROXY_IPS", "172.18.0.0/16")
+
+    async def _inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    limiter = _FixedWindowRateLimiter(max_requests=1, window_seconds=60.0)
+    app = _RateLimitedASGIApp(_inner, limiter)
+
+    async def _receive():
+        return {"type": "http.request"}
+
+    sent: list = []
+
+    async def _send(message):
+        sent.append(message)
+
+    scope1 = {
+        "type": "http",
+        "client": ("172.18.0.4", 1),
+        "headers": [(b"cf-connecting-ip", b"203.0.113.9")],
+    }
+    await app(scope1, _receive, _send)
+    assert sent[0]["status"] == 200
+
+    sent.clear()
+    scope2 = {
+        "type": "http",
+        "client": ("172.18.0.4", 1),
+        "headers": [(b"cf-connecting-ip", b"203.0.113.50")],  # a different real caller
+    }
+    await app(scope2, _receive, _send)
+    assert sent[0]["status"] == 200  # distinct bucket, not the 429 for sharing the proxy's peer

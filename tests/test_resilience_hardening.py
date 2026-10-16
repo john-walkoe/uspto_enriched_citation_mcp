@@ -3,6 +3,7 @@ classes, the mutated cache, error sanitization on the exception branch, and
 the missing inbound rate limit."""
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -179,21 +180,74 @@ async def test_inbound_limiter_buckets_per_identity():
 
     # The noisy caller is now out of tokens; the quiet one must not be.
     assert not await middleware._limiter.acquire(
-        endpoint=middleware._identity(first)
+        endpoint=await middleware._identity(first)
     )
-    assert await middleware._limiter.acquire(endpoint=middleware._identity(second))
+    assert await middleware._limiter.acquire(
+        endpoint=await middleware._identity(second)
+    )
 
 
 @pytest.mark.asyncio
-async def test_inbound_limiter_never_keys_on_the_raw_credential():
+async def test_inbound_limiter_never_keys_on_an_unverified_bearer():
+    """CR-06 (review 2026-09-28): a caller presenting no verifiable
+    credential must not be able to mint a fresh bucket per request by
+    varying the bearer string — two different unverified tokens from the
+    same peer collapse to the same (IP-keyed) identity."""
     async def _app(scope, receive, send):
         pass
 
     middleware = InboundRateLimitMiddleware(_app)
-    identity = middleware._identity(_scope([(b"authorization", b"Bearer s3cr3t")]))
+    first = await middleware._identity(
+        _scope([(b"authorization", b"Bearer s3cr3t")])
+    )
+    second = await middleware._identity(
+        _scope([(b"authorization", b"Bearer other-value")])
+    )
 
-    assert identity.startswith("bearer:")
-    assert "s3cr3t" not in identity
+    assert first == second
+    assert first.startswith("ip:")
+    assert "s3cr3t" not in first
+    assert "other-value" not in second
+
+
+@pytest.mark.asyncio
+async def test_inbound_limiter_keys_a_verified_bearer_on_its_subject():
+    """A bearer that verifies gets its own bucket, keyed on the verified
+    subject (stable across a refresh) rather than the token text itself."""
+    class _Provider:
+        async def load_access_token(self, token):
+            if token != "good-token":
+                return None
+            return SimpleNamespace(subject="user@example.com", client_id="c1")
+
+    async def _app(scope, receive, send):
+        pass
+
+    middleware = InboundRateLimitMiddleware(_app, auth_provider=_Provider())
+    identity = await middleware._identity(
+        _scope([(b"authorization", b"Bearer good-token")])
+    )
+
+    assert identity.startswith("identity:")
+    assert "good-token" not in identity
+
+
+@pytest.mark.asyncio
+async def test_inbound_limiter_falls_back_to_ip_when_provider_rejects_the_bearer():
+    class _Provider:
+        async def load_access_token(self, token):
+            return None
+
+    async def _app(scope, receive, send):
+        pass
+
+    middleware = InboundRateLimitMiddleware(_app, auth_provider=_Provider())
+    identity = await middleware._identity(
+        _scope([(b"authorization", b"Bearer bad-token")])
+    )
+
+    assert identity.startswith("ip:")
+    assert "bad-token" not in identity
 
 
 @pytest.mark.asyncio

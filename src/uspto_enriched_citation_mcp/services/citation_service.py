@@ -3,13 +3,13 @@ Citation service for USPTO Enriched Citation MCP.
 """
 
 import asyncio
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional, Sequence, Tuple, Union
 import structlog
 from ..api.enriched_client import EnrichedCitationClient
 from ..config.field_manager import FieldManager
 from ..shared.enums import ContextLevel
-from ..shared.error_utils import get_safe_error_message
-from ..util.rate_limiter import get_rate_limiter
+from ..shared.error_utils import format_error_response, get_safe_error_message
+from ..util.deadline import Deadline
 
 logger = structlog.get_logger(__name__)
 
@@ -25,6 +25,11 @@ _BREAKDOWN_QUERIES: Tuple[Tuple[str, str], ...] = (
 
 # One token per query in the fan-out, charged once up front.
 _STATISTICS_QUOTA_COST = 1 + len(_BREAKDOWN_QUERIES)
+
+# The fan-out stops waiting this long before the call's deadline, so the
+# partial answer is shaped and returned inside the budget rather than racing
+# the whole-call backstop in tools/_shared.run_with_deadline.
+_FANOUT_RESERVE_SECONDS = 1.0
 
 
 class CitationService:
@@ -113,43 +118,74 @@ class CitationService:
                 "error": safe_message,
             }
 
-    async def _fan_out_counts(self, criteria: str) -> Tuple[Dict[str, int], int]:
+    async def _fan_out_counts(
+        self, criteria: str, deadline: Optional[Deadline] = None
+    ) -> Tuple[Dict[str, Optional[int]], int, List[str]]:
         """Run the base query plus every breakdown query concurrently.
 
         Returns (counts keyed by _BREAKDOWN_QUERIES name plus "total", number
-        of sub-queries that failed). A failed sub-query counts as 0 so one
-        upstream hiccup does not blank the whole response; the caller reports
-        how many failed so a zero-because-failed is distinguishable from a
-        zero-because-empty.
+        of sub-queries that failed, names of the sub-queries the deadline cut
+        off). A failed sub-query counts as 0 so one upstream hiccup does not
+        blank the whole response; the caller reports how many failed so a
+        zero-because-failed is distinguishable from a zero-because-empty. A
+        sub-query still running when `deadline` (less the reserve) runs out is
+        cancelled and counts as None: it has no value, not a zero one. With
+        less than the reserve left, nothing is sent at all.
         """
 
         def scoped(extra: str) -> str:
             return f"({criteria}) AND ({extra})" if criteria else extra
 
+        names = ["total"] + [name for name, _ in _BREAKDOWN_QUERIES]
+        timeout: Optional[float] = None
+        if deadline is not None:
+            timeout = deadline.remaining() - _FANOUT_RESERVE_SECONDS
+            if timeout <= 0:
+                return {name: None for name in names}, 0, names
+
         # rows=0 fetches no docs, just numFound. charge_quota=False because
         # get_statistics already charged the limiter for the whole fan-out.
         queries = [criteria or "*:*"] + [scoped(q) for _, q in _BREAKDOWN_QUERIES]
-        results = await asyncio.gather(
-            *(
+        tasks = [
+            asyncio.ensure_future(
                 self.client.search_citations(criteria=q, rows=0, charge_quota=False)
-                for q in queries
-            ),
-            return_exceptions=True,
-        )
+            )
+            for q in queries
+        ]
+        try:
+            # One wait for the whole fan-out: retries and backoff inside each
+            # sub-query spend the same budget, never a fresh one per attempt.
+            await asyncio.wait(tasks, timeout=timeout)
+        finally:
+            # Cut off by the deadline, or the whole call was cancelled: stop
+            # whatever is still running so no request outlives the tool call.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        return self._tally(names, tasks)
 
-        def count(r: Any) -> int:
-            if isinstance(r, Exception):
-                return 0
-            return r.get("response", {}).get("numFound", 0)
-
-        counts = {"total": count(results[0])}
-        for (name, _), result in zip(_BREAKDOWN_QUERIES, results[1:]):
-            counts[name] = count(result)
-        queries_failed = sum(1 for r in results if isinstance(r, Exception))
-        return counts, queries_failed
+    @staticmethod
+    def _tally(
+        names: List[str], tasks: Sequence["asyncio.Future[Any]"]
+    ) -> Tuple[Dict[str, Optional[int]], int, List[str]]:
+        """Counts, failures and deadline-cut names from the finished tasks."""
+        counts: Dict[str, Optional[int]] = {}
+        failed = 0
+        unfinished: List[str] = []
+        for name, task in zip(names, tasks):
+            if task.cancelled():
+                counts[name] = None
+                unfinished.append(name)
+            elif task.exception() is not None:
+                counts[name] = 0
+                failed += 1
+            else:
+                counts[name] = task.result().get("response", {}).get("numFound", 0)
+        return counts, failed, unfinished
 
     def _shape_statistics(
-        self, counts: Dict[str, int], criteria: str, queries_failed: int
+        self, counts: Dict[str, Optional[int]], criteria: str, queries_failed: int
     ) -> Dict[str, Any]:
         """Build the statistics response envelope from the raw counts."""
         response: Dict[str, Any] = {
@@ -180,22 +216,79 @@ class CitationService:
             response["queries_failed"] = queries_failed
         return response
 
+    @staticmethod
+    def _deadline_result(
+        response: Dict[str, Any], unfinished: List[str], deadline: Deadline
+    ) -> Dict[str, Any]:
+        """Mark a statistics envelope the deadline cut short.
+
+        Some counts returned: keep them (status stays success) and say which
+        are missing and why. None returned: the same 504 the whole-call
+        deadline gives (tools/_shared.run_with_deadline), worded
+        "Deadline exceeded" as the sibling servers' content deadlines are.
+        """
+        total = len(_BREAKDOWN_QUERIES) + 1
+        budget = f"{deadline.seconds:.0f}s"
+        if len(unfinished) == total:
+            return format_error_response(
+                f"Deadline exceeded: no statistics count returned within the "
+                f"{budget} budget. Narrow the query or retry; the upstream "
+                f"USPTO API did not answer in time.",
+                504,
+            )
+        logger.warning(
+            "get_statistics: %d/%d count queries cut off by the deadline",
+            len(unfinished),
+            total,
+        )
+        response["deadline_exceeded"] = True
+        response["queries_unfinished"] = len(unfinished)
+        response["unfinished_queries"] = unfinished
+        response["deadline_note"] = (
+            f"Deadline exceeded: {len(unfinished)} of {total} count queries "
+            f"did not return within the {budget} budget, so their values are "
+            f"null (unknown), not zero. Every other count is complete. Re-run "
+            f"with narrower criteria to fill them in."
+        )
+        return response
+
     async def get_statistics(
-        self, criteria: str = "", stats_fields: Optional[List[str]] = None
+        self,
+        criteria: str = "",
+        stats_fields: Optional[List[str]] = None,
+        deadline: Optional[Deadline] = None,
     ) -> Dict[str, Any]:
         """Get database statistics with breakdowns via parallel count queries.
 
         `stats_fields` is accepted and currently unused: the breakdowns are
         fixed. It exists so the tool signature above can keep documenting the
         parameter; see tools/statistics.py.
+
+        `deadline` is the tool call's one end-to-end budget
+        (CITATIONS_CONTENT_DEADLINE_SECONDS, created when the tool starts):
+        the fan-out waits only for what is left of it and returns the counts
+        that made it, with a deadline note for the rest.
         """
         try:
             # This call fans out one query per breakdown plus the base query.
             # Charge the limiter for the full amplification cost up front and
             # pass charge_quota=False to the sub-calls, so the real cost is
             # what the comment says rather than double it.
-            if not await get_rate_limiter().acquire(
-                endpoint="get_citation_statistics", tokens=_STATISTICS_QUOTA_COST
+            #
+            # CR-02 (review 2026-09-28, regression of S-13): this used to
+            # charge util.rate_limiter.get_rate_limiter()'s process-wide
+            # singleton. b0531e2 gave each lane its own RateLimiter instance
+            # (runtime.py build()) and production never wires the singleton
+            # into any of them, so the six-call fan-out sailed through
+            # charged against a bucket nothing else in the process ever
+            # draws from or waits on. Charge the ENRICHED lane's own
+            # limiter instead — the same bucket search_citations draws
+            # from (self.client.rate_limiter, endpoint
+            # "<prefix>_search_records") — so statistics competes for the
+            # same budget the search tools do.
+            if not await self.client.rate_limiter.acquire(
+                endpoint=f"{self.client._CACHE_KEY_PREFIX}_search_records",
+                tokens=_STATISTICS_QUOTA_COST,
             ):
                 return {
                     "status": "error",
@@ -205,8 +298,13 @@ class CitationService:
                     ),
                 }
 
-            counts, queries_failed = await self._fan_out_counts(criteria)
-            return self._shape_statistics(counts, criteria, queries_failed)
+            counts, queries_failed, unfinished = await self._fan_out_counts(
+                criteria, deadline
+            )
+            response = self._shape_statistics(counts, criteria, queries_failed)
+            if unfinished and deadline is not None:
+                return self._deadline_result(response, unfinished, deadline)
+            return response
         except Exception as e:
             safe_message = get_safe_error_message(e, "Statistics retrieval failed")
             return {

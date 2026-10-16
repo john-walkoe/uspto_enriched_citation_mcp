@@ -111,6 +111,12 @@ class CircuitBreaker:
         self._success_count = 0
         self._last_failure_time: Optional[float] = None
         self._lock = asyncio.Lock()
+        # CR-02 (review 2026-09-28): True while a HALF_OPEN trial call is in
+        # flight. HALF_OPEN used to admit every concurrent caller once the
+        # recovery timeout elapsed — for a fan-out like
+        # get_citation_statistics's six sub-queries, all six landed on the
+        # recovery probe at once, against a key ODP documents as burst 1.
+        self._half_open_in_flight = False
 
     @property
     def state(self) -> CircuitState:
@@ -193,7 +199,7 @@ class CircuitBreaker:
         # breaker: measured concurrency 1 on every lane, whatever the
         # rate limiter and connection pool allowed.
         async with self._lock:
-            self._admit()
+            is_half_open_trial = self._admit()
 
         try:
             # Execute function (handle both sync and async)
@@ -202,8 +208,14 @@ class CircuitBreaker:
             else:
                 result = func(*args, **kwargs)
         except Exception as e:
-            if is_counted_failure(e):
-                async with self._lock:
+            async with self._lock:
+                # CR-02: release the trial slot regardless of whether this
+                # exception counts toward the failure threshold — an
+                # uncounted outcome (4xx / 429) must not leave HALF_OPEN
+                # permanently admitting nobody.
+                if is_half_open_trial:
+                    self._half_open_in_flight = False
+                if is_counted_failure(e):
                     self._record_failure(e)
             # Otherwise an expected outcome (4xx / 429 backpressure) — not a
             # service-health signal, propagate without affecting breaker
@@ -211,29 +223,45 @@ class CircuitBreaker:
             raise  # Re-raise original exception
 
         async with self._lock:
+            if is_half_open_trial:
+                self._half_open_in_flight = False
             self._record_success()
 
         return result
 
-    def _admit(self) -> None:
-        """Decide whether this call may proceed. Caller holds the lock."""
+    def _admit(self) -> bool:
+        """Decide whether this call may proceed. Caller holds the lock.
+
+        Returns True when this call is the single admitted HALF_OPEN trial —
+        the caller must then clear `_half_open_in_flight` once the call
+        resolves, win or lose — and False for a CLOSED pass-through, which
+        carries no such obligation.
+        """
         if self._state == CircuitState.OPEN:
             if self._should_attempt_reset():
                 logger.info("Circuit breaker transitioning to HALF_OPEN")
                 self._state = CircuitState.HALF_OPEN
                 self._success_count = 0
+                self._half_open_in_flight = False
                 self._emit_state_change("half_open")
             else:
                 raise CircuitBreakerError("Circuit breaker is OPEN")
 
-        # Check if we're in half-open and have exceeded success threshold
-        if (
-            self._state == CircuitState.HALF_OPEN
-            and self._success_count >= self.success_threshold
-        ):
-            logger.info("Circuit breaker transitioning to CLOSED")
-            self._state = CircuitState.CLOSED
-            self._failure_count = 0
+        if self._state == CircuitState.HALF_OPEN:
+            # CR-02 (review 2026-09-28): admit exactly one trial call at a
+            # time. This used to admit every concurrent caller once the
+            # recovery timeout elapsed, so a fan-out like
+            # get_citation_statistics's six sub-queries landed on the
+            # recovery probe all at once, against a key ODP documents as
+            # burst 1. A concurrent caller fails fast instead.
+            if self._half_open_in_flight:
+                raise CircuitBreakerError(
+                    "Circuit breaker is HALF_OPEN; a trial call is already in flight"
+                )
+            self._half_open_in_flight = True
+            return True
+
+        return False
 
     def _record_success(self) -> None:
         """Update state for a successful call. Caller holds the lock."""

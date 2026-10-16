@@ -252,8 +252,10 @@ async def run_callback(
     monkeypatch: pytest.MonkeyPatch,
     claims: dict[str, Any],
     idp: str = "google",
+    scopes: list[str] | None = None,
 ):
-    url = await provider.authorize(make_client(), make_params())
+    params = make_params(scopes=scopes) if scopes is not None else make_params()
+    url = await provider.authorize(make_client(), params)
     txn = parse_qs(urlparse(url).query)["txn"][0]
 
     async def fake_exchange(idp_: str, code: str, nonce: str) -> dict[str, Any]:
@@ -331,9 +333,12 @@ async def test_callback_admin_gets_admin_scope(
         "email": "boss@firm.com", "role": "admin", "active": True,
         "display_name": None, "last_login_idp": None,
     }
+    # Re-pinned 2026-10-06 (requested scope is honored): the admin scope
+    # has to be REQUESTED as well as held, so this asks for both.
     resp = await run_callback(
         provider, monkeypatch,
         {"email": "boss@firm.com", "email_verified": True},
+        scopes=[SCOPE_USER, SCOPE_ADMIN],
     )
     assert resp.status_code == 302
     code = parse_qs(urlparse(resp.headers["location"]).query)["code"][0]
@@ -491,9 +496,13 @@ async def test_refresh_rotation_and_deactivation() -> None:
         "email": "jane@firm.com", "role": "admin", "active": True,
         "display_name": None, "last_login_idp": "google",
     }
+    # Re-pinned 2026-10-06 (requested scope is honored): the refresh row
+    # carries what the client REQUESTED at sign-in. This client asked for
+    # admin while the account was a user; the promotion since then applies at
+    # refresh, within that bound.
     await store.put_refresh(
         "refresh-1", client_id=client.client_id, email="jane@firm.com",
-        scopes=[SCOPE_USER], ttl_seconds=3600,
+        scopes=[SCOPE_USER, SCOPE_ADMIN], ttl_seconds=3600,
     )
     loaded = await provider.load_refresh_token(client, "refresh-1")
     assert loaded is not None
@@ -879,6 +888,90 @@ async def test_open_registration_opt_in_restores_the_old_behavior(
     assert await provider.get_client("anything") is not None
 
 
+# ------------------------------------------------- CR-15: enforce at use too
+
+
+@pytest.mark.asyncio
+async def test_get_client_refuses_stored_row_with_foreign_redirect_host() -> None:
+    """A row already in the client table (pre-allowlist, or written while
+    CITATIONS_AUTH_OPEN_REGISTRATION was set) must be refused at use, not
+    just checked at registration."""
+    provider, store = make_provider()
+    await store.put_client(
+        "foreign-client",
+        {
+            "client_id": "foreign-client",
+            "redirect_uris": ["https://attacker.example/cb"],
+        },
+    )
+    assert await provider.get_client("foreign-client") is None
+
+
+@pytest.mark.asyncio
+async def test_get_client_refuses_foreign_host_on_cache_hit_too() -> None:
+    provider, _ = make_provider()
+    foreign = OAuthClientInformationFull(
+        client_id="cache-client",
+        redirect_uris=[AnyUrl("https://attacker.example/cb")],
+    )
+    provider._client_cache.set("cache-client", foreign)
+    assert await provider.get_client("cache-client") is None
+
+
+@pytest.mark.asyncio
+async def test_get_client_allows_allowlisted_row() -> None:
+    provider, store = make_provider()
+    await store.put_client(
+        "good-client",
+        {"client_id": "good-client", "redirect_uris": ["https://claude.ai/cb"]},
+    )
+    loaded = await provider.get_client("good-client")
+    assert loaded is not None
+    assert loaded.client_id == "good-client"
+
+
+@pytest.mark.asyncio
+async def test_get_client_open_registration_bypasses_the_check() -> None:
+    """Documented escape hatch: open registration restores pre-allowlist
+    behavior at use time, matching registration time."""
+    provider, store = make_provider()
+    await store.put_client(
+        "foreign-client",
+        {
+            "client_id": "foreign-client",
+            "redirect_uris": ["https://attacker.example/cb"],
+        },
+    )
+    provider._open_registration = True
+    assert await provider.get_client("foreign-client") is not None
+
+
+@pytest.mark.asyncio
+async def test_get_client_requires_https_for_non_loopback_host() -> None:
+    provider, store = make_provider()
+    await store.put_client(
+        "http-client",
+        {
+            "client_id": "http-client",
+            "redirect_uris": ["http://claude.ai/api/mcp/auth_callback"],
+        },
+    )
+    assert await provider.get_client("http-client") is None
+
+
+@pytest.mark.asyncio
+async def test_get_client_allows_http_for_loopback_host() -> None:
+    provider, store = make_provider()
+    await store.put_client(
+        "loopback-client",
+        {
+            "client_id": "loopback-client",
+            "redirect_uris": ["http://127.0.0.1:33418/callback"],
+        },
+    )
+    assert await provider.get_client("loopback-client") is not None
+
+
 @pytest.mark.asyncio
 async def test_callback_without_the_binding_cookie_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
@@ -950,3 +1043,57 @@ async def test_start_endpoint_sets_the_binding_cookie() -> None:
     assert "HttpOnly" in set_cookie
     assert "SameSite=lax" in set_cookie
     assert "Path=/auth" in set_cookie
+
+
+# --- Entra verified email domain (ported from edgar_mcp, 2026-09-06) ---------
+#
+# Against a multi-tenant authority any Entra tenant on the internet can sign
+# in, and a tenant admin can put any address in the `email` claim. The
+# address is this server's whole authorization decision, so it is trusted
+# only when Entra attests it through the `xms_edov` optional claim. A
+# specific tenant GUID keeps the old behavior: only that directory can
+# populate the address, so the claim is not required.
+
+
+def _entra_claims(tid: str, **overrides: Any) -> dict[str, Any]:
+    claims: dict[str, Any] = {
+        "iss": f"https://login.microsoftonline.com/{tid}/v2.0",
+        "tid": tid,
+        "aud": "ms-client",
+        "email": "attorney@firm.com",
+    }
+    claims.update(overrides)
+    return claims
+
+
+def test_entra_multitenant_requires_verified_domain_claim() -> None:
+    provider, _ = make_provider(CITATIONS_AUTH_MS_TENANT="common")
+    with pytest.raises(ValueError, match="xms_edov"):
+        provider._verify_entra_claims(_entra_claims("any-tenant-on-the-internet"))
+
+
+def test_entra_multitenant_rejects_false_verified_domain_claim() -> None:
+    provider, _ = make_provider(CITATIONS_AUTH_MS_TENANT="organizations")
+    with pytest.raises(ValueError, match="xms_edov"):
+        provider._verify_entra_claims(_entra_claims("some-tenant", xms_edov=False))
+
+
+def test_entra_multitenant_accepts_verified_domain_claim() -> None:
+    provider, _ = make_provider(CITATIONS_AUTH_MS_TENANT="common")
+    provider._verify_entra_claims(_entra_claims("some-tenant", xms_edov=True))
+
+
+def test_entra_single_tenant_does_not_require_verified_domain_claim() -> None:
+    tid = "11111111-2222-3333-4444-555555555555"
+    provider, _ = make_provider(CITATIONS_AUTH_MS_TENANT=tid)
+    provider._verify_entra_claims(_entra_claims(tid))
+    with pytest.raises(ValueError, match="not allowed"):
+        provider._verify_entra_claims(_entra_claims("other-tenant", xms_edov=True))
+
+
+def test_entra_issuer_shape_still_enforced() -> None:
+    provider, _ = make_provider(CITATIONS_AUTH_MS_TENANT="common")
+    with pytest.raises(ValueError, match="unexpected Entra issuer"):
+        provider._verify_entra_claims(
+            _entra_claims("t1", iss="https://login.microsoftonline.com/other/v2.0", xms_edov=True)
+        )

@@ -56,11 +56,6 @@ def test_plain_values_still_build():
     assert "groupArtUnitNumber:2854" in result.query
 
 
-def test_applicant_name_stays_free_text_but_quoted():
-    result = build_query(QueryParameters(applicant_name="Acme Corp. of Delaware"))
-    assert 'firstApplicantName:"Acme Corp. of Delaware"' in result.query
-
-
 def test_validate_string_param_without_a_pattern_is_unchanged():
     assert validate_string_param("anything goes here", 200) == "anything goes here"
 
@@ -83,3 +78,22 @@ async def test_oa_tool_returns_400_for_smuggled_syntax(mock_runtime, value):
     assert result["status"] == "error"
     assert result["code"] == 400
     mock_runtime.oa_client.search_records.assert_not_called()
+
+
+@pytest.mark.parametrize("value", ["11/483,825", "11/483825", "11 483 825", "11483825"])
+def test_printed_serial_form_builds_the_digit_clause(value):
+    # PFW and PTAB accept "11/483,825"; this lane 400'd on it (skills tester
+    # round 2, 2026-10-07). Only the separators of the printed form go.
+    result = build_query(QueryParameters(application_number=value))
+    assert "patentApplicationNumber:11483825" in result.query
+
+
+@pytest.mark.asyncio
+async def test_oa_tool_accepts_the_printed_serial_form(mock_runtime):
+    mock_runtime.oa_client.search_records.return_value = dict(_EMPTY)
+    result = await search_oa_citations_minimal(application_number="11/483,825")
+    assert result.get("status") != "error"
+    query = mock_runtime.oa_client.search_records.call_args.kwargs.get("criteria") or str(
+        mock_runtime.oa_client.search_records.call_args
+    )
+    assert "patentApplicationNumber:11483825" in query

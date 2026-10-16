@@ -21,6 +21,32 @@
       "match": "Variation Selector steganography detected (1 selectors)"
     }
   },
+  "reference/tool_guidance.md": {
+    "31842e3d628e1bd2a0c8b37ff97c0f0cce0380854bc149839eca5de557d4860c": {
+      "line": 1051,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "4f8aef4c462b8cda9bded9df3fc7fa3ce055ae508519f0cd31e3e076174c28c6": {
+      "line": 511,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "6dc1b91d60117329bf2f874950014afa00d02a4b04ddea51601063468b8e7044": {
+      "line": 437,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "70caa584e7022494cff2d2d4b79e3b267e59f4c4e434217d366d6bc25887f96e": {
+      "line": 1024,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "b6e9d8d4b03b356481aebbd50ba35c1deed2713f387a48d51bde69f043c66e52": {
+      "line": 535,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "e96287b8532a39ee8ba0d4e6f9a05f2f6d2349459d5913abf901d911749ff5b5": {
+      "line": 461,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    }
+  },
   "src/uspto_enriched_citation_mcp/auth/pages.py": {
     "3888276ac5d3e3ddfb644eb298f2f0b76aa540632d2efcb1471fe363be3ae7e6": {
       "line": 14,
@@ -28,6 +54,14 @@
     }
   },
   "src/uspto_enriched_citation_mcp/auth/provider.py": {
+    "0c8b8a03d54bf64be564c9cd5d35da552f104323ee20944f4dc0eb52402d00cf": {
+      "line": 612,
+      "match": "prompt"
+    },
+    "7dfcb270df12aacce53c6dfbfecc435aed6a0872986743b26a4fb05a3094770f": {
+      "line": 611,
+      "match": "prompt"
+    },
     "f1180f869f9ca5acd899aa92a2e71aa9243db342a07fc3a297b6fb87afb02c9b": {
       "line": 351,
       "match": "prompt"
@@ -48,6 +82,14 @@
     }
   },
   "src/uspto_enriched_citation_mcp/main.py": {
+    "135b3f13c58e29a0a3830db0d3f714b496d0089d015eb4fc57edaed3f3696a27": {
+      "line": 280,
+      "match": "instructions"
+    },
+    "28e42bab9d939a58f1c758f04c251db5b07c0d0f29ec844763ff2191b1786eec": {
+      "line": 245,
+      "match": "instructions"
+    },
     "4fedde39a8dee969c742cd3b050f365c5c5f7c8868c67698d111318a2783ffde": {
       "line": 233,
       "match": "prompt"
@@ -59,6 +101,14 @@
     "e24e87d5d2874b6cb1940f3d591385fd527e0fe634211159968e3d267cfffb7d": {
       "line": 118,
       "match": "instructions"
+    },
+    "f39689b3e183855f6ada3d8a2293cf0a5c80807a25fcf3dfe32d60ee3efe1548": {
+      "line": 236,
+      "match": "prompt"
+    },
+    "f82ec11a5cb4bb83d2d3ab579ec52307d77eb584ab4918ca55f738ce5d6a7258": {
+      "line": 271,
+      "match": "prompt"
     }
   },
   "src/uspto_enriched_citation_mcp/prompts/__init__.py": {
@@ -214,6 +264,10 @@
       "line": 50,
       "match": "System"
     },
+    "e1e6b7c60a402df30be6a782b85d646d547e1240ca802b4f1a4c068d0dab1534": {
+      "line": 247,
+      "match": "system"
+    },
     "ff5a120d80b0a92fe36f947c1e91c102a80d806d675d2ffc71f8db3ba7d27648": {
       "line": 221,
       "match": "system"
@@ -235,6 +289,10 @@
     "0aa341446165028e47d506a923735c38d89eb57186577fe0d7ba8e84a72e0070": {
       "line": 33,
       "match": "prompt"
+    },
+    "0cffcd907f122f24eb8e59ab62f3705c73fb89b9efa9d64de79e43890cc180b3": {
+      "line": 122,
+      "match": "instruction"
     },
     "1e8d8e42dc55ca1f13aef39e3d3bad09e0e319c4749bdcf60a47d58031dc8af2": {
       "line": 110,
@@ -262,6 +320,10 @@
     },
     "65a863d7898313266bacd1306b62bfac1858ff38c31c9b4175879a2540799bad": {
       "line": 110,
+      "match": "instructions"
+    },
+    "65c824f88ff83b045687716f7c468c468b93d8fae132aca43bc75d5e0aeed550": {
+      "line": 123,
       "match": "instructions"
     },
     "6c17a0fd54ba35347deed8b5893b32c4668be10189d38b369ed5257e45aeffa1": {
@@ -340,6 +402,10 @@
       "line": 98,
       "match": "ignore"
     },
+    "c47409d6db3f96b8ef87cdadbe19f052198a38d9533c1f805903c744d9ca36b7": {
+      "line": 123,
+      "match": "ignore previous instructions"
+    },
     "cb0a6b410b51b7e4605381e4b5cf81ae955ab0def02596599b92223641462846": {
       "line": 35,
       "match": "ignore"
@@ -348,12 +414,32 @@
       "line": 98,
       "match": "ignore previous instructions"
     },
+    "d8956e1d84b82da1602895a2647aba6617b936db3a0a73c3ef55958af809f138": {
+      "line": 119,
+      "match": "INSTRUCTIONS"
+    },
     "dda36dcbf499613a61bf468f715782c48b75f977ed76e0ae4be8490025b50db5": {
       "line": 43,
       "match": "instructions"
+    },
+    "fb350f6ddfb4956177c5d6d542b9849cb8921e47231bfe2fe53dc7bbd2fa8d78": {
+      "line": 123,
+      "match": "ignore"
     }
   },
   "src/uspto_enriched_citation_mcp/tools/oa.py": {
+    "09b03896390ddd06dd1d689ed1c0b811b041d67c042793f3d3797ead4773849a": {
+      "line": 308,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "100bf0499fbffd0e6af1392eb2a37ff8ae61dd5546947a5f2895bf50b1395fe5": {
+      "line": 374,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "345c5e832db522dd6b355390a37eddb5a5cb11615bff8ec0fb43da2abe0a8188": {
+      "line": 234,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
     "49eb2ef652d907cf0a7223eb48b8e4204500b2b5be21abeab92b2b0ff267fa26": {
       "line": 276,
       "match": "Variation Selector steganography detected (1 selectors)"
@@ -374,14 +460,54 @@
       "line": 289,
       "match": "Variation Selector steganography detected (1 selectors)"
     },
+    "8a26aafc6cbb01348ebd0523b21ed3b2c8c96e307005994fb23919b8c2f68a4c": {
+      "line": 295,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "aed89b906ab75e9f6aa5a5d2bbae6571fb7021ebffef2449e35412492fe0ffb5": {
+      "line": 236,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "bb4b64e1cb025d42ffd7e1439a05e04dc7242d1b07a722e273f411621ad2ef5c": {
+      "line": 310,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "bb7eb2943b39197634498aafa6a9a7e808efa11e777250759698eb4dbf46e827": {
+      "line": 237,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "bd33382d31f0080aeb3971789f409b7977359b0c8926ed70b2fcd21b1c3609da": {
+      "line": 376,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "ce1f94d8cc4ab7e9ffce717bf53b2128a3dfaf732a98afb08718922c71ddbcdc": {
+      "line": 302,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "eddcca22ecd4ae875e5569792aad4951decf03b8414b4379af2e81eff12878b4": {
+      "line": 296,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
     "f9ff2451ef90b3239107b61116fec8873d613d13e657269a55a2b41323bc7afe": {
       "line": 232,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "fcb5cb1fcd993639f240a7b508ca741303a2cdf3c67c7925d9d84ff5207a658b": {
+      "line": 368,
       "match": "Variation Selector steganography detected (1 selectors)"
     }
   },
   "src/uspto_enriched_citation_mcp/tools/statistics.py": {
     "0c14aa0ae595b695f548646eb25077b5bc4f1d546950652fb33cb0be12a56bf2": {
       "line": 29,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "9abcdddf71d168b4891de1ce4dcbe1b5dbd3ee6d4c89acdc672fd76b66347880": {
+      "line": 32,
+      "match": "Variation Selector steganography detected (1 selectors)"
+    },
+    "9f1ca50496329936d4407abdf437346664027d5b9c94cea3c86332c74b883831": {
+      "line": 30,
       "match": "Variation Selector steganography detected (1 selectors)"
     }
   },
@@ -482,6 +608,10 @@
     }
   },
   "tests/test_injection_scan.py": {
+    "1387b0679a9903b5cc28e1ec26e08a1302f1ba84b5db9e1c7d99e3d7f117c1b4": {
+      "line": 153,
+      "match": "ignore"
+    },
     "14d92c85f3246419ec1a2624156d9d23034e5754baee4cf5904e2d139c747e20": {
       "line": 20,
       "match": "output your system prompt"
@@ -493,6 +623,10 @@
     "41d3f6afc995e16d9621b05b8842c44b1ab6f766198381d51a1bced4e7f82269": {
       "line": 112,
       "match": "ignore"
+    },
+    "854d8b0704ef4256378aa9cfbf931c47e06b30942d0139ca8d24634c299c2d5c": {
+      "line": 278,
+      "match": "instructions"
     },
     "8aa43d6e98e7b63b0f3dec01253a2dbe3b94f3ad5d46bbee7aa576e221ce2f0c": {
       "line": 20,
@@ -510,6 +644,10 @@
       "line": 237,
       "match": "Ignore"
     },
+    "a8218a29b6b130620580d97ab5a801202238e3df1457151744cc495b3c55adfd": {
+      "line": 205,
+      "match": "ignore"
+    },
     "afe681aeb0e612ec592efbe2075c6bafe45170cb2684ccbaed3f4ec142665afb": {
       "line": 237,
       "match": "instructions"
@@ -521,6 +659,18 @@
     "e14a24cfa79b1c39bf63b97dad5c552597a4a013bfafb6b265bf79dc1d19f4de": {
       "line": 247,
       "match": "Ignore"
+    },
+    "e8bcd0ec1a58c0078fa805dadd6677f8c6dcd4e323c52d39c6ca2af5aa492068": {
+      "line": 288,
+      "match": "Ignore"
+    },
+    "effb0104f795c9c6089eabf98d67785752e72abaa21843ae1031ffca0be3eda6": {
+      "line": 278,
+      "match": "Ignore"
+    },
+    "f17b95e750cc2f40ab70ab2409eb0c4f524126a3e7d4f2d5dbe1546ed058b059": {
+      "line": 278,
+      "match": "Ignore previous instructions"
     },
     "f2ec5ae48f6897960d6dbe008d5744543e9329cf7296e57e6bfbe11f07f1d759": {
       "line": 20,

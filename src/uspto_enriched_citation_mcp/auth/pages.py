@@ -2,7 +2,7 @@
 
 Plain inline-styled HTML: no external assets, renders identically in every
 browser the IdP redirect lands in. Do not change user-facing wording without
-checking with John. Ported from edgar_mcp/auth/pages.py; branding only.
+checking with the operator. Ported from edgar_mcp/auth/pages.py; branding only.
 """
 from __future__ import annotations
 

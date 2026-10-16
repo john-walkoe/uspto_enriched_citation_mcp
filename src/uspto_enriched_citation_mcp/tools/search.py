@@ -13,6 +13,13 @@ from ..config.constants import (
 )
 from ..shared.error_utils import format_error_response
 from ..shared.injection_scan import RETRIEVED_TEXT_NOTE, scan_hits
+from ..util.citation_links import (
+    attach_citation_links,
+    citation_links_for_docs,
+    citation_note,
+    is_narrow,
+    wants_application_link,
+)
 from ..util.query_builder import QueryParameters, build_query
 from ..util.query_validator import validate_lucene_syntax
 from ..util.reference_key import (
@@ -20,6 +27,7 @@ from ..util.reference_key import (
     attach_reference_keys,
     count_rows_without_reference,
     reference_keys_for_docs,
+    wants_reference_key,
 )
 from ..util.request_context import RequestContext
 from ..util.security_logger import get_security_logger
@@ -146,6 +154,16 @@ async def _run_enriched_search_body(
                 result.get("response", {}).get("docs"),
                 ENRICHED_REFERENCE_SOURCE_FIELDS,
             )
+            # Same reason for the links: the label's name and application
+            # fields can be filtered away, and the row still needs to be
+            # citable (util/citation_links). A narrow request (the minimal
+            # tier, or any custom `fields` list) gets ONE compact link per
+            # row and only the derived keys it asked for.
+            citation_links = citation_links_for_docs(
+                result.get("response", {}).get("docs"),
+                reference_keys,
+                compact=is_narrow(tier, fields),
+            )
 
             # Apply field filtering using centralized smart filter
             filtered = runtime.field_manager.filter_response_smart(
@@ -153,8 +171,15 @@ async def _run_enriched_search_body(
                 field_set_name=field_set if fields is None else None,
                 custom_fields=fields,
             )
-            attach_reference_keys(
-                filtered.get("response", {}).get("docs"), reference_keys
+            if wants_reference_key(fields):
+                attach_reference_keys(
+                    filtered.get("response", {}).get("docs"), reference_keys
+                )
+            application_links = wants_application_link(tier, fields)
+            attach_citation_links(
+                filtered.get("response", {}).get("docs"),
+                citation_links,
+                application=application_links,
             )
             # Rows whose reference identifier is absent, null or empty (one
             # state, see util/reference_key) are counted on the envelope rather
@@ -184,6 +209,7 @@ async def _run_enriched_search_body(
             # Provenance labeling + detection-only injection scan (kind labels
             # only, key ABSENT when clean; text is never modified).
             filtered["provenance_note"] = RETRIEVED_TEXT_NOTE
+            filtered["citation_note"] = citation_note(application_links)
             injection = scan_hits(filtered.get("response", {}).get("docs", []))
             if injection:
                 filtered["injection_scan"] = injection
@@ -237,7 +263,6 @@ async def search_citations_minimal(
     criteria: str = "",
     rows: int = 50,
     start: int = 0,
-    applicant_name: Optional[str] = None,
     application_number: Optional[str] = None,
     patent_number: Optional[str] = None,
     tech_center: Optional[str] = None,
@@ -259,8 +284,14 @@ async def search_citations_minimal(
     - Wildcard: criteria='citedDocumentIdentifier:US*'
     - Combined: criteria='groupArtUnitNumber:2854 AND officeActionDate:[2023-01-01 TO 2023-12-31]'
 
+    NOT searchable: examinerNameText and firstApplicantNameText do NOT exist on this API.
+    Resolve examiners and applicants through the PFW MCP, then query citations by
+    patentApplicationNumber.
+
     Ultra-minimal mode: Pass custom fields list for 99% token reduction (2-3 fields only).
     Example: fields=['citedDocumentIdentifier', 'patentApplicationNumber'] for PFW integration.
+    Rows then carry the fields you named plus `id` and `cite_as`, nothing else; name
+    'referenceKey' or 'application_cite_as' in the list to get those as well.
 
     Date handling: USPTO documents this API as office actions mailed 2017-10-01 to
     ~30 days ago. In practice ~44% of TC2100 records carry an earlier officeActionDate
@@ -284,7 +315,21 @@ async def search_citations_minimal(
     both lanes. `referenceKey` is digits only (a leading US, spaces, slashes, hyphens and
     the kind code stripped, series markers such as RE kept), derived from
     publicationNumber first and citedDocumentIdentifier second, and carried on both lanes
-    at every tier including a custom `fields` list.
+    on every default tier; a custom `fields` list carries it when the list names it.
+
+    CITATIONS ARE LINKS: every row carries `cite_as`, the verified Google Patents link
+    for the cited reference as a markdown autolink, e.g.
+    "<https://patents.google.com/patent/US20010056539>". This tier and any custom
+    `fields` list carry that one link per row and no label, to keep high-volume pages
+    small; Citations_search_citations_balanced and Citations_get_citation_details carry
+    the labelled form plus `application_cite_as` (the application on USPTO Patent
+    Center). Paste a row's `cite_as` when you name that reference in an answer, a table
+    or a memo: a bare number is not a citation here, because the reader cannot click
+    through to the public record. `cite_as` is null when no verified URL can be built for
+    the row (non-patent literature, or an identifier that does not
+    reduce to a patent or publication number). Report those by the identifier the
+    record carries, say no public record link was available, and never assemble a patent
+    URL yourself.
 
     ROWS WITH NO REFERENCE: `referenceKey` is null when the row carries no usable
     identifier, and the response envelope reports how many such rows the page holds as
@@ -326,7 +371,6 @@ async def search_citations_minimal(
         application_number=application_number,
         make_params=lambda pat, app: QueryParameters(
             criteria=criteria,
-            applicant_name=applicant_name,
             application_number=app,
             patent_number=pat,
             tech_center=tech_center,
@@ -344,7 +388,6 @@ async def search_citations_balanced(
     criteria: str = "",
     rows: int = 20,
     start: int = 0,
-    applicant_name: Optional[str] = None,
     application_number: Optional[str] = None,
     patent_number: Optional[str] = None,
     tech_center: Optional[str] = None,
@@ -369,12 +412,16 @@ async def search_citations_balanced(
     - NPL only: criteria='nplIndicator:true AND techCenter:2100'
     - Complex: criteria='groupArtUnitNumber:2854 AND citationCategoryCode:X AND officeActionDate:[2020-01-01 TO *]'
 
-    NOT searchable: examinerNameText and firstApplicantNameText do NOT exist on this API.
-    Examiner queries 400; applicant queries silently return 0. Resolve examiners and
-    applicants through the PFW MCP, then query citations by application number.
+    NOT searchable: examinerNameText and firstApplicantNameText do NOT exist on this API
+    (criteria='examinerNameText:...' is a 400; there is no applicant_name parameter,
+    removed 2026-09-28 because the field it would have queried does not exist and the
+    call could only ever return 0 results). Resolve examiners and applicants through the
+    PFW MCP, then query citations by application number.
 
     Ultra-minimal mode: Pass custom fields list for 99% token reduction (2-3 fields only).
     Example: fields=['citedDocumentIdentifier', 'citationCategoryCode', 'passageLocationText']
+    Rows then carry the fields you named plus `id` and a compact `cite_as`, nothing else;
+    name 'referenceKey' or 'application_cite_as' in the list to get those as well.
 
     Date handling: documented window is office actions mailed 2017-10-01 to ~30 days
     ago, but ~44% of TC2100 records carry an earlier officeActionDate in practice. Add
@@ -396,7 +443,19 @@ async def search_citations_balanced(
     both lanes. `referenceKey` is digits only (a leading US, spaces, slashes, hyphens and
     the kind code stripped, series markers such as RE kept), derived from
     publicationNumber first and citedDocumentIdentifier second, and carried on both lanes
-    at every tier including a custom `fields` list.
+    on every default tier; a custom `fields` list carries it when the list names it.
+
+    CITATIONS ARE LINKS: every row carries `cite_as`, a ready-made markdown link
+    whose label names the cited reference ("Pavlin, US 2001/0056539") and whose target is
+    that reference on Google Patents, and `application_cite_as`, the same for the
+    application the office action belongs to on USPTO Patent Center. Paste a row's
+    `cite_as` when you name that reference in an answer, a table or a memo: a bare
+    number is not a citation here, because the reader cannot click through to the public
+    record. Both keys are null when no verified URL can be built for the row (non-patent
+    literature, or an identifier that does not reduce to a patent or publication
+    number). Report those by the identifier the record carries, say no public
+    record link was available, and never assemble a patent URL yourself. A custom
+    `fields` list switches to the narrow shape: one compact `cite_as` per row.
 
     ROWS WITH NO REFERENCE: `referenceKey` is null when the row carries no usable
     identifier, and the response envelope reports how many such rows the page holds as
@@ -439,7 +498,6 @@ async def search_citations_balanced(
         application_number=application_number,
         make_params=lambda pat, app: QueryParameters(
             criteria=criteria,
-            applicant_name=applicant_name,
             application_number=app,
             patent_number=pat,
             tech_center=tech_center,

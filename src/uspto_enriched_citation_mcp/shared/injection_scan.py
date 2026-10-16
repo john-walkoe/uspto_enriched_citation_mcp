@@ -97,6 +97,19 @@ _DEFAULT_TEXT_KEYS = (
     "referenceIdentifier",
 )
 
+# CR-09 (review 2026-09-28, common fix C): a text_key's value can be a list
+# — passageLocationText and relatedClaimNumberText both are on this API's
+# balanced/detail tiers (column/line/figure/claim locators, claim mapping) —
+# or a list of dicts, not only a bare string; scan_hits joined `str` values
+# only, so the field the provenance note names first was never scanned.
+# Bounds mirror scan_text's own cost posture (cheap regex over bounded
+# input): only strings and one level of list/list-of-dict nesting are
+# walked, and both the item count and the per-hit character budget are
+# capped so a pathological payload cannot turn a scan into unbounded work.
+# Same shape ported to PFW/PTAB/FPD.
+_MAX_LIST_ITEMS = 200
+_MAX_FIELD_CHARS = 20000
+
 # `id` is commented out of the default field sets in field_configs.yaml, so
 # fall back to the stable structured identifiers that ARE in the default sets.
 _FALLBACK_ID_KEYS = ("citedDocumentIdentifier", "patentApplicationNumber")
@@ -130,19 +143,42 @@ def scan_text(text: str) -> List[str]:
     return kinds
 
 
+def _field_text(value: Any) -> List[str]:
+    """Flatten one field's value into scannable strings: a bare string, a
+    list of strings, or a list of dicts (one level — e.g. a citation's
+    locator list shaped like `[{"passageLocationText": "..."}, ...]`).
+    Anything else (int, bool, None, deeper nesting) contributes nothing;
+    this is a best-effort scan, not a schema validator."""
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, list):
+        return []
+    out: List[str] = []
+    for item in value[:_MAX_LIST_ITEMS]:
+        if isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, dict):
+            out.extend(v for v in item.values() if isinstance(v, str))
+    return out
+
+
 def scan_hits(
     hits: List[Dict[str, Any]],
     text_keys: Tuple[str, ...] = _DEFAULT_TEXT_KEYS,
     id_key: str = "id",
 ) -> Optional[Dict[str, Any]]:
-    """Scan the text-bearing fields of result hits. Returns None when clean;
-    otherwise an `injection_scan` payload naming each flagged hit by its
-    identifier (never by content). When the hit carries no `id_key` value
-    (the citation `id` is not in the default field sets), falls back to
-    citedDocumentIdentifier / patentApplicationNumber."""
+    """Scan the text-bearing fields of result hits. A field may be a bare
+    string or a list (of strings, or of dicts), all walked and joined before
+    scanning. Returns None when clean; otherwise an `injection_scan` payload
+    naming each flagged hit by its identifier (never by content). When the
+    hit carries no `id_key` value (the citation `id` is not in the default
+    field sets), falls back to citedDocumentIdentifier / patentApplicationNumber."""
     flagged: List[Dict[str, Any]] = []
     for i, h in enumerate(hits):
-        joined = " ".join(str(h[k]) for k in text_keys if isinstance(h.get(k), str))
+        pieces: List[str] = []
+        for k in text_keys:
+            pieces.extend(_field_text(h.get(k)))
+        joined = " ".join(pieces)[:_MAX_FIELD_CHARS]
         kinds = scan_text(joined)
         if kinds:
             identifier = h.get(id_key)
